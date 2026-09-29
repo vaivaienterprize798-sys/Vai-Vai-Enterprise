@@ -79,13 +79,14 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
 
   // Filter processing staff only
   const processingStaff = useMemo(() => {
-    return staff.filter((s) => s.category === 'processing');
+    return (staff || []).filter((s) => s && s.category === 'processing');
   }, [staff]);
 
   // Identify Head Supervisor & Unlimited Team Workers
   const supervisor = useMemo(() => {
+    if (!processingStaff || processingStaff.length === 0) return null;
     return (
-      processingStaff.find((s) => s.isSupervisor) ||
+      processingStaff.find((s) => s?.isSupervisor) ||
       processingStaff[0] ||
       null
     );
@@ -93,8 +94,8 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
 
   // Unlimited Workers - No fixed 5-worker restriction
   const supervisorTeam = useMemo(() => {
-    if (!supervisor) return processingStaff;
-    return processingStaff.filter((s) => s.id !== supervisor.id);
+    if (!supervisor) return processingStaff || [];
+    return (processingStaff || []).filter((s) => s && s.id !== supervisor.id);
   }, [processingStaff, supervisor]);
 
   // Navigation Tabs (Added conversions tab for product conversion & yield tracking)
@@ -104,6 +105,18 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [filterPeriodMode, setFilterPeriodMode] = useState<'all' | 'today' | 'month' | 'date'>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(todayStr.slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+
+  const isDateInFilter = (dateStr: string) => {
+    if (!dateStr) return true;
+    if (filterPeriodMode === 'all') return true;
+    if (filterPeriodMode === 'today') return dateStr === todayStr;
+    if (filterPeriodMode === 'date') return dateStr === selectedDate;
+    if (filterPeriodMode === 'month') return dateStr.startsWith(selectedMonth);
+    return true;
+  };
 
   // Modals
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
@@ -333,6 +346,7 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
     return workerTasks.filter((task) => {
       if (selectedWorkerId !== 'all' && task.workerId !== selectedWorkerId) return false;
       if (statusFilter !== 'all' && task.status !== statusFilter) return false;
+      if (!isDateInFilter(task.date)) return false;
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
         const matchName = task.workerName.toLowerCase().includes(q);
@@ -342,50 +356,52 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
       }
       return true;
     });
-  }, [workerTasks, selectedWorkerId, statusFilter, searchTerm]);
+  }, [workerTasks, selectedWorkerId, statusFilter, searchTerm, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
 
   // Aggregated Overall KPIs
   const kpis = useMemo(() => {
-    const totalGiven = workerTasks.reduce((s, t) => s + t.givenPcs, 0);
-    const totalCompleted = workerTasks.reduce((s, t) => s + t.completedPcs, 0);
-    const totalDamaged = workerTasks.reduce((s, t) => s + t.damagedPcs, 0);
+    const list = workerTasks || [];
+    const totalGiven = list.reduce((s, t) => s + (t?.givenPcs || 0), 0);
+    const totalCompleted = list.reduce((s, t) => s + (t?.completedPcs || 0), 0);
+    const totalDamaged = list.reduce((s, t) => s + (t?.damagedPcs || 0), 0);
     const totalRemaining = Math.max(0, totalGiven - totalCompleted - totalDamaged);
     const damageRate = totalGiven > 0 ? ((totalDamaged / totalGiven) * 100).toFixed(1) : '0';
 
     let totalPenalties = 0;
-    workerTasks.forEach((t) => {
-      t.damages?.forEach((d) => {
-        totalPenalties += Number(d.penaltyAmount) || 0;
+    list.forEach((t) => {
+      t?.damages?.forEach((d) => {
+        totalPenalties += Number(d?.penaltyAmount) || 0;
       });
     });
 
     return {
-      totalWorkers: processingStaff.length,
+      totalWorkers: (processingStaff || []).length,
       totalGiven,
       totalCompleted,
       totalRemaining,
       totalDamaged,
       totalPenalties,
       damageRate,
-      activeTasks: workerTasks.filter((t) => t.status === 'in_progress' || t.status === 'assigned').length,
+      activeTasks: list.filter((t) => t?.status === 'in_progress' || t?.status === 'assigned').length,
     };
   }, [workerTasks, processingStaff]);
 
   // Worker-by-Worker Aggregated Performance
   const workerPerformances = useMemo(() => {
-    return processingStaff.map((w) => {
-      const tasks = workerTasks.filter((t) => t.workerId === w.id);
-      const given = tasks.reduce((s, t) => s + t.givenPcs, 0);
-      const completed = tasks.reduce((s, t) => s + t.completedPcs, 0);
-      const damaged = tasks.reduce((s, t) => s + t.damagedPcs, 0);
+    return (processingStaff || []).map((w) => {
+      if (!w) return null;
+      const tasks = (workerTasks || []).filter((t) => t?.workerId === w.id);
+      const given = tasks.reduce((s, t) => s + (t?.givenPcs || 0), 0);
+      const completed = tasks.reduce((s, t) => s + (t?.completedPcs || 0), 0);
+      const damaged = tasks.reduce((s, t) => s + (t?.damagedPcs || 0), 0);
       const remaining = Math.max(0, given - completed - damaged);
       const rate = given > 0 ? ((damaged / given) * 100).toFixed(1) : '0';
       const efficiency = given > 0 ? (((completed) / given) * 100).toFixed(1) : '0';
 
       let workerPenalties = 0;
       tasks.forEach((t) => {
-        t.damages?.forEach((d) => {
-          workerPenalties += Number(d.penaltyAmount) || 0;
+        t?.damages?.forEach((d) => {
+          workerPenalties += Number(d?.penaltyAmount) || 0;
         });
       });
 
@@ -400,28 +416,32 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
         damageRate: rate,
         efficiency,
       };
-    });
+    }).filter(Boolean) as any[];
   }, [processingStaff, workerTasks]);
 
   // Supervisor Team KPIs
   const supervisorTeamKpis = useMemo(() => {
-    const teamMemberIds = new Set(supervisorTeam.map((m) => m.id));
-    const teamTasks = workerTasks.filter((t) => teamMemberIds.has(t.workerId) || t.supervisorId === supervisor.id);
+    const teamMemberIds = new Set((supervisorTeam || []).map((m) => m?.id).filter(Boolean));
+    const supervisorId = supervisor?.id;
+    const teamTasks = (workerTasks || []).filter((t) => {
+      if (!t) return false;
+      return teamMemberIds.has(t.workerId) || (supervisorId && t.supervisorId === supervisorId);
+    });
 
-    const totalGiven = teamTasks.reduce((s, t) => s + t.givenPcs, 0);
-    const totalCompleted = teamTasks.reduce((s, t) => s + t.completedPcs, 0);
-    const totalDamaged = teamTasks.reduce((s, t) => s + t.damagedPcs, 0);
+    const totalGiven = teamTasks.reduce((s, t) => s + (t?.givenPcs || 0), 0);
+    const totalCompleted = teamTasks.reduce((s, t) => s + (t?.completedPcs || 0), 0);
+    const totalDamaged = teamTasks.reduce((s, t) => s + (t?.damagedPcs || 0), 0);
     const totalRemaining = Math.max(0, totalGiven - totalCompleted - totalDamaged);
 
     let totalPenalties = 0;
     teamTasks.forEach((t) => {
-      t.damages?.forEach((d) => {
-        totalPenalties += Number(d.penaltyAmount) || 0;
+      t?.damages?.forEach((d) => {
+        totalPenalties += Number(d?.penaltyAmount) || 0;
       });
     });
 
     return {
-      teamSize: supervisorTeam.length,
+      teamSize: (supervisorTeam || []).length,
       taskCount: teamTasks.length,
       totalGiven,
       totalCompleted,
@@ -441,15 +461,15 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
       damage: WorkerDamageRecord;
     }[] = [];
 
-    workerTasks.forEach((t) => {
-      if (t.damages && t.damages.length > 0) {
+    (workerTasks || []).forEach((t) => {
+      if (t?.damages && t.damages.length > 0) {
         t.damages.forEach((d) => {
           if (selectedWorkerId === 'all' || t.workerId === selectedWorkerId) {
             list.push({
-              taskId: t.id,
-              workerName: t.workerName,
-              workerId: t.workerId,
-              productName: t.productName,
+              taskId: t.id || '',
+              workerName: t.workerName || '',
+              workerId: t.workerId || '',
+              productName: t.productName || '',
               damage: d,
             });
           }
@@ -462,7 +482,7 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
 
   // Handlers
   const handleOpenNewTask = (preselectedWorkerId?: string) => {
-    setFormWorkerId(preselectedWorkerId || processingStaff[0]?.id || '');
+    setFormWorkerId(preselectedWorkerId || processingStaff?.[0]?.id || '');
     setFormDate(todayStr);
     setFormProductName('');
     setFormBatchNo(`BATCH-${new Date().getFullYear()}-${String(workerTasks.length + 1).padStart(2, '0')}`);
@@ -647,8 +667,8 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
 
     const newSample: SupervisorSampleRecord = {
       id: `smp-${Date.now()}`,
-      supervisorId: supervisor.id,
-      supervisorName: supervisor.name,
+      supervisorId: supervisor?.id || 'supervisor-1',
+      supervisorName: supervisor?.name || 'Head Supervisor',
       date: todayStr,
       sampleName: sampleName.trim(),
       testedQty: Number(sampleTestedQty) || 10,
@@ -866,7 +886,7 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
 
       {/* Filter Bar */}
       {activeTab !== 'supervisor' && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
           <div className="flex flex-wrap items-center gap-2 flex-1">
             <select
               value={selectedWorkerId}
@@ -892,6 +912,72 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
               <option value="completed">সম্পন্ন (Completed)</option>
               <option value="on_hold">স্থগিত (On Hold)</option>
             </select>
+
+            {/* Month / Date Period Filter (User Requirement) */}
+            <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 dark:border-slate-700 text-xs">
+              <button
+                type="button"
+                onClick={() => setFilterPeriodMode('all')}
+                className={`px-2 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                  filterPeriodMode === 'all'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                {lang === 'bn' ? 'সব (All)' : 'All'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterPeriodMode('today')}
+                className={`px-2 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                  filterPeriodMode === 'today'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                {lang === 'bn' ? 'আজ (Today)' : 'Today'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterPeriodMode('month')}
+                className={`px-2 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                  filterPeriodMode === 'month'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                {lang === 'bn' ? 'মাস (Month)' : 'Month'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterPeriodMode('date')}
+                className={`px-2 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                  filterPeriodMode === 'date'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                {lang === 'bn' ? 'তারিখ (Date)' : 'Date'}
+              </button>
+            </div>
+
+            {filterPeriodMode === 'month' && (
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium"
+              />
+            )}
+
+            {filterPeriodMode === 'date' && (
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium"
+              />
+            )}
           </div>
 
           <div className="relative w-full sm:w-64">

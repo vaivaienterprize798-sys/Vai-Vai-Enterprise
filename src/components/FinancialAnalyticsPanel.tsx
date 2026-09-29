@@ -138,16 +138,34 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
     return invoices.filter((inv) => isDateInPeriod(inv.date));
   }, [invoices, filterMode, selectedDate, selectedMonth, startDate, endDate]);
 
+  // Helper to reliably compute net revenue/cost for an invoice
+  const getInvoiceAmount = (inv: any): number => {
+    if (typeof inv.netInvoiceAmount === 'number' && inv.netInvoiceAmount > 0) {
+      return inv.netInvoiceAmount;
+    }
+    if (typeof inv.subtotal === 'number' && inv.subtotal > 0) {
+      return Math.max(0, inv.subtotal - (Number(inv.discount) || 0) - (Number(inv.courierDeduction) || 0));
+    }
+    if (typeof inv.grandTotal === 'number' && inv.grandTotal > 0) {
+      const prev = Number(inv.previousBalance) || 0;
+      return Math.max(0, inv.grandTotal - prev);
+    }
+    if (Array.isArray(inv.items) && inv.items.length > 0) {
+      return inv.items.reduce((s: number, it: any) => s + (Number(it.total) || 0), 0);
+    }
+    return 0;
+  };
+
   const totalSalesRevenue = useMemo(() => {
     return filteredInvoices
-      .filter((inv) => inv.mode === 'sales')
-      .reduce((sum, inv) => sum + (inv.netInvoiceAmount || 0), 0);
+      .filter((inv) => inv.mode === 'sales' || !inv.mode)
+      .reduce((sum, inv) => sum + getInvoiceAmount(inv), 0);
   }, [filteredInvoices]);
 
   const totalPurchaseCost = useMemo(() => {
     return filteredInvoices
       .filter((inv) => inv.mode === 'purchase')
-      .reduce((sum, inv) => sum + (inv.netInvoiceAmount || 0), 0);
+      .reduce((sum, inv) => sum + getInvoiceAmount(inv), 0);
   }, [filteredInvoices]);
 
   const grossSalesBalance = totalSalesRevenue - totalPurchaseCost;
@@ -210,29 +228,11 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
     return sumPaidSalary;
   }, [staff, attendance, filterMode, selectedDate, selectedMonth, startDate, endDate]);
 
-  // 4. Net Profit & Loss Calculation
-  const workerDamageMetrics = useMemo(() => {
-    const tasks = storageService.getWorkerTasks().filter((t) => isDateInPeriod(t.date));
-    let totalDamagedPcs = 0;
-    let totalPenaltiesDeducted = 0;
-    tasks.forEach((t) => {
-      totalDamagedPcs += t.damagedPcs || 0;
-      t.damages?.forEach((d) => {
-        totalPenaltiesDeducted += Number(d.penaltyAmount) || 0;
-      });
-    });
-    const estScrapLossValue = totalDamagedPcs * 250; // Avg ৳250/pcs scrap board valuation
-    const netDamageLoss = Math.max(0, estScrapLossValue - totalPenaltiesDeducted);
-    return {
-      totalDamagedPcs,
-      totalPenaltiesDeducted,
-      estScrapLossValue,
-      netDamageLoss,
-    };
-  }, [filterMode, selectedDate, selectedMonth, startDate, endDate]);
-
-  // Net Profit = Total Sales Revenue - (Total Purchase Cost + Total Expenses + Total Paid Staff Salary + Net Unrecovered Damage Loss)
-  const netProfitLoss = totalSalesRevenue - (totalPurchaseCost + totalOperationalExpenses + totalPaidStaffSalary + workerDamageMetrics.netDamageLoss);
+  // 4. Net Profit & Loss Calculation (Accurate Standard Waterfall)
+  // Gross Profit = Total Sales Revenue - Total Purchase Cost
+  // Operating Expenses = Petty Cash + Car Expense + Paid Staff Salaries
+  // Net Profit = Gross Profit - Operating Expenses
+  const netProfitLoss = totalSalesRevenue - (totalPurchaseCost + totalOperationalExpenses + totalPaidStaffSalary);
   const isProfitable = netProfitLoss >= 0;
 
   // 5. Total Company Investment / Operational Outflow & ROI
@@ -620,6 +620,17 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
               </span>
               <span className="font-mono text-rose-600 dark:text-rose-400">
                 -{formatCurrency(totalPurchaseCost, lang)}
+              </span>
+            </div>
+
+            {/* Gross Balance */}
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 font-bold">
+              <span className="text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                <Coins className="w-4 h-4" />
+                <span>(=) {t.grossSalesBalance} (গ্রস মার্জিন)</span>
+              </span>
+              <span className="font-mono text-purple-900 dark:text-purple-200">
+                {formatCurrency(grossSalesBalance, lang)}
               </span>
             </div>
 

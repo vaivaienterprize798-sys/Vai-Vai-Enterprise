@@ -208,7 +208,16 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
                     {it.code || '-'}
                   </td>
                   <td className="py-1.5 px-2 border-r border-slate-200 text-center font-mono font-bold">
-                    {formatNumber(it.quantity, lang)} {it.unit}
+                    {it.unit === 'gm' ? (
+                      <span>{formatNumber(it.quantity, lang)} {lang === 'bn' ? 'গ্রাম' : 'gm'}</span>
+                    ) : it.inputGrams ? (
+                      <span>
+                        {formatNumber(it.quantity, lang)} {it.unit}
+                        <span className="block text-[9px] text-slate-500 font-normal font-sans">({formatNumber(it.inputGrams, lang)} {lang === 'bn' ? 'গ্রাম' : 'gm'})</span>
+                      </span>
+                    ) : (
+                      <span>{formatNumber(it.quantity, lang)} {it.unit}</span>
+                    )}
                   </td>
                   <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono">
                     {formatCurrency(it.unitPrice, lang)}

@@ -13,6 +13,9 @@ import {
   Clock,
   AlertCircle,
   Building,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Invoice, Language, DEFAULT_COMPANY } from '../types';
 import {
@@ -49,6 +52,24 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedMode, setSelectedMode] = useState<string>('all');
 
+  // Month & Date Filtering (User Requirement)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | 'month' | 'date'>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+
+  const handlePrevMonth = () => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    setSelectedMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const handleNextMonth = () => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const next = new Date(y, m, 1);
+    setSelectedMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+  };
+
   const filtered = useMemo(() => {
     return invoices.filter((inv) => {
       const matchSearch =
@@ -59,9 +80,18 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
       const matchType = selectedType === 'all' || inv.type === selectedType;
       const matchMode = selectedMode === 'all' || inv.mode === selectedMode;
 
-      return matchSearch && matchType && matchMode;
+      const matchDate =
+        dateFilterMode === 'all'
+          ? true
+          : dateFilterMode === 'today'
+          ? inv.date === todayStr
+          : dateFilterMode === 'date'
+          ? inv.date === selectedDate
+          : !selectedMonth || inv.date.startsWith(selectedMonth);
+
+      return matchSearch && matchType && matchMode && matchDate;
     });
-  }, [invoices, searchTerm, selectedType, selectedMode]);
+  }, [invoices, searchTerm, selectedType, selectedMode, dateFilterMode, selectedDate, selectedMonth, todayStr]);
 
   const handleWhatsApp = (inv: Invoice) => {
     const companyHeader =
@@ -107,6 +137,95 @@ Status: ${(inv.paymentStatus || 'unpaid').toUpperCase()}`;
           <Plus className="w-4 h-4" />
           <span>{t.createInvoice} (৪০টি আইটেম)</span>
         </button>
+      </div>
+
+      {/* Month & Date Filter Toolbar (User Requirement) */}
+      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-emerald-400" />
+          <span className="font-bold text-slate-200">
+            {lang === 'bn' ? 'তারিখ বা মাস অনুযায়ী ইনভয়েস খুঁজুন:' : 'Filter Invoices by Month/Date:'}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl bg-slate-800 p-1 border border-slate-700 font-medium">
+            <button
+              onClick={() => setDateFilterMode('all')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                dateFilterMode === 'all'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'সব সময় (All)' : 'All Time'}
+            </button>
+            <button
+              onClick={() => setDateFilterMode('today')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                dateFilterMode === 'today'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'আজকের (Today)' : 'Today'}
+            </button>
+            <button
+              onClick={() => setDateFilterMode('month')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                dateFilterMode === 'month'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'নির্দিষ্ট মাস (Month)' : 'Month'}
+            </button>
+            <button
+              onClick={() => setDateFilterMode('date')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                dateFilterMode === 'date'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'নির্দিষ্ট তারিখ (Date)' : 'Date'}
+            </button>
+          </div>
+
+          {dateFilterMode === 'month' && (
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded-xl">
+              <button
+                onClick={handlePrevMonth}
+                className="p-1 rounded hover:bg-slate-700 text-slate-300"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent text-white font-mono text-xs focus:outline-hidden cursor-pointer"
+              />
+              <button
+                onClick={handleNextMonth}
+                className="p-1 rounded hover:bg-slate-700 text-slate-300"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {dateFilterMode === 'date' && (
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded-xl">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-white font-mono text-xs focus:outline-hidden cursor-pointer"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filter and Search Bar */}

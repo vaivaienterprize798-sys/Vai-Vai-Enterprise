@@ -159,10 +159,40 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     const updated = [...items];
     const current = { ...updated[index], [field]: value };
 
-    if (field === 'quantity' || field === 'unitPrice') {
-      const q = field === 'quantity' ? Number(value) : current.quantity;
-      const r = field === 'unitPrice' ? Number(value) : current.unitPrice;
-      current.total = (q || 0) * (r || 0);
+    const q = field === 'quantity' ? Number(value) : current.quantity;
+    const r = field === 'unitPrice' ? Number(value) : current.unitPrice;
+    const u = field === 'unit' ? value : current.unit;
+    const basis = field === 'rateBasis' ? value : (current.rateBasis || (u === 'gm' ? 'per_kg' : 'per_unit'));
+
+    if (u === 'gm' && basis === 'per_kg') {
+      current.total = Math.round(((q || 0) / 1000) * (r || 0));
+    } else {
+      current.total = Math.round((q || 0) * (r || 0));
+    }
+    current.rateBasis = basis;
+    updated[index] = current;
+    setItems(updated);
+  };
+
+  // Direct Gram Input Helper (e.g. entering 60 grams avoids typing 0.06)
+  const updateItemGrams = (index: number, gramsVal: number) => {
+    const updated = [...items];
+    const current = { ...updated[index] };
+    current.inputGrams = gramsVal;
+
+    if (current.unit === 'gm') {
+      current.quantity = gramsVal;
+      const basis = current.rateBasis || 'per_kg';
+      if (basis === 'per_kg') {
+        current.total = Math.round(((gramsVal || 0) / 1000) * (current.unitPrice || 0));
+      } else {
+        current.total = Math.round((gramsVal || 0) * (current.unitPrice || 0));
+      }
+    } else {
+      // Unit is KG: Automatically converts grams to kg (e.g. 60 gm -> 0.06 kg)
+      const kgVal = Math.round((gramsVal / 1000) * 1000) / 1000;
+      current.quantity = kgVal;
+      current.total = Math.round((kgVal || 0) * (current.unitPrice || 0));
     }
     updated[index] = current;
     setItems(updated);
@@ -719,21 +749,48 @@ Thank you for doing business with us!`;
                           </select>
                         </td>
                         {/* Quantity - Cell 2 */}
-                        <td className="py-2 px-2 text-center">
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            data-cell={`${idx}-2`}
-                            value={it.quantity === 0 ? '' : it.quantity}
-                            onChange={(e) => updateItem(idx, 'quantity', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                            onKeyDown={(e) => handleCellKeyDown(e, idx, 2)}
-                            placeholder={lang === 'bn' ? 'পরিমাণ...' : 'Qty...'}
-                            className="w-full py-1 px-1.5 text-center rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-hidden placeholder:text-slate-400 placeholder:font-normal"
-                          />
+                        <td className="py-2 px-2 text-center min-w-[130px]">
+                          <div className="space-y-1">
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                data-cell={`${idx}-2`}
+                                value={it.quantity === 0 ? '' : it.quantity}
+                                onChange={(e) => updateItem(idx, 'quantity', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                onKeyDown={(e) => handleCellKeyDown(e, idx, 2)}
+                                placeholder={it.unit === 'gm' ? (lang === 'bn' ? 'গ্রাম...' : 'Grams...') : (lang === 'bn' ? 'পরিমাণ...' : 'Qty...')}
+                                className="w-full py-1 px-1.5 text-center rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-hidden text-xs"
+                              />
+                              {it.unit === 'gm' && (
+                                <span className="absolute right-1.5 top-1.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 font-mono pointer-events-none">
+                                  {lang === 'bn' ? 'গ্রাম' : 'gm'}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Grams Quick Input for KG/GM: Avoid typing 0.06 or decimals */}
+                            {(it.unit === 'kg' || it.unit === 'gm') && (
+                              <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800/60 text-[10px]">
+                                <span className="text-[9px] font-bold text-amber-800 dark:text-amber-300 shrink-0">
+                                  {lang === 'bn' ? '⚖️ গ্রাম:' : '⚖️ Gm:'}
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={it.inputGrams || (it.unit === 'gm' ? (it.quantity || '') : (it.quantity ? Math.round(it.quantity * 1000) : ''))}
+                                  onChange={(e) => updateItemGrams(idx, e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                  placeholder={lang === 'bn' ? 'যেমন: ৬০' : 'e.g. 60'}
+                                  className="w-full text-center bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded px-1 py-0.5 font-mono text-[10px] text-amber-900 dark:text-amber-200 focus:outline-hidden"
+                                  title={lang === 'bn' ? 'এখানে সরাসরি গ্রাম লিখুন (যেমন: ৬০ দিলে স্বয়ংক্রিয় ০.০৬ কেজি হবে)' : 'Enter grams directly without typing decimals'}
+                                />
+                              </div>
+                            )}
+                          </div>
                         </td>
                         {/* Unit - Cell 3 */}
-                        <td className="py-2 px-2 text-center">
+                        <td className="py-2 px-2 text-center min-w-[85px]">
                           <select
                             data-cell={`${idx}-3`}
                             value={it.unit}
@@ -741,24 +798,39 @@ Thank you for doing business with us!`;
                             onKeyDown={(e) => handleCellKeyDown(e, idx, 3)}
                             className="w-full py-1 px-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
                           >
-                            <option value="pcs">Pcs</option>
-                            <option value="kg">KG</option>
-                            <option value="lot">Lot</option>
+                            <option value="pcs">Pcs (পিস)</option>
+                            <option value="kg">KG (কেজি)</option>
+                            <option value="gm">GM (গ্রাম)</option>
+                            <option value="lot">Lot (লট)</option>
                           </select>
                         </td>
                         {/* Rate (Manually Entered) - Cell 4 */}
-                        <td className="py-2 px-2 text-right">
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            data-cell={`${idx}-4`}
-                            value={it.unitPrice === 0 ? '' : it.unitPrice}
-                            onChange={(e) => updateItem(idx, 'unitPrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                            onKeyDown={(e) => handleCellKeyDown(e, idx, 4)}
-                            placeholder={lang === 'bn' ? 'দর...' : 'Rate...'}
-                            className="w-full py-1 px-1.5 text-right rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-hidden placeholder:text-slate-400 placeholder:font-normal"
-                          />
+                        <td className="py-2 px-2 text-right min-w-[110px]">
+                          <div className="space-y-1">
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              data-cell={`${idx}-4`}
+                              value={it.unitPrice === 0 ? '' : it.unitPrice}
+                              onChange={(e) => updateItem(idx, 'unitPrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                              onKeyDown={(e) => handleCellKeyDown(e, idx, 4)}
+                              placeholder={lang === 'bn' ? 'দর...' : 'Rate...'}
+                              className="w-full py-1 px-1.5 text-right rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-hidden placeholder:text-slate-400 placeholder:font-normal text-xs"
+                            />
+                            {it.unit === 'gm' && (
+                              <button
+                                type="button"
+                                onClick={() => updateItem(idx, 'rateBasis', it.rateBasis === 'per_gm' ? 'per_kg' : 'per_gm')}
+                                className="w-full text-[9px] px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-semibold cursor-pointer hover:bg-slate-200"
+                                title="দর মোড পরিবর্তন করতে ক্লিক করুন"
+                              >
+                                {it.rateBasis === 'per_gm'
+                                  ? (lang === 'bn' ? 'দর: ৳/গ্রাম' : 'Rate: ৳/gm')
+                                  : (lang === 'bn' ? 'দর: ৳/কেজি' : 'Rate: ৳/kg')}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {/* Row Total */}
                         <td className="py-2 px-2 text-right font-mono font-bold text-slate-900 dark:text-white">

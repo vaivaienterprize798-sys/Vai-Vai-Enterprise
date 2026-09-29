@@ -25,6 +25,8 @@ import {
   formatCurrency,
   formatNumber,
   formatDate,
+  formatSheetNumber,
+  formatSheetDecimal,
 } from '../lib/translations';
 import { CompanyLogo } from './CompanyLogo';
 import { storageService } from '../lib/storage';
@@ -50,7 +52,9 @@ export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedVehicle, setSelectedVehicle] = useState<string>('all');
+  const [dateFilterMode, setDateFilterMode] = useState<'month' | 'date' | 'all'>('month');
   const [selectedMonth, setSelectedMonth] = useState<string>(todayStr.slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -109,16 +113,21 @@ export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
     return expenses.filter((e) => {
       const matchCat = selectedCategory === 'all' || e.category === selectedCategory;
       const matchVeh = selectedVehicle === 'all' || e.vehicleNo === selectedVehicle;
-      const matchMonth = !selectedMonth || e.date.startsWith(selectedMonth);
+      const matchDate =
+        dateFilterMode === 'all'
+          ? true
+          : dateFilterMode === 'date'
+          ? e.date === selectedDate
+          : !selectedMonth || e.date.startsWith(selectedMonth);
       const titleStr = (e.title || '').toLowerCase();
       const matchSearch =
         titleStr.includes(searchTerm.toLowerCase()) ||
         (e.vehicleNo ? e.vehicleNo.toLowerCase().includes(searchTerm.toLowerCase()) : false) ||
         (e.driverName && e.driverName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (e.tripRoute && e.tripRoute.toLowerCase().includes(searchTerm.toLowerCase()));
-      return matchCat && matchVeh && matchMonth && matchSearch;
+      return matchCat && matchVeh && matchDate && matchSearch;
     });
-  }, [expenses, selectedCategory, selectedVehicle, selectedMonth, searchTerm]);
+  }, [expenses, selectedCategory, selectedVehicle, dateFilterMode, selectedMonth, selectedDate, searchTerm]);
 
   // Aggregate stats
   const totalAmount = useMemo(() => {
@@ -309,13 +318,60 @@ export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
             <option value="other">{lang === 'bn' ? 'অন্যান্য খরচ' : 'Other'}</option>
           </select>
 
-          {/* Month Filter */}
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium"
-          />
+          {/* Month/Date Mode Filter */}
+          <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 dark:border-slate-700 text-xs">
+            <button
+              type="button"
+              onClick={() => setDateFilterMode('month')}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                dateFilterMode === 'month'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              {lang === 'bn' ? 'মাস (Month)' : 'Month'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilterMode('date')}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                dateFilterMode === 'date'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              {lang === 'bn' ? 'তারিখ (Date)' : 'Date'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilterMode('all')}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition-all ${
+                dateFilterMode === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              {lang === 'bn' ? 'সকল (All)' : 'All'}
+            </button>
+          </div>
+
+          {dateFilterMode === 'month' && (
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium"
+            />
+          )}
+
+          {dateFilterMode === 'date' && (
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium"
+            />
+          )}
         </div>
       </div>
 

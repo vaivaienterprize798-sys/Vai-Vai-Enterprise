@@ -47,9 +47,11 @@ export interface InvoiceItem {
   name: string;
   code?: string;
   quantity: number;
-  unit: 'pcs' | 'kg' | 'lot';
+  unit: 'pcs' | 'kg' | 'lot' | 'gm';
   unitPrice: number;
   total: number;
+  inputGrams?: number; // optional tracking when entered as grams
+  rateBasis?: 'per_unit' | 'per_kg' | 'per_gm'; // default rate basis
 }
 
 export interface Invoice {

@@ -921,6 +921,9 @@ export default function App() {
                 attendance={attendance}
                 expenses={allExpensesCombined}
                 staff={staff}
+                branchConsignments={branchConsignments}
+                branchRemittances={branchRemittances}
+                rmbConversions={rmbConversions}
                 onOpenNewInvoice={handleOpenNewInvoice}
                 onOpenStatementsModal={() => setIsStatementSelectorOpen(true)}
                 onSelectTab={(tab) => setCurrentTab(tab)}
@@ -1018,8 +1021,8 @@ export default function App() {
             {/* Worker Tracking Panel (Processing Staff & Product Conversion Output) */}
             {currentTab === 'worker_tracking' && (
               <WorkerTrackingPanel
-                staff={staff}
-                workerTasks={workerTasks}
+                staff={staff || []}
+                workerTasks={workerTasks || []}
                 lang={lang}
                 onSaveTask={handleSaveWorkerTask}
                 onDeleteTask={handleDeleteWorkerTask}
@@ -1027,7 +1030,7 @@ export default function App() {
                   setActiveStatementType('worker_tracking');
                 }}
                 isSuperAdmin={isSuperAdmin || isHeadSupervisor}
-                workerConversions={workerConversions}
+                workerConversions={workerConversions || []}
                 onSaveWorkerConversion={handleSaveWorkerConversion}
                 onDeleteWorkerConversion={handleDeleteWorkerConversion}
                 onSaveStaff={handleSaveStaff}

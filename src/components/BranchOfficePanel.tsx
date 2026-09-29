@@ -20,7 +20,11 @@ import {
   CreditCard,
   Edit,
   Edit2,
-  DollarSign
+  DollarSign,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Check,
 } from 'lucide-react';
 import {
   Language,
@@ -32,7 +36,7 @@ import {
   ConsignmentStatus,
   SettlementStatus,
 } from '../types';
-import { formatCurrency, formatNumber, formatDate } from '../lib/translations';
+import { formatCurrency, formatNumber, formatDate, formatSheetNumber } from '../lib/translations';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 import { WeChatShareDropdown } from './WeChatShareDropdown';
 import { CompanyLogo } from './CompanyLogo';
@@ -79,6 +83,14 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   const [selectedConversion, setSelectedConversion] = useState<ThirdPartyRmbConversion | null>(null);
   const [printingConsignment, setPrintingConsignment] = useState<BranchConsignment | null>(null);
   const [isBranchStatementModalOpen, setIsBranchStatementModalOpen] = useState(false);
+  const [statementType, setStatementType] = useState<'third_party' | 'consignments' | 'remittances' | 'combined'>('third_party');
+
+  // Month & Date Filter States (User Requirement)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [filterPeriodMode, setFilterPeriodMode] = useState<'all' | 'today' | 'month' | 'date'>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [showChinaBdtHistory, setShowChinaBdtHistory] = useState(false);
 
   // Full Edit States across all modules
   const [editingConsignment, setEditingConsignment] = useState<BranchConsignment | null>(null);
@@ -287,6 +299,40 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   const [payAccount, setPayAccount] = useState('');
   const [payNotes, setPayNotes] = useState('');
 
+  // Month navigation helpers
+  const handlePrevMonth = () => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    setSelectedMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const handleNextMonth = () => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const next = new Date(y, m, 1);
+    setSelectedMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const isDateInFilter = (dateStr: string) => {
+    if (!dateStr) return true;
+    if (filterPeriodMode === 'all') return true;
+    if (filterPeriodMode === 'today') return dateStr === todayStr;
+    if (filterPeriodMode === 'date') return dateStr === selectedDate;
+    if (filterPeriodMode === 'month') return dateStr.startsWith(selectedMonth);
+    return true;
+  };
+
+  const filteredConsignments = useMemo(() => {
+    return consignments.filter((c) => isDateInFilter(c.date));
+  }, [consignments, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
+
+  const filteredRemittances = useMemo(() => {
+    return remittances.filter((r) => isDateInFilter(r.date));
+  }, [remittances, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
+
+  const filteredConversions = useMemo(() => {
+    return conversions.filter((cv) => isDateInFilter(cv.date));
+  }, [conversions, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
+
   // KPI Calculations
   const metrics = useMemo(() => {
     const totalBdtSent = consignments.reduce((acc, c) => acc + (Number(c.totalBdtValue) || 0), 0);
@@ -301,6 +347,11 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     const rmbBalanceInHand = Math.max(0, totalRmbReceived - totalRmbConverted);
     const branchNetRmbDue = totalRmbEstSent > 0 ? (totalRmbEstSent - totalRmbReceived) : 0;
 
+    // User exact calculation:
+    // Total Stock BDT থেকে RMB Converted BDT বিয়োগ (-) হয়ে স্বয়ংক্রয়ভাবে হিসাব দেখাবে এবং স্ক্রিনে শো করবে যে চায়না অফিসে আমার স্টক বা বিডিটি টাকার কত অংশ অবশিষ্টাংশ (Remaining/Due) বাকি আছে
+    const rmbConvertedBdt = totalExpectedBdt > 0 ? totalExpectedBdt : totalBdtReceived;
+    const chinaRemainingStockBdt = totalBdtSent - rmbConvertedBdt;
+
     return {
       totalBdtSent,
       totalRmbEstSent,
@@ -311,8 +362,64 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
       totalExpectedBdt,
       totalThirdPartyDueBdt,
       branchNetRmbDue,
+      rmbConvertedBdt,
+      chinaRemainingStockBdt,
     };
   }, [consignments, remittances, conversions]);
+
+  // Comprehensive China Stock BDT & RMB Conversion History Ledger
+  const chinaBdtHistoryLedger = useMemo(() => {
+    type LedgerEntry = {
+      id: string;
+      date: string;
+      type: 'consignment_sent' | 'rmb_converted';
+      title: string;
+      refNo: string;
+      stockDebitBdt: number;
+      convertedCreditBdt: number;
+      runningBalanceBdt: number;
+    };
+
+    const entries: Omit<LedgerEntry, 'runningBalanceBdt'>[] = [];
+
+    consignments.forEach((c) => {
+      entries.push({
+        id: `c-${c.id}`,
+        date: c.date,
+        type: 'consignment_sent',
+        title: lang === 'bn' ? `মাল চালান প্রেরণ (${c.branchName})` : `Consignment Sent (${c.branchName})`,
+        refNo: c.consignmentNo,
+        stockDebitBdt: Number(c.totalBdtValue) || 0,
+        convertedCreditBdt: 0,
+      });
+    });
+
+    conversions.forEach((cv) => {
+      const bdtAmount = Number(cv.expectedBdtAmount) || Number(cv.receivedBdtAmount) || 0;
+      entries.push({
+        id: `cv-${cv.id}`,
+        date: cv.date,
+        type: 'rmb_converted',
+        title: lang === 'bn' ? `৩য়-পক্ষ RMB কনভার্সন (${cv.partyName || 'Agent'})` : `3rd Party RMB Converted (${cv.partyName || 'Agent'})`,
+        refNo: cv.voucherNo,
+        stockDebitBdt: 0,
+        convertedCreditBdt: bdtAmount,
+      });
+    });
+
+    entries.sort((a, b) => (a.date > b.date ? 1 : -1));
+
+    let currentBalance = 0;
+    const result: LedgerEntry[] = entries.map((entry) => {
+      currentBalance = currentBalance + entry.stockDebitBdt - entry.convertedCreditBdt;
+      return {
+        ...entry,
+        runningBalanceBdt: currentBalance,
+      };
+    });
+
+    return result;
+  }, [consignments, conversions, lang]);
 
   // Consignment Item Handlers
   const handleAddItemRow = () => {
@@ -577,6 +684,95 @@ _${companyInfo.name}_`;
         </div>
       </div>
 
+      {/* Month & Date Filter Toolbar for Branch Office Sheets (User Requirement) */}
+      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-cyan-400" />
+          <span className="font-bold text-slate-200">
+            {lang === 'bn' ? 'শাখা ও আরএমবি শিটের তারিখ বা মাস নির্বাচন:' : 'Filter Branch Sheets by Month/Date:'}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl bg-slate-800 p-1 border border-slate-700 font-medium">
+            <button
+              onClick={() => setFilterPeriodMode('all')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'all'
+                  ? 'bg-cyan-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'সব সময় (All)' : 'All Time'}
+            </button>
+            <button
+              onClick={() => setFilterPeriodMode('today')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'today'
+                  ? 'bg-cyan-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'আজকের (Today)' : 'Today'}
+            </button>
+            <button
+              onClick={() => setFilterPeriodMode('month')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'month'
+                  ? 'bg-cyan-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'নির্দিষ্ট মাস (Month)' : 'Month'}
+            </button>
+            <button
+              onClick={() => setFilterPeriodMode('date')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'date'
+                  ? 'bg-cyan-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'নির্দিষ্ট তারিখ (Date)' : 'Date'}
+            </button>
+          </div>
+
+          {filterPeriodMode === 'month' && (
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded-xl">
+              <button
+                onClick={handlePrevMonth}
+                className="p-1 rounded hover:bg-slate-700 text-slate-300"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent text-white font-mono text-xs focus:outline-hidden cursor-pointer"
+              />
+              <button
+                onClick={handleNextMonth}
+                className="p-1 rounded hover:bg-slate-700 text-slate-300"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {filterPeriodMode === 'date' && (
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded-xl">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-white font-mono text-xs focus:outline-hidden cursor-pointer"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* KPI Cards Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Card 1: Sent to Branch */}
@@ -643,6 +839,126 @@ _${companyInfo.name}_`;
             {lang === 'bn' ? 'প্রাপ্ত BDT:' : 'Received BDT:'} <span className="font-mono font-bold text-emerald-600">{formatCurrency(metrics.totalBdtReceived, lang)}</span>
           </div>
         </div>
+      </div>
+
+      {/* USER REQUIREMENT: Total RMB Remitted-এর ঠিক নিচে মোট BDT টাকার কার্ড এবং হিস্ট্রি যোগ */}
+      <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 border border-sky-600/50 p-4 sm:p-5 rounded-2xl text-white shadow-md space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-800/60 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-sky-500/20 text-cyan-300 border border-sky-400/40">
+                {lang === 'bn' ? 'চীন অফিস মোট BDT টাকার হিসাব ও ব্যালেন্স' : 'China Office Stock BDT Status'}
+              </span>
+              <span className="text-[11px] text-slate-300 font-mono">
+                Total Stock BDT (-) RMB Converted BDT
+              </span>
+            </div>
+            <h3 className="text-base sm:text-lg font-black text-white mt-1 flex items-center gap-2">
+              <Banknote className="w-5 h-5 text-cyan-400" />
+              <span>{lang === 'bn' ? 'চীন অফিসে স্টক ও টাকার অবশিষ্টাংশ স্থিতি (Remaining / Due)' : 'China Office Remaining Stock & BDT Due Status'}</span>
+            </h3>
+          </div>
+
+          <button
+            onClick={() => setShowChinaBdtHistory(!showChinaBdtHistory)}
+            className="px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all self-start sm:self-auto shadow-sm"
+          >
+            <Clock className="w-4 h-4" />
+            <span>{showChinaBdtHistory ? (lang === 'bn' ? 'হিস্ট্রি লুকান' : 'Hide History') : (lang === 'bn' ? 'টাকা ও স্টক হিস্ট্রি দেখুন' : 'View BDT History Ledger')}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          {/* 1. Total Stock Sent BDT */}
+          <div className="p-3.5 bg-white/5 border border-white/10 rounded-xl space-y-1">
+            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+              {lang === 'bn' ? '১. শাখা অফিসে মোট প্রেরিত স্টক (BDT)' : '1. Total Stock Sent (BDT)'}
+            </span>
+            <div className="text-xl sm:text-2xl font-black font-mono text-white">
+              {formatCurrency(metrics.totalBdtSent, lang)}
+            </div>
+            <p className="text-[10px] text-slate-400 font-mono">
+              {consignments.length} {lang === 'bn' ? 'টি চালান পাঠানো হয়েছে' : 'consignments sent'}
+            </p>
+          </div>
+
+          {/* 2. Total RMB Converted to BDT */}
+          <div className="p-3.5 bg-white/5 border border-white/10 rounded-xl space-y-1">
+            <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">
+              {lang === 'bn' ? '২. (-) RMB হতে কনভার্ট হওয়া মোট টাকা (BDT)' : '2. (-) Total RMB Converted to BDT'}
+            </span>
+            <div className="text-xl sm:text-2xl font-black font-mono text-emerald-400">
+              {formatCurrency(metrics.rmbConvertedBdt, lang)}
+            </div>
+            <p className="text-[10px] text-slate-400 font-mono">
+              {conversions.length} {lang === 'bn' ? 'টি RMB কনভার্শন সম্পন্ন' : 'conversions recorded'}
+            </p>
+          </div>
+
+          {/* 3. China Remaining Due BDT */}
+          <div className="p-3.5 bg-sky-500/15 border border-cyan-400/50 rounded-xl space-y-1">
+            <span className="text-[11px] font-black text-cyan-300 uppercase tracking-wider">
+              {lang === 'bn' ? '৩. (=) চায়না অফিসে অবশিষ্টাংশ / পাওনা (Remaining/Due)' : '3. (=) China Office Remaining / Due BDT'}
+            </span>
+            <div className="text-xl sm:text-2xl font-black font-mono text-cyan-300">
+              {formatCurrency(metrics.chinaRemainingStockBdt, lang)}
+            </div>
+            <p className="text-[10px] text-cyan-200/90 font-mono">
+              = ৳{(metrics.totalBdtSent ?? 0).toLocaleString()} - ৳{(metrics.rmbConvertedBdt ?? 0).toLocaleString()}
+            </p>
+          </div>
+        </div>
+
+        {/* China BDT History Ledger Table */}
+        {showChinaBdtHistory && (
+          <div className="mt-4 pt-4 border-t border-sky-800/50 space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-sky-200">
+              <span>{lang === 'bn' ? 'চীন অফিস স্টক প্রেরণ ও RMB কনভার্শন সমন্বিত হিস্ট্রি লেজার:' : 'China Stock Sent & RMB Conversion Transaction Ledger:'}</span>
+              <span className="text-[11px] font-mono text-slate-400">{chinaBdtHistoryLedger.length} {lang === 'bn' ? 'টি লেনদেন' : 'transactions'}</span>
+            </div>
+            <div className="overflow-x-auto max-h-72 border border-slate-700/60 rounded-xl">
+              <table className="w-full text-left text-xs text-slate-200">
+                <thead className="bg-slate-800/90 text-[10px] uppercase font-bold text-slate-400 sticky top-0">
+                  <tr>
+                    <th className="p-2.5">তারিখ</th>
+                    <th className="p-2.5">লেনদেনের বিবরণ & রেফারেন্স</th>
+                    <th className="p-2.5 text-right">স্টক বৃদ্ধি (+) BDT</th>
+                    <th className="p-2.5 text-right">RMB কনভার্ট (-) BDT</th>
+                    <th className="p-2.5 text-right">অবশিষ্টাংশ ব্যালেন্স BDT</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-mono">
+                  {chinaBdtHistoryLedger.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-4 text-center text-slate-500 font-sans">
+                        {lang === 'bn' ? 'কোনো লেনদেন হিস্ট্রি পাওয়া যায়নি।' : 'No transaction history found.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    chinaBdtHistoryLedger.map((row) => (
+                      <tr key={row.id} className="hover:bg-white/5">
+                        <td className="p-2.5 text-slate-300">{row.date}</td>
+                        <td className="p-2.5 font-sans">
+                          <span className="font-semibold text-white">{row.title}</span>
+                          <span className="ml-2 text-[10px] text-cyan-400 font-mono">#{row.refNo}</span>
+                        </td>
+                        <td className="p-2.5 text-right font-bold text-blue-400">
+                          {row.stockDebitBdt > 0 ? `+৳${row.stockDebitBdt.toLocaleString()}` : '-'}
+                        </td>
+                        <td className="p-2.5 text-right font-bold text-emerald-400">
+                          {row.convertedCreditBdt > 0 ? `-৳${row.convertedCreditBdt.toLocaleString()}` : '-'}
+                        </td>
+                        <td className="p-2.5 text-right font-bold text-cyan-300">
+                          ৳{row.runningBalanceBdt.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sub Navigation Tabs */}
@@ -825,14 +1141,14 @@ _${companyInfo.name}_`;
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {consignments.length === 0 ? (
+                {filteredConsignments.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-8 text-center text-slate-400">
-                      {lang === 'bn' ? 'এখনো কোনো মালামাল পাঠানো হয়নি।' : 'No consignments found.'}
+                      {lang === 'bn' ? 'কোনো মালামাল বা চালান পাওয়া যায়নি।' : 'No consignments found.'}
                     </td>
                   </tr>
                 ) : (
-                  consignments.map((c) => (
+                  filteredConsignments.map((c) => (
                     <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                       <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
                         <div>{c.consignmentNo}</div>
@@ -846,7 +1162,7 @@ _${companyInfo.name}_`;
                         <div className="space-y-0.5 max-w-xs">
                           {c.items.map((it, idx) => (
                             <span key={idx} className="inline-block mr-1 text-[11px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-mono">
-                              {it.name}: <strong>{it.quantity} {it.unit}</strong>
+                              {it.name}: <strong>{formatSheetNumber(it.quantity, lang)} {it.unit}</strong>
                             </span>
                           ))}
                         </div>
@@ -939,14 +1255,14 @@ _${companyInfo.name}_`;
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {remittances.length === 0 ? (
+                {filteredRemittances.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-slate-400">
                       {lang === 'bn' ? 'কোনো RMB প্রাপ্তির তথ্য পাওয়া যায়নি।' : 'No remittances found.'}
                     </td>
                   </tr>
                 ) : (
-                  remittances.map((r) => (
+                  filteredRemittances.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                       <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
                         <div>{r.referenceNo}</div>
@@ -1038,14 +1354,14 @@ _${companyInfo.name}_`;
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {conversions.length === 0 ? (
+                {filteredConversions.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-8 text-center text-slate-400">
                       {lang === 'bn' ? 'কোনো কনভার্শন লেনদেন পাওয়া যায়নি।' : 'No conversions found.'}
                     </td>
                   </tr>
                 ) : (
-                  conversions.map((cv) => (
+                  filteredConversions.map((cv) => (
                     <tr key={cv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                       <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
                         <div>{cv.voucherNo}</div>
@@ -1796,145 +2112,638 @@ _${companyInfo.name}_`;
         </div>
       )}
 
-      {/* INDEPENDENT BRANCH STATEMENT PREVIEW MODAL */}
+      {/* INDEPENDENT BRANCH STATEMENT PREVIEW & SELECTION MODAL (User Requirement) */}
       {isBranchStatementModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto backdrop-blur-xs">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-4xl p-6 sm:p-8 space-y-6 shadow-2xl my-6 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-4xl p-6 sm:p-8 space-y-5 shadow-2xl my-6 max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-start border-b pb-4">
               <div className="flex items-center gap-3">
                 <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-12 h-12" />
                 <div>
                   <h1 className="text-xl font-black uppercase tracking-tight">{companyInfo.name}</h1>
                   <p className="text-xs text-slate-500">{companyInfo.address} • {companyInfo.phones?.join(', ')}</p>
-                  <p className="text-xs font-semibold text-blue-700 mt-0.5">শাখা অফিস ও ৩য়-পক্ষ আরএমবি/টাকা পূর্ণ বিবরণী (A4 Statement)</p>
+                  <p className="text-xs font-semibold text-blue-700 mt-0.5">
+                    {lang === 'bn' ? 'শাখা ও আরএমবি পৃথক বিবরণী প্রিন্ট ও শেয়ার সেন্টার' : 'Branch Office & RMB Statement Center'}
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsBranchStatementModalOpen(false)}
-                className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Summary KPIs */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border text-xs">
-              <div>
-                <span className="text-slate-500 block font-medium">প্রেরিত মোট চালান (BDT):</span>
-                <span className="font-bold text-sm text-slate-900 font-mono">৳{(metrics.totalBdtSent ?? 0).toLocaleString()}</span>
-                <span className="block text-[10px] text-cyan-700 font-mono">≈ ¥{(metrics.totalRmbEstSent ?? 0).toLocaleString()}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block font-medium">শাখা হতে প্রাপ্ত RMB:</span>
-                <span className="font-bold text-sm text-cyan-600 font-mono">¥{(metrics.totalRmbReceived ?? 0).toLocaleString()}</span>
-                <span className="block text-[10px] text-slate-500">মোট {remittances.length} টি প্রাপ্তি</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block font-medium">হাতে অবশিষ্ট RMB:</span>
-                <span className="font-bold text-sm text-emerald-600 font-mono">¥{(metrics.rmbBalanceInHand ?? 0).toLocaleString()}</span>
-                <span className="block text-[10px] text-slate-500">কনভার্ট: ¥{(metrics.totalRmbConverted ?? 0).toLocaleString()}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block font-medium">৩য়-পক্ষ মোট বকেয়া (BDT):</span>
-                <span className="font-bold text-sm text-rose-600 font-mono">৳{(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</span>
-                <span className="block text-[10px] text-emerald-600 font-bold">জমা: ৳{(metrics.totalBdtReceived ?? 0).toLocaleString()}</span>
+            {/* Statement Type Selector Tabs */}
+            <div className="space-y-1.5">
+              <span className="text-xs font-bold text-slate-600 block">
+                {lang === 'bn' ? 'কোন বিবরণীটি প্রিন্ট বা শেয়ার করতে চান নির্বাচন করুন:' : 'Select Statement to Print or Share:'}
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <button
+                  onClick={() => setStatementType('third_party')}
+                  className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                    statementType === 'third_party'
+                      ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-sm ring-2 ring-amber-400'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{lang === 'bn' ? '১. ৩য়-পক্ষ RMB কনভার্সন' : '1. 3rd Party RMB'}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {lang === 'bn' ? 'পার্টিকে দেওয়ার জন্য (চায়না চালান বা খরচ গোপন থাকবে)' : 'For 3rd party brokers without China costs'}
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => setStatementType('consignments')}
+                  className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                    statementType === 'consignments'
+                      ? 'border-blue-500 bg-blue-50 text-blue-900 shadow-sm ring-2 ring-blue-400'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <Send className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{lang === 'bn' ? '২. প্রেরিত মাল চালান' : '2. Sent Consignments'}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {lang === 'bn' ? 'চীন শাখা অফিসে প্রেরিত সকল পণ্যের তালিকা' : 'Goods exported to China branch'}
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => setStatementType('remittances')}
+                  className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                    statementType === 'remittances'
+                      ? 'border-cyan-500 bg-cyan-50 text-cyan-900 shadow-sm ring-2 ring-cyan-400'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <Coins className="w-3.5 h-3.5 text-cyan-600" />
+                    <span>{lang === 'bn' ? '৩. শাখা RMB প্রাপ্তি' : '3. Branch RMB Inflow'}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {lang === 'bn' ? 'চীন শাখা হতে পাওয়া সকল RMB রেমিট্যান্স' : 'All RMB received from China'}
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => setStatementType('combined')}
+                  className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                    statementType === 'combined'
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-900 shadow-sm ring-2 ring-indigo-400'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <Building className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>{lang === 'bn' ? '৪. সার্বিক পূর্ণ বিবরণী' : '4. Combined Statement'}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {lang === 'bn' ? 'মালিকদের অভ্যন্তরীণ সব খাতা একসাথে' : 'Full internal consolidated sheet'}
+                  </p>
+                </button>
               </div>
             </div>
 
-            {/* Consignments List */}
-            <div>
-              <h3 className="font-bold text-xs uppercase text-slate-700 mb-2">১. শাখা অফিসে প্রেরিত চালানসমূহ (Dispatches)</h3>
-              <table className="w-full text-left text-xs border">
-                <thead className="bg-slate-100 font-bold text-[11px]">
-                  <tr>
-                    <th className="p-2 border">তারিখ ও চালান নং</th>
-                    <th className="p-2 border">শাখা ও গন্তব্য</th>
-                    <th className="p-2 border">শিপিং / ট্র্যাকিং</th>
-                    <th className="p-2 border text-right">আইটেম সংখ্যা</th>
-                    <th className="p-2 border text-right">মোট মূল্য (BDT)</th>
-                    <th className="p-2 border text-right">RMB (¥)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {consignments.slice(0, 10).map((c) => (
-                    <tr key={c.id} className="border-b">
-                      <td className="p-2 border font-mono">
-                        <span className="font-bold">{c.consignmentNo}</span>
-                        <div className="text-[10px] text-slate-400">{c.date}</div>
-                      </td>
-                      <td className="p-2 border font-medium">{c.branchName}</td>
-                      <td className="p-2 border">{c.shippingMethod} {c.trackingNo ? `(${c.trackingNo})` : ''}</td>
-                      <td className="p-2 border text-right font-mono">{c.items?.reduce((s, i) => s + (Number(i.quantity) || 0), 0) || 0}</td>
-                      <td className="p-2 border text-right font-mono font-bold">৳{(c.totalBdtValue || 0).toLocaleString()}</td>
-                      <td className="p-2 border text-right font-mono text-cyan-700">¥{(c.totalRmbEstimated ?? 0).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {/* PREVIEW: 1. Third Party RMB Statement */}
+            {statementType === 'third_party' && (
+              <div className="border border-amber-200 rounded-2xl p-4 bg-amber-50/30 space-y-3">
+                <div className="flex items-center justify-between border-b border-amber-200 pb-2">
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900">
+                      {lang === 'bn' ? '৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া স্টেটমেন্ট প্রিভিউ' : '3rd Party RMB to BDT Statement Preview'}
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {lang === 'bn' ? 'এতে শুধু মানি এক্সচেঞ্জ লেনদেন ও দেনা-পাওনা থাকবে' : 'Money exchange & payment balance only'}
+                    </p>
+                  </div>
+                  <div className="text-right font-mono">
+                    <span className="text-xs font-bold text-rose-600">মোট বাকি: ৳{(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</span>
+                  </div>
+                </div>
 
-            {/* 3rd Party RMB Conversions */}
-            <div>
-              <h3 className="font-bold text-xs uppercase text-slate-700 mb-2">২. ৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও বকেয়া</h3>
-              <table className="w-full text-left text-xs border">
-                <thead className="bg-slate-100 font-bold text-[11px]">
-                  <tr>
-                    <th className="p-2 border">তারিখ ও ভাউচার</th>
-                    <th className="p-2 border">৩য়-পক্ষ পার্টি</th>
-                    <th className="p-2 border text-right">RMB পরিমাণ</th>
-                    <th className="p-2 border text-right">রেট</th>
-                    <th className="p-2 border text-right">মোট প্রাপ্য (BDT)</th>
-                    <th className="p-2 border text-right">জমা (BDT)</th>
-                    <th className="p-2 border text-right">বাকি (BDT)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {conversions.slice(0, 10).map((cv) => (
-                    <tr key={cv.id} className="border-b">
-                      <td className="p-2 border font-mono">
-                        <span className="font-bold">{cv.voucherNo}</span>
-                        <div className="text-[10px] text-slate-400">{cv.date}</div>
-                      </td>
-                      <td className="p-2 border font-medium">{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
-                      <td className="p-2 border text-right font-mono font-bold text-cyan-700">¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}</td>
-                      <td className="p-2 border text-right font-mono">{cv.exchangeRate || 0}</td>
-                      <td className="p-2 border text-right font-mono font-bold">৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}</td>
-                      <td className="p-2 border text-right font-mono text-emerald-600">৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}</td>
-                      <td className="p-2 border text-right font-mono font-bold text-rose-600">
-                        {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                <div className="overflow-x-auto max-h-60 border rounded-xl bg-white">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600">
+                      <tr>
+                        <th className="p-2">ভাউচার & তারিখ</th>
+                        <th className="p-2">পার্টি নাম</th>
+                        <th className="p-2 text-right">RMB (¥)</th>
+                        <th className="p-2 text-center">রেট</th>
+                        <th className="p-2 text-right">প্রাপ্য BDT</th>
+                        <th className="p-2 text-right">জমা BDT</th>
+                        <th className="p-2 text-right text-rose-600">বাকি BDT</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-[11px]">
+                      {conversions.slice(0, 8).map((cv) => (
+                        <tr key={cv.id}>
+                          <td className="p-2 font-mono font-bold">{cv.voucherNo}<div className="text-[10px] text-slate-400 font-normal">{cv.date}</div></td>
+                          <td className="p-2 font-semibold">{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
+                          <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}</td>
+                          <td className="p-2 text-center font-mono">{cv.exchangeRate || 0}</td>
+                          <td className="p-2 text-right font-mono font-bold">৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}</td>
+                          <td className="p-2 text-right font-mono text-emerald-600">৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}</td>
+                          <td className="p-2 text-right font-mono font-bold text-rose-600">
+                            {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
-            <div className="flex justify-between items-center pt-4 border-t">
+            {/* PREVIEW: 2. Consignments Sent Statement */}
+            {statementType === 'consignments' && (
+              <div className="border border-blue-200 rounded-2xl p-4 bg-blue-50/30 space-y-3">
+                <div className="flex items-center justify-between border-b border-blue-200 pb-2">
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900">
+                      {lang === 'bn' ? 'চীন শাখা অফিসে প্রেরিত মালামাল চালান বিবরণী প্রিভিউ' : 'Consignments Sent to China Branch Preview'}
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {lang === 'bn' ? 'মোট প্রেরিত স্টক মূল্য: ৳' + (metrics.totalBdtSent ?? 0).toLocaleString() : 'Total stock sent'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto max-h-60 border rounded-xl bg-white">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600">
+                      <tr>
+                        <th className="p-2">চালান নং & তারিখ</th>
+                        <th className="p-2">শাখা ও গন্তব্য</th>
+                        <th className="p-2">আইটেম বিবরণ</th>
+                        <th className="p-2 text-right">মূল্য (BDT)</th>
+                        <th className="p-2 text-right">RMB (¥)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-[11px]">
+                      {consignments.slice(0, 8).map((c) => (
+                        <tr key={c.id}>
+                          <td className="p-2 font-mono font-bold">{c.consignmentNo}<div className="text-[10px] text-slate-400 font-normal">{c.date}</div></td>
+                          <td className="p-2">{c.branchName}</td>
+                          <td className="p-2">{c.items?.map((i) => `${i.name} (${formatSheetNumber(i.quantity, lang)} ${i.unit})`).join(', ')}</td>
+                          <td className="p-2 text-right font-mono font-bold">৳{(c.totalBdtValue || 0).toLocaleString()}</td>
+                          <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{(c.totalRmbEstimated ?? 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* PREVIEW: 3. Remittances Statement */}
+            {statementType === 'remittances' && (
+              <div className="border border-cyan-200 rounded-2xl p-4 bg-cyan-50/30 space-y-3">
+                <div className="flex items-center justify-between border-b border-cyan-200 pb-2">
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900">
+                      {lang === 'bn' ? 'চীন শাখা হতে প্রাপ্ত RMB রেমিট্যান্স হিস্ট্রি প্রিভিউ' : 'China Branch RMB Remittances Preview'}
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {lang === 'bn' ? 'মোট প্রাপ্ত RMB: ¥' + (metrics.totalRmbReceived ?? 0).toLocaleString() : 'Total RMB Received'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto max-h-60 border rounded-xl bg-white">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600">
+                      <tr>
+                        <th className="p-2">রেফারেন্স নং & তারিখ</th>
+                        <th className="p-2">শাখা অফিস</th>
+                        <th className="p-2">মাধ্যম (Channel)</th>
+                        <th className="p-2 text-right">প্রাপ্ত RMB (¥)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-[11px]">
+                      {remittances.slice(0, 8).map((r) => (
+                        <tr key={r.id}>
+                          <td className="p-2 font-mono font-bold">{r.referenceNo}<div className="text-[10px] text-slate-400 font-normal">{r.date}</div></td>
+                          <td className="p-2">{r.branchName}</td>
+                          <td className="p-2">{r.receivedVia}</td>
+                          <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{(r.rmbAmount || 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* PREVIEW: 4. Combined Statement */}
+            {statementType === 'combined' && (
+              <div className="border border-indigo-200 rounded-2xl p-4 bg-indigo-50/30 space-y-3">
+                <div className="flex items-center justify-between border-b border-indigo-200 pb-2">
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900">
+                      {lang === 'bn' ? 'সার্বিক কমপ্লিট শাখা ও আরএমবি বিবরণী প্রিভিউ' : 'Combined Full Branch Statement Preview'}
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {lang === 'bn' ? 'চালান, আরএমবি এবং ৩য়-পক্ষ সব হিসাব সমন্বিত' : 'Consignments, Remittances, and Conversions'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-white p-3 rounded-xl border">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">মোট প্রেরিত স্টক:</span>
+                    <strong>৳{(metrics.totalBdtSent ?? 0).toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">শাখা RMB প্রাপ্তি:</span>
+                    <strong className="text-cyan-700">¥{(metrics.totalRmbReceived ?? 0).toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">RMB ব্যালেন্স:</span>
+                    <strong className="text-emerald-600">¥{(metrics.rmbBalanceInHand ?? 0).toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">চীন অবশিষ্ট পাওনা:</span>
+                    <strong className="text-cyan-600">৳{(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Footer Controls */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t">
               <div className="text-xs text-slate-500">
                 মুদ্রণ তারিখ: {new Date().toLocaleDateString('bn-BD')}
               </div>
-              <div className="flex items-center gap-2">
+
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setIsBranchStatementModalOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 cursor-pointer font-bold text-xs"
                 >
                   বন্ধ করুন
                 </button>
+
+                {/* Print button for the active statement */}
                 <button
-                  onClick={() => executePrint('rsr-branch-office-statement', 'RSR Vai Vai Enterprise - Branch Office Statement')}
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-md"
+                  onClick={() => {
+                    const targetId =
+                      statementType === 'third_party'
+                        ? 'rsr-3rd-party-rmb-statement'
+                        : statementType === 'consignments'
+                        ? 'rsr-china-consignments-statement'
+                        : statementType === 'remittances'
+                        ? 'rsr-china-remittances-statement'
+                        : 'rsr-branch-office-statement';
+                    const docTitle =
+                      statementType === 'third_party'
+                        ? 'RSR - 3rd Party RMB Statement'
+                        : statementType === 'consignments'
+                        ? 'RSR - China Consignments Statement'
+                        : statementType === 'remittances'
+                        ? 'RSR - China Remittances Statement'
+                        : 'RSR - Branch Office Full Statement';
+                    executePrint(targetId, docTitle);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-md"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>প্রিন্ট করুন (1-Page A4)</span>
+                  <span>{lang === 'bn' ? 'প্রিন্ট করুন (A4)' : 'Print A4'}</span>
                 </button>
+
+                {/* WhatsApp Share for active statement */}
+                <WhatsAppShareDropdown
+                  lang={lang}
+                  buttonLabel={lang === 'bn' ? 'হোয়াটসঅ্যাপ' : 'WhatsApp'}
+                  targetElementId={
+                    statementType === 'third_party'
+                      ? 'rsr-3rd-party-rmb-statement'
+                      : statementType === 'consignments'
+                      ? 'rsr-china-consignments-statement'
+                      : statementType === 'remittances'
+                      ? 'rsr-china-remittances-statement'
+                      : 'rsr-branch-office-statement'
+                  }
+                  fileName={`rsr-${statementType}-statement.png`}
+                  getText={() => {
+                    if (statementType === 'third_party') {
+                      return `*${companyInfo.name} - ৩য়-পক্ষ RMB টু BDT হিসাব*
+📅 তারিখ: ${new Date().toISOString().split('T')[0]}
+━━━━━━━━━━━━━━━━━━━━
+🔄 কনভার্ট কৃত RMB: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}
+💵 প্রাপ্ত মোট টাকা: ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}
+⚠️ ৩য়-পক্ষের কাছে বকেয়া বাকি: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}
+━━━━━━━━━━━━━━━━━━━━
+_${companyInfo.name}_`;
+                    }
+                    if (statementType === 'consignments') {
+                      return `*${companyInfo.name} - চীন শাখা অফিসে প্রেরিত চালান বিবরণী*
+📅 তারিখ: ${new Date().toISOString().split('T')[0]}
+━━━━━━━━━━━━━━━━━━━━
+📦 মোট চালান সংখ্যা: ${consignments.length} টি
+💰 মোট প্রেরিত স্টক মূল্য: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} (≈ ¥${(metrics.totalRmbEstSent ?? 0).toLocaleString()})
+━━━━━━━━━━━━━━━━━━━━
+_${companyInfo.name}_`;
+                    }
+                    if (statementType === 'remittances') {
+                      return `*${companyInfo.name} - চীন শাখা অফিস RMB প্রাপ্তি বিবরণী*
+📅 তারিখ: ${new Date().toISOString().split('T')[0]}
+━━━━━━━━━━━━━━━━━━━━
+🪙 শাখা হতে প্রাপ্ত মোট RMB: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}
+━━━━━━━━━━━━━━━━━━━━
+_${companyInfo.name}_`;
+                    }
+                    return `*${companyInfo.name} - সার্বিক শাখা অফিস ও আরএমবি স্টেটমেন্ট*
+📅 তারিখ: ${new Date().toISOString().split('T')[0]}
+━━━━━━━━━━━━━━━━━━━━
+📦 প্রেরিত মাল: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()}
+💰 শাখা RMB প্রাপ্তি: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}
+🔄 ৩য়-পক্ষ কনভার্ট: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}
+💵 প্রাপ্ত টাকা: ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}
+⚠️ ৩য়-পক্ষ বাকি: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}
+🇨🇳 চীন অবশিষ্ট পাওনা: ৳${(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}
+━━━━━━━━━━━━━━━━━━━━
+_${companyInfo.name}_`;
+                  }}
+                />
+
+                {/* WeChat Share for active statement */}
+                <WeChatShareDropdown
+                  lang={lang}
+                  buttonLabel={lang === 'bn' ? 'উইচ্যাট' : 'WeChat'}
+                  targetElementId={
+                    statementType === 'third_party'
+                      ? 'rsr-3rd-party-rmb-statement'
+                      : statementType === 'consignments'
+                      ? 'rsr-china-consignments-statement'
+                      : statementType === 'remittances'
+                      ? 'rsr-china-remittances-statement'
+                      : 'rsr-branch-office-statement'
+                  }
+                  fileName={`rsr-wechat-${statementType}-statement.png`}
+                  getText={() => {
+                    return `${companyInfo.name} - Branch Office Statement\nType: ${statementType}\nDate: ${new Date().toISOString().split('T')[0]}`;
+                  }}
+                />
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* OFF-SCREEN 1-PAGE A4 CAPTURE ELEMENT FOR WHATSAPP, WECHAT AND DIRECT PRINT */}
+      {/* OFF-SCREEN 1-PAGE A4 CAPTURE ELEMENTS (4 DISTINCT TARGETS) */}
       <div style={{ position: 'absolute', left: '-9999px', top: 0, opacity: 1, pointerEvents: 'none', zIndex: -100 }}>
+        {/* TARGET 1: 3RD PARTY RMB CONVERSIONS ONLY (NO FACTORY CONSIGNMENTS) */}
+        <div
+          id="rsr-3rd-party-rmb-statement"
+          style={{
+            width: '794px',
+            minHeight: '1123px',
+            backgroundColor: '#ffffff',
+            color: '#0f172a',
+            padding: '32px',
+            boxSizing: 'border-box',
+            fontFamily: "'Hind Siliguri', 'Outfit', sans-serif",
+            fontSize: '11px',
+            lineHeight: 1.4,
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-14 h-14" />
+              <div>
+                <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px' }}>
+                  {companyInfo.name}
+                </h1>
+                <p style={{ margin: '1px 0', fontSize: '11px', color: '#475569' }}>
+                  {companyInfo.businessTypeBn}
+                </p>
+                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>
+                  {companyInfo.address} • মোবা: {(companyInfo.phones || []).join(', ')}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ display: 'inline-block', backgroundColor: '#fef3c7', color: '#92400e', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>
+                ৩য়-পক্ষ মানি এক্সচেঞ্জ বিবরণী
+              </div>
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                ৩য়-পক্ষ RMB কনভার্সন ও জমা-বকেয়া খাতা
+              </h2>
+              <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>
+                তারিখ: <strong>{new Date().toISOString().split('T')[0]}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Key Metrics Banner */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ borderLeft: '3px solid #0891b2', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>মোট কনভার্টকৃত RMB</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>¥{(metrics.totalRmbConverted ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>{conversions.length} টি লেনদেন</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #059669', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#059669', textTransform: 'uppercase' }}>মোট জমা প্রাপ্ত টাকা (BDT)</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#059669' }}>৳{(metrics.totalBdtReceived ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>পরিশোধিত অংশ</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #e11d48', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>৩য়-পক্ষের কাছে মোট বকেয়া (BDT)</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#e11d48' }}>৳{(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#e11d48' }}>বর্তমান পাওনা বাকি</div>
+            </div>
+          </div>
+
+          {/* 3rd Party RMB Conversions Table */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '6px', textTransform: 'uppercase' }}>
+              ৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া হিসাব
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                  <th style={{ padding: '6px', textAlign: 'center', width: '28px', border: '1px solid #334155' }}>#</th>
+                  <th style={{ padding: '6px', textAlign: 'left', width: '90px', border: '1px solid #334155' }}>ভাউচার নং</th>
+                  <th style={{ padding: '6px', textAlign: 'left', border: '1px solid #334155' }}>৩য়-পক্ষ পার্টি</th>
+                  <th style={{ padding: '6px', textAlign: 'right', width: '75px', border: '1px solid #334155' }}>RMB (¥)</th>
+                  <th style={{ padding: '6px', textAlign: 'right', width: '50px', border: '1px solid #334155' }}>রেট</th>
+                  <th style={{ padding: '6px', textAlign: 'right', width: '85px', border: '1px solid #334155' }}>প্রাপ্য BDT</th>
+                  <th style={{ padding: '6px', textAlign: 'right', width: '80px', border: '1px solid #334155' }}>জমা BDT</th>
+                  <th style={{ padding: '6px', textAlign: 'right', width: '80px', border: '1px solid #334155' }}>বাকি BDT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {conversions.slice(0, 14).map((cv, idx) => (
+                  <tr key={cv.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                    <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                    <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{cv.voucherNo}</td>
+                    <td style={{ padding: '5px', fontWeight: 600, border: '1px solid #cbd5e1' }}>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                      ¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{cv.exchangeRate || 0}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                      ৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                      ৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: (cv.remainingDueBdt || 0) > 0 ? '#e11d48' : '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                      {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Signatures */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '50px', paddingTop: '16px' }}>
+            <div style={{ textAlign: 'center', width: '160px' }}>
+              <div style={{ borderTop: '1px dashed #64748b', paddingTop: '4px', fontSize: '10px', color: '#334155', fontWeight: 600 }}>
+                ৩য়-পক্ষ এজেন্টের স্বাক্ষর
+              </div>
+            </div>
+            <div style={{ textAlign: 'center', width: '200px' }}>
+              <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontSize: '11px', color: '#0f172a', fontWeight: 700 }}>
+                কর্তৃপক্ষের স্বাক্ষর ও সিলমোহর
+              </div>
+              <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>
+                {companyInfo.name}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* TARGET 2: CHINA CONSIGNMENTS STATEMENT */}
+        <div
+          id="rsr-china-consignments-statement"
+          style={{
+            width: '794px',
+            minHeight: '1123px',
+            backgroundColor: '#ffffff',
+            color: '#0f172a',
+            padding: '32px',
+            boxSizing: 'border-box',
+            fontFamily: "'Hind Siliguri', 'Outfit', sans-serif",
+            fontSize: '11px',
+            lineHeight: 1.4,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-14 h-14" />
+              <div>
+                <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{companyInfo.name}</h1>
+                <p style={{ margin: '1px 0', fontSize: '11px', color: '#475569' }}>{companyInfo.businessTypeBn}</p>
+                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>{companyInfo.address}</p>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ display: 'inline-block', backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>
+                চীন শাখা চালান খাতা
+              </div>
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>চীন শাখা অফিসে প্রেরিত মালামাল চালান বিবরণী</h2>
+              <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>তারিখ: <strong>{new Date().toISOString().split('T')[0]}</strong></div>
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: '16px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                <th style={{ padding: '6px', textAlign: 'center', width: '30px' }}>#</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '90px' }}>চালান নং</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '70px' }}>তারিখ</th>
+                <th style={{ padding: '6px', textAlign: 'left' }}>গন্তব্য ও শিপিং</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '60px' }}>আইটেম</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '100px' }}>মূল্য (BDT)</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '90px' }}>RMB (¥)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {consignments.slice(0, 14).map((c, idx) => (
+                <tr key={c.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                  <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                  <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{c.consignmentNo}</td>
+                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{c.date}</td>
+                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{c.branchName} ({c.shippingMethod})</td>
+                  <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{c.items?.reduce((s, i) => s + (Number(i.quantity) || 0), 0) || 0}</td>
+                  <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>৳{(c.totalBdtValue || 0).toLocaleString()}</td>
+                  <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>¥{(c.totalRmbEstimated ?? 0).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* TARGET 3: CHINA RMB REMITTANCES STATEMENT */}
+        <div
+          id="rsr-china-remittances-statement"
+          style={{
+            width: '794px',
+            minHeight: '1123px',
+            backgroundColor: '#ffffff',
+            color: '#0f172a',
+            padding: '32px',
+            boxSizing: 'border-box',
+            fontFamily: "'Hind Siliguri', 'Outfit', sans-serif",
+            fontSize: '11px',
+            lineHeight: 1.4,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-14 h-14" />
+              <div>
+                <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{companyInfo.name}</h1>
+                <p style={{ margin: '1px 0', fontSize: '11px', color: '#475569' }}>{companyInfo.businessTypeBn}</p>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ display: 'inline-block', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>
+                চীন শাখা RMB প্রাপ্তি
+              </div>
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>চীন শাখা অফিস হতে RMB প্রাপ্তি হিস্ট্রি বিবরণী</h2>
+              <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>তারিখ: <strong>{new Date().toISOString().split('T')[0]}</strong></div>
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: '16px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                <th style={{ padding: '6px', textAlign: 'center', width: '30px' }}>#</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '100px' }}>রেফারেন্স নং</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '80px' }}>তারিখ</th>
+                <th style={{ padding: '6px', textAlign: 'left' }}>শাখা অফিস</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '100px' }}>মাধ্যম</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '110px' }}>প্রাপ্ত RMB (¥)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {remittances.slice(0, 14).map((r, idx) => (
+                <tr key={r.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                  <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                  <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{r.referenceNo}</td>
+                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.date}</td>
+                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.branchName}</td>
+                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.receivedVia}</td>
+                  <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, color: '#0891b2', border: '1px solid #cbd5e1' }}>¥{(r.rmbAmount || 0).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* TARGET 4: COMBINED FULL STATEMENT */}
         <div
           id="rsr-branch-office-statement"
           style={{
@@ -1971,7 +2780,7 @@ _${companyInfo.name}_`;
                 শাখা অফিস & আরএমবি খাতা
               </div>
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                শাখা অফিস ও ৩য়-পক্ষ বিবরণী
+                শাখা অফিস ও ৩য়-পক্ষ সার্বিক পূর্ণ বিবরণী
               </h2>
               <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>
                 তারিখ: <strong>{new Date().toISOString().split('T')[0]}</strong>
@@ -1997,8 +2806,8 @@ _${companyInfo.name}_`;
               <div style={{ fontSize: '9px', color: '#64748b' }}>কনভার্ট: ¥{(metrics.totalRmbConverted ?? 0).toLocaleString()}</div>
             </div>
             <div style={{ borderLeft: '3px solid #e11d48', paddingLeft: '6px' }}>
-              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>৩য়-পক্ষ বকেয়া বাকি</div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#e11d48' }}>৳{(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>চীন অবশিষ্ট পাওনা</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#e11d48' }}>৳{(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}</div>
               <div style={{ fontSize: '9px', color: '#059669' }}>জমা: ৳{(metrics.totalBdtReceived ?? 0).toLocaleString()}</div>
             </div>
           </div>

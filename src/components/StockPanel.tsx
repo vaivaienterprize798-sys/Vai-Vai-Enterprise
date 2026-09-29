@@ -14,6 +14,9 @@ import {
   PackageCheck,
   TrendingDown,
   Calculator,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { StockItem, StockCategory, Language, Invoice } from '../types';
 import {
@@ -21,6 +24,8 @@ import {
   formatCurrency,
   formatNumber,
   formatDate,
+  formatSheetNumber,
+  formatSheetDecimal,
 } from '../lib/translations';
 import { storageService } from '../lib/storage';
 import { CompanyLogo } from './CompanyLogo';
@@ -55,15 +60,42 @@ export const StockPanel: React.FC<StockPanelProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
 
-  // Helper to dynamically calculate Today's Purchase (Stock In) and Today's Sale (Stock Out) per item
-  // Automatically resets to 0 when date changes to a new day, maintaining full historical invoice logs
-  const getTodayItemStats = (itemCode: string, itemNameBn: string, itemNameEn: string) => {
-    let todayIn = 0;
-    let todayOut = 0;
+  // Month & Date Filtering Options for Stock Sheet
+  const [filterPeriodMode, setFilterPeriodMode] = useState<'today' | 'month' | 'date' | 'all'>('today');
+  const [selectedMonth, setSelectedMonth] = useState<string>(todayStr.slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
-    const todayInvoices = allInvoices.filter((inv) => inv.date === todayStr);
+  const handlePrevMonth = () => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    setSelectedMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+  };
 
-    todayInvoices.forEach((inv) => {
+  const handleNextMonth = () => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const next = new Date(y, m, 1);
+    setSelectedMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const isInvoiceInPeriod = (invDate: string) => {
+    if (!invDate) return false;
+    if (filterPeriodMode === 'all') return true;
+    if (filterPeriodMode === 'today') return invDate === todayStr;
+    if (filterPeriodMode === 'date') return invDate === selectedDate;
+    if (filterPeriodMode === 'month') return invDate.startsWith(selectedMonth);
+    return true;
+  };
+
+  const periodInvoices = useMemo(() => {
+    return allInvoices.filter((inv) => isInvoiceInPeriod(inv.date));
+  }, [allInvoices, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
+
+  // Helper to dynamically calculate Purchase (Stock In) and Sale (Stock Out) per item for selected period
+  const getItemStats = (itemCode: string, itemNameBn: string, itemNameEn: string) => {
+    let stockIn = 0;
+    let stockOut = 0;
+
+    periodInvoices.forEach((inv) => {
       inv.items?.forEach((it) => {
         const codeMatch = it.code && itemCode && it.code.trim().toUpperCase() === itemCode.trim().toUpperCase();
         const nameMatch =
@@ -72,30 +104,29 @@ export const StockPanel: React.FC<StockPanelProps> = ({
 
         if (codeMatch || nameMatch) {
           if (inv.mode === 'purchase') {
-            todayIn += Number(it.quantity) || 0;
+            stockIn += Number(it.quantity) || 0;
           } else if (inv.mode === 'sales') {
-            todayOut += Number(it.quantity) || 0;
+            stockOut += Number(it.quantity) || 0;
           }
         }
       });
     });
 
-    return { todayIn, todayOut };
+    return { stockIn, stockOut };
   };
 
-  // Aggregated today totals across all items
-  const { todayTotalIn, todayTotalOut } = useMemo(() => {
+  // Aggregated totals across all items for selected period
+  const { periodTotalIn, periodTotalOut } = useMemo(() => {
     let inSum = 0;
     let outSum = 0;
-    const todayInvoices = allInvoices.filter((inv) => inv.date === todayStr);
-    todayInvoices.forEach((inv) => {
+    periodInvoices.forEach((inv) => {
       inv.items?.forEach((it) => {
         if (inv.mode === 'purchase') inSum += Number(it.quantity) || 0;
         else if (inv.mode === 'sales') outSum += Number(it.quantity) || 0;
       });
     });
-    return { todayTotalIn: inSum, todayTotalOut: outSum };
-  }, [allInvoices, todayStr]);
+    return { periodTotalIn: inSum, periodTotalOut: outSum };
+  }, [periodInvoices]);
 
   // Helper to determine category code abbreviation prefix
   const getCategoryPrefix = (cat: StockCategory): string => {
@@ -376,6 +407,95 @@ export const StockPanel: React.FC<StockPanelProps> = ({
         </button>
       </div>
 
+      {/* Month & Date Filter Toolbar for Stock Sheet (User Requirement) */}
+      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-emerald-400" />
+          <span className="font-bold text-slate-200">
+            {lang === 'bn' ? 'স্টক ইন/আউট হিসাবের তারিখ বা মাস নির্বাচন:' : 'Filter Stock In/Out by Month/Date:'}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl bg-slate-800 p-1 border border-slate-700 font-medium">
+            <button
+              onClick={() => setFilterPeriodMode('all')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'all'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'সব সময় (All)' : 'All Time'}
+            </button>
+            <button
+              onClick={() => setFilterPeriodMode('today')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'today'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'আজকের (Today)' : 'Today'}
+            </button>
+            <button
+              onClick={() => setFilterPeriodMode('month')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'month'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'নির্দিষ্ট মাস (Month)' : 'Month'}
+            </button>
+            <button
+              onClick={() => setFilterPeriodMode('date')}
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterPeriodMode === 'date'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {lang === 'bn' ? 'নির্দিষ্ট তারিখ (Date)' : 'Date'}
+            </button>
+          </div>
+
+          {filterPeriodMode === 'month' && (
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded-xl">
+              <button
+                onClick={handlePrevMonth}
+                className="p-1 rounded hover:bg-slate-700 text-slate-300"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent text-white font-mono text-xs focus:outline-hidden cursor-pointer"
+              />
+              <button
+                onClick={handleNextMonth}
+                className="p-1 rounded hover:bg-slate-700 text-slate-300"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {filterPeriodMode === 'date' && (
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded-xl">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-white font-mono text-xs focus:outline-hidden cursor-pointer"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Stock Search & Valuation Summary */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
@@ -391,16 +511,16 @@ export const StockPanel: React.FC<StockPanelProps> = ({
 
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-semibold">
-            <span>{t.todayStockInTotal}:</span>
+            <span>{filterPeriodMode === 'today' ? t.todayStockInTotal : (lang === 'bn' ? 'মোট মাল স্টক ইন:' : 'Stock In:')}:</span>
             <strong className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">
-              +{formatNumber(todayTotalIn, lang)}
+              +{formatSheetNumber(periodTotalIn, lang)}
             </strong>
           </div>
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 font-semibold">
-            <span>{t.todayStockOutTotal}:</span>
+            <span>{filterPeriodMode === 'today' ? t.todayStockOutTotal : (lang === 'bn' ? 'মোট মাল স্টক আউট:' : 'Stock Out:')}:</span>
             <strong className="font-mono text-blue-700 dark:text-blue-400 font-bold">
-              -{formatNumber(todayTotalOut, lang)}
+              -{formatSheetNumber(periodTotalOut, lang)}
             </strong>
           </div>
 
@@ -450,7 +570,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                 const isLow = it.quantity <= it.minAlertQty;
                 const effectiveAvgRate = it.purchaseAvgRate || it.purchaseRate || 0;
                 const rowValuation = it.quantity * effectiveAvgRate;
-                const { todayIn, todayOut } = getTodayItemStats(it.code, it.nameBn, it.nameEn);
+                const { stockIn, stockOut } = getItemStats(it.code, it.nameBn, it.nameEn);
 
                 return (
                   <tr
@@ -495,22 +615,22 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                       </span>
                     </td>
                     <td className="py-3 px-3 text-center font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-800/30">
-                      {formatNumber(it.openingQty ?? 0, lang)}{' '}
+                      {formatSheetNumber(it.openingQty ?? 0, lang)}{' '}
                       <span className="text-[10px] text-slate-400 font-normal">{it.unit}</span>
                     </td>
                     <td className="py-3 px-3 text-center bg-emerald-50/30 dark:bg-emerald-950/20 font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                      {todayIn > 0 ? (
+                      {stockIn > 0 ? (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
-                          +{formatNumber(todayIn, lang)} {it.unit}
+                          +{formatSheetNumber(stockIn, lang)} {it.unit}
                         </span>
                       ) : (
                         <span className="text-slate-400 font-normal">০</span>
                       )}
                     </td>
                     <td className="py-3 px-3 text-center bg-blue-50/30 dark:bg-blue-950/20 font-mono font-bold text-blue-700 dark:text-blue-400">
-                      {todayOut > 0 ? (
+                      {stockOut > 0 ? (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200">
-                          -{formatNumber(todayOut, lang)} {it.unit}
+                          -{formatSheetNumber(stockOut, lang)} {it.unit}
                         </span>
                       ) : (
                         <span className="text-slate-400 font-normal">০</span>
@@ -518,12 +638,12 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                     </td>
                     <td className="py-3 px-3 text-center">
                       <div className="font-mono font-bold text-sm text-slate-900 dark:text-white">
-                        {formatNumber(it.quantity, lang)}{' '}
+                        {formatSheetNumber(it.quantity, lang)}{' '}
                         <span className="text-xs font-normal text-slate-500">{it.unit}</span>
                       </div>
                       {isLow && (
                         <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold block">
-                          {t.stockAlert} (&le;{formatNumber(it.minAlertQty, lang)})
+                          {t.stockAlert} (&le;{formatSheetNumber(it.minAlertQty, lang)})
                         </span>
                       )}
                     </td>

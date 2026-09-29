@@ -27,12 +27,16 @@ import {
   AttendanceRecord,
   OfficeExpense,
   Staff,
+  BranchConsignment,
+  BranchRmbRemittance,
+  ThirdPartyRmbConversion,
 } from '../types';
 import {
   translations,
   formatCurrency,
   formatNumber,
   formatDate,
+  formatDashboardCurrency,
 } from '../lib/translations';
 import { storageService } from '../lib/storage';
 import { CompanyLogo } from './CompanyLogo';
@@ -51,6 +55,9 @@ interface DashboardProps {
   staff?: Staff[];
   isCloudConnected?: boolean;
   onOpenCloudSyncModal?: () => void;
+  branchConsignments?: BranchConsignment[];
+  branchRemittances?: BranchRmbRemittance[];
+  rmbConversions?: ThirdPartyRmbConversion[];
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -67,6 +74,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   staff = [],
   isCloudConnected = false,
   onOpenCloudSyncModal,
+  branchConsignments = [],
+  branchRemittances = [],
+  rmbConversions = [],
 }) => {
   const t = translations[lang];
   const companyInfo = storageService.getCompanyInfo();
@@ -165,6 +175,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return { ...cat, totalQty, val, count: items.length, alertItems };
     });
   }, [stock, t]);
+
+  // China Office Stock & Due Status (এক নজরে চায়না অফিস থেকে মোট আর কত টাকা পাওয়ার বাকি আছে বা হিসাবের বর্তমান অবস্থা)
+  const chinaMetrics = useMemo(() => {
+    const totalSentBdt = (branchConsignments || []).reduce((acc, c) => acc + (Number(c.totalBdtValue) || 0), 0);
+    const totalEstRmbSent = (branchConsignments || []).reduce((acc, c) => acc + (Number(c.totalRmbEstimated) || 0), 0);
+    const totalRmbRemitted = (branchRemittances || []).reduce((acc, r) => acc + (Number(r.rmbAmount) || 0), 0);
+    const totalConvertedBdt = (rmbConversions || []).reduce((acc, cv) => acc + (Number(cv.receivedBdtAmount) || 0), 0);
+    const totalConvertedRmb = (rmbConversions || []).reduce((acc, cv) => acc + (Number(cv.rmbAmountGiven) || 0), 0);
+    const remainingDueBdt = totalSentBdt - totalConvertedBdt;
+    const rmbBalanceInHand = Math.max(0, totalRmbRemitted - totalConvertedRmb);
+
+    return {
+      totalSentBdt,
+      totalEstRmbSent,
+      totalRmbRemitted,
+      totalConvertedBdt,
+      totalConvertedRmb,
+      remainingDueBdt,
+      rmbBalanceInHand,
+    };
+  }, [branchConsignments, branchRemittances, rmbConversions]);
 
   return (
     <div className="space-y-6">
@@ -307,7 +338,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 tracking-tight">
-            {formatCurrency(totalPurchase, lang)}
+            {formatDashboardCurrency(totalPurchase, lang)}
           </div>
           <div className="mt-1 flex items-center text-[10px] text-slate-500 dark:text-slate-400">
             <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center mr-1">
@@ -329,7 +360,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-xl font-bold font-mono text-blue-600 dark:text-blue-400 tracking-tight">
-            {formatCurrency(totalSales, lang)}
+            {formatDashboardCurrency(totalSales, lang)}
           </div>
           <div className="mt-1 flex items-center text-[10px] text-slate-500 dark:text-slate-400">
             <span className="text-blue-600 dark:text-blue-400 font-medium flex items-center mr-1">
@@ -351,7 +382,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-xl font-bold font-mono text-indigo-600 dark:text-indigo-400 tracking-tight">
-            {formatCurrency(totalStockValue, lang)}
+            {formatDashboardCurrency(totalStockValue, lang)}
           </div>
           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
             <span>{lang === 'bn' ? 'গড় ক্রয় দরে' : 'Avg Rate'}</span>
@@ -375,7 +406,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-xl font-bold font-mono text-amber-600 dark:text-amber-400 tracking-tight">
-            {formatCurrency(totalDueReceivable, lang)}
+            {formatDashboardCurrency(totalDueReceivable, lang)}
           </div>
           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
             <span>{lang === 'bn' ? 'পার্টিদের বাকি পাওনা' : 'Party Due'}</span>
@@ -399,7 +430,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-xl font-bold font-mono text-cyan-600 dark:text-cyan-400 tracking-tight">
-            {formatCurrency(totalAdvanceAmount, lang)}
+            {formatDashboardCurrency(totalAdvanceAmount, lang)}
           </div>
           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
             <span>{lang === 'bn' ? 'পার্টির অগ্রিম জমা' : 'Party Advances'}</span>
@@ -423,7 +454,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-xl font-bold font-mono text-rose-600 dark:text-rose-400 tracking-tight">
-            {formatCurrency(todayExpensesAmount, lang)}
+            {formatDashboardCurrency(todayExpensesAmount, lang)}
           </div>
           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
             <span>{lang === 'bn' ? 'পেটি ক্যাশ ও গাড়ি' : 'Petty & Car'}</span>
@@ -453,10 +484,95 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <span>
               {lang === 'bn' ? 'ওভারটাইম: ' : 'OT: '}
               <strong className="text-slate-800 dark:text-slate-200">
-                {formatNumber(todayAttendanceStats.otHours, lang)}h
+                {formatNumber(Math.round(todayAttendanceStats.otHours), lang)}h
               </strong>{' '}
-              ({formatCurrency(todayAttendanceStats.otAmount, lang)})
+              ({formatDashboardCurrency(todayAttendanceStats.otAmount, lang)})
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 🇨🇳 CHINA OFFICE OVERVIEW & BALANCE DUE STATUS (User Requirement: এক নজরে চায়না অফিস থেকে মোট আর কত টাকা পাওয়ার বাকি আছে বা হিসাবের বর্তমান অবস্থা) */}
+      <div className="bg-gradient-to-br from-slate-900 via-sky-950 to-slate-950 text-white p-5 rounded-3xl border border-sky-800/60 shadow-lg relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-800/40 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-sky-500/20 text-cyan-300 border border-sky-400/30">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase font-extrabold tracking-wider text-cyan-400">
+                  {lang === 'bn' ? 'চীন শাখা অফিস ব্যালেন্স' : 'China Branch Office'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-sky-500/20 text-sky-200 border border-sky-400/30 font-mono">
+                  {lang === 'bn' ? 'স্টক ও বাকি স্থিতি' : 'Stock & Due Status'}
+                </span>
+              </div>
+              <h3 className="text-base sm:text-lg font-black text-white mt-0.5">
+                {lang === 'bn' ? 'চীন অফিস থেকে অবশিষ্টাংশ পাওনা / হিসাবের বর্তমান অবস্থা' : 'China Office Remaining Stock & Balance Due'}
+              </h3>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onSelectTab('branch')}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer shrink-0 shadow-md"
+          >
+            <span>{lang === 'bn' ? 'শাখা খাতা দেখুন ➔' : 'View Branch Ledger ➔'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          {/* Card A: China Office Remaining Due BDT (User's primary requirement!) */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-sky-500/30 backdrop-blur-xs space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-300">
+              {lang === 'bn' ? 'চায়না অফিস বাকি / পাওনা BDT' : 'China Remaining Due (BDT)'}
+            </span>
+            <div className="text-2xl font-black font-mono text-cyan-300">
+              {formatDashboardCurrency(chinaMetrics.remainingDueBdt, lang)}
+            </div>
+            <p className="text-[10px] text-slate-300 font-mono">
+              = {lang === 'bn' ? 'মোট স্টক' : 'Stock'} {formatDashboardCurrency(chinaMetrics.totalSentBdt, lang)} - {lang === 'bn' ? 'RMB প্রাপ্ত' : 'RMB BDT'} {formatDashboardCurrency(chinaMetrics.totalConvertedBdt, lang)}
+            </p>
+          </div>
+
+          {/* Card B: Total Stock Sent BDT */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+              {lang === 'bn' ? 'শাখা অফিসে পাঠানো মোট স্টক' : 'Total Stock Sent (BDT)'}
+            </span>
+            <div className="text-2xl font-black font-mono text-white">
+              {formatDashboardCurrency(chinaMetrics.totalSentBdt, lang)}
+            </div>
+            <p className="text-[10px] text-slate-400 font-mono">
+              ≈ ¥ {Math.round(chinaMetrics.totalEstRmbSent).toLocaleString()} ({(branchConsignments || []).length} {lang === 'bn' ? 'টি চালান' : 'challans'})
+            </p>
+          </div>
+
+          {/* Card C: Total RMB Converted to BDT */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
+              {lang === 'bn' ? 'RMB হতে মোট প্রাপ্ত টাকা (BDT)' : 'RMB Converted BDT'}
+            </span>
+            <div className="text-2xl font-black font-mono text-emerald-300">
+              {formatDashboardCurrency(chinaMetrics.totalConvertedBdt, lang)}
+            </div>
+            <p className="text-[10px] text-slate-400 font-mono">
+              {lang === 'bn' ? 'কনভার্ট RMB:' : 'Converted:'} ¥ {Math.round(chinaMetrics.totalConvertedRmb).toLocaleString()}
+            </p>
+          </div>
+
+          {/* Card D: Total RMB Remitted & In Hand */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
+              {lang === 'bn' ? 'শাখা অফিস RMB প্রাপ্তি ও উদ্বৃত্ত' : 'RMB Remitted & In-Hand'}
+            </span>
+            <div className="text-2xl font-black font-mono text-amber-300">
+              ¥ {Math.round(chinaMetrics.totalRmbRemitted).toLocaleString()}
+            </div>
+            <p className="text-[10px] text-slate-400 font-mono">
+              {lang === 'bn' ? 'হাতে অবশিষ্ট RMB:' : 'In Hand:'} <span className="font-bold text-emerald-400">¥ {Math.round(chinaMetrics.rmbBalanceInHand).toLocaleString()}</span>
+            </p>
           </div>
         </div>
       </div>
@@ -504,7 +620,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div className="mt-3 flex items-baseline justify-between">
                 <div>
                   <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
-                    {formatNumber(cat.totalQty, lang)}
+                    {formatNumber(Math.round(cat.totalQty), lang)}
                   </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                     {cat.key === 'kg' ? (lang === 'bn' ? 'কেজি মজুদ' : 'KG in stock') : (lang === 'bn' ? 'পিস মজুদ' : 'Pcs in stock')}
@@ -512,7 +628,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-bold font-mono text-slate-700 dark:text-slate-300">
-                    {formatCurrency(cat.val, lang)}
+                    {formatDashboardCurrency(cat.val, lang)}
                   </div>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">
                     {formatNumber(cat.count, lang)} {lang === 'bn' ? 'আইটেম' : 'items'}
@@ -594,7 +710,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                        {formatCurrency(inv.grandTotal, lang)}
+                        {formatDashboardCurrency(inv.grandTotal, lang)}
                       </td>
                       <td className="py-3 px-3 text-right whitespace-nowrap">
                         <button
