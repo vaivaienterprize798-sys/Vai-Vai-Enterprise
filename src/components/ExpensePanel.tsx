@@ -91,6 +91,7 @@ export const ExpensePanel: React.FC<ExpensePanelProps> = ({
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter((e) => {
+      if (e.type === 'in') return false; // Strictly actual outgoing expenses only
       const matchCat = selectedCategory === 'all' || e.category === selectedCategory;
       const matchMonth = !selectedMonth || e.date.startsWith(selectedMonth);
       const titleStr = (e.title || e.description || '').toLowerCase();
@@ -108,7 +109,7 @@ export const ExpensePanel: React.FC<ExpensePanelProps> = ({
 
   const categoryTotals = useMemo(() => {
     const map: Record<string, number> = {};
-    expenses.forEach((e) => {
+    expenses.filter((e) => e.type !== 'in').forEach((e) => {
       map[e.category] = (map[e.category] || 0) + e.amount;
     });
     return map;

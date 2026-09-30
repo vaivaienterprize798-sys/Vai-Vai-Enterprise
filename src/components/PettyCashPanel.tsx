@@ -31,12 +31,14 @@ import { CompanyLogo } from './CompanyLogo';
 import { storageService } from '../lib/storage';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
+export type PeriodFilterMode = 'month' | 'date' | 'range' | 'all';
+
 interface PettyCashPanelProps {
   expenses: PettyCashExpense[];
   lang: Language;
   onSaveExpense: (exp: PettyCashExpense) => void;
   onDeleteExpense: (id: string) => void;
-  onPrintStatement: () => void;
+  onPrintStatement: (filters: { filterMode: PeriodFilterMode; selectedMonth: string; selectedDate: string; startDate: string; endDate: string }) => void;
 }
 
 export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
@@ -51,9 +53,13 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
 
   const [selectedType, setSelectedType] = useState<'all' | 'in' | 'out'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [dateFilterMode, setDateFilterMode] = useState<'month' | 'date' | 'all'>('month');
+  const [dateFilterMode, setDateFilterMode] = useState<PeriodFilterMode>('month');
   const [selectedMonth, setSelectedMonth] = useState<string>(todayStr.slice(0, 7));
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [startDate, setStartDate] = useState<string>(
+    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  );
+  const [endDate, setEndDate] = useState<string>(todayStr);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -102,16 +108,20 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
     setIsModalOpen(false);
   };
 
+  const isDateInPeriod = (dateStr?: string) => {
+    if (!dateStr) return false;
+    if (dateFilterMode === 'all') return true;
+    if (dateFilterMode === 'date') return dateStr === selectedDate;
+    if (dateFilterMode === 'month') return dateStr.startsWith(selectedMonth);
+    if (dateFilterMode === 'range') return dateStr >= startDate && dateStr <= endDate;
+    return true;
+  };
+
   const filteredExpenses = useMemo(() => {
     return expenses.filter((e) => {
       const matchType = selectedType === 'all' || e.type === selectedType;
       const matchCat = selectedCategory === 'all' || e.category === selectedCategory;
-      const matchDate =
-        dateFilterMode === 'all'
-          ? true
-          : dateFilterMode === 'date'
-          ? e.date === selectedDate
-          : !selectedMonth || e.date.startsWith(selectedMonth);
+      const matchDate = isDateInPeriod(e.date);
       const titleStr = (e.title || '').toLowerCase();
       const matchSearch =
         titleStr.includes(searchTerm.toLowerCase()) ||
@@ -119,22 +129,29 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
         (e.receiptNo && e.receiptNo.toLowerCase().includes(searchTerm.toLowerCase()));
       return matchType && matchCat && matchDate && matchSearch;
     });
-  }, [expenses, selectedType, selectedCategory, dateFilterMode, selectedMonth, selectedDate, searchTerm]);
+  }, [expenses, selectedType, selectedCategory, dateFilterMode, selectedMonth, selectedDate, startDate, endDate, searchTerm]);
 
-  // Aggregate stats
+  // Aggregate stats (All time)
   const totalIn = useMemo(() => {
     return expenses.filter((e) => e.type === 'in').reduce((sum, e) => sum + e.amount, 0);
   }, [expenses]);
 
   const totalOut = useMemo(() => {
-    return expenses.filter((e) => e.type === 'out').reduce((sum, e) => sum + e.amount, 0);
+    return expenses.filter((e) => e.type === 'out' || !e.type).reduce((sum, e) => sum + e.amount, 0);
   }, [expenses]);
 
   const currentBalance = totalIn - totalOut;
 
-  const monthOut = useMemo(() => {
-    return filteredExpenses.filter((e) => e.type === 'out').reduce((sum, e) => sum + e.amount, 0);
+  // Filtered period stats
+  const filteredIn = useMemo(() => {
+    return filteredExpenses.filter((e) => e.type === 'in').reduce((sum, e) => sum + e.amount, 0);
   }, [filteredExpenses]);
+
+  const filteredOut = useMemo(() => {
+    return filteredExpenses.filter((e) => e.type === 'out' || !e.type).reduce((sum, e) => sum + e.amount, 0);
+  }, [filteredExpenses]);
+
+  const filteredNet = filteredIn - filteredOut;
 
   return (
     <div className="space-y-6">
@@ -167,7 +184,7 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
           />
 
           <button
-            onClick={onPrintStatement}
+            onClick={() => onPrintStatement({ filterMode: dateFilterMode, selectedMonth, selectedDate, startDate, endDate })}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />
@@ -284,6 +301,9 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
           >
             <option value="all">{lang === 'bn' ? 'সকল খাত' : 'All Categories'}</option>
             <option value="tea_snacks">{lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks'}</option>
+            <option value="courier_bill">{lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill'}</option>
+            <option value="transport_allowance">{lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport Allowance'}</option>
+            <option value="service_charge">{lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge'}</option>
             <option value="stationery">{lang === 'bn' ? 'স্টেশনারি ও খাতা' : 'Stationery'}</option>
             <option value="utility">{lang === 'bn' ? 'বিদ্যুৎ/ওয়াইফাই বিল' : 'Utility & Bills'}</option>
             <option value="maintenance">{lang === 'bn' ? 'অফিস মেরামত/ক্লিনার' : 'Maintenance'}</option>
@@ -317,6 +337,17 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => setDateFilterMode('range')}
+              className={`px-2 py-1 rounded-lg font-bold text-[11px] ${
+                dateFilterMode === 'range'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              {lang === 'bn' ? 'সীমা' : 'Range'}
+            </button>
+            <button
+              type="button"
               onClick={() => setDateFilterMode('all')}
               className={`px-2 py-1 rounded-lg font-bold text-[11px] ${
                 dateFilterMode === 'all'
@@ -344,6 +375,24 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
               onChange={(e) => setSelectedDate(e.target.value)}
               className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium"
             />
+          )}
+
+          {dateFilterMode === 'range' && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 font-mono"
+              />
+              <span>-</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 font-mono"
+              />
+            </div>
           )}
         </div>
       </div>
@@ -393,16 +442,26 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
                     </td>
                     <td className="py-3 px-3">
                       <span className="font-medium text-slate-800 dark:text-slate-200">
-                        {it.category === 'tea_snacks'
+                        {it.category === 'tea_snacks' || it.category === 'tea_food'
                           ? (lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks')
+                          : it.category === 'courier_bill'
+                          ? (lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill')
+                          : it.category === 'transport_allowance'
+                          ? (lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport Allowance')
+                          : it.category === 'service_charge'
+                          ? (lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge')
                           : it.category === 'stationery'
                           ? (lang === 'bn' ? 'স্টেশনারি' : 'Stationery')
-                          : it.category === 'utility'
+                          : it.category === 'utility' || it.category === 'utility_bills'
                           ? (lang === 'bn' ? 'বিদ্যুৎ/বিল' : 'Utility')
-                          : it.category === 'maintenance'
+                          : it.category === 'maintenance' || it.category === 'cleaning_maint'
                           ? (lang === 'bn' ? 'মেরামত/ক্লিনার' : 'Maintenance')
                           : it.category === 'entertainment'
                           ? (lang === 'bn' ? 'আপ্যায়ন' : 'Entertainment')
+                          : it.category === 'labor' || it.category === 'coolie_labor'
+                          ? (lang === 'bn' ? 'কুলি ও লেবার' : 'Labor / Coolie')
+                          : it.category === 'rent'
+                          ? (lang === 'bn' ? 'দোকান ও অফিস ভাড়া' : 'Rent')
                           : (lang === 'bn' ? 'অন্যান্য' : 'Other')}
                       </span>
                     </td>
@@ -438,6 +497,34 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
                 ))
               )}
             </tbody>
+            {filteredExpenses.length > 0 && (
+              <tfoot className="bg-slate-50 dark:bg-slate-800/80 font-bold border-t-2 border-slate-300 dark:border-slate-700 text-xs">
+                <tr>
+                  <td colSpan={5} className="py-2.5 px-3 text-right text-slate-600 dark:text-slate-300">
+                    <div className="flex items-center justify-end gap-4 text-[11px]">
+                      <span>
+                        {lang === 'bn' ? 'মোট ফান্ড জমা (Cash In):' : 'Total Cash In:'}{' '}
+                        <strong className="text-teal-600 dark:text-teal-400 font-mono">+{formatCurrency(filteredIn, lang)}</strong>
+                      </span>
+                      <span>|</span>
+                      <span>
+                        {lang === 'bn' ? 'মোট অফিস খরচ (Cash Out):' : 'Total Office Expense:'}{' '}
+                        <strong className="text-rose-600 dark:text-rose-400 font-mono">-{formatCurrency(filteredOut, lang)}</strong>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-3 text-right text-slate-700 dark:text-slate-200">
+                    {lang === 'bn' ? 'অবশিষ্ট ব্যালেন্স:' : 'Net Balance:'}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono text-sm">
+                    <span className={filteredNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      {formatCurrency(filteredNet, lang)}
+                    </span>
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
@@ -483,8 +570,11 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                   >
                     <option value="tea_snacks">{lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks'}</option>
+                    <option value="courier_bill">{lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill'}</option>
+                    <option value="transport_allowance">{lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport Allowance'}</option>
+                    <option value="service_charge">{lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge'}</option>
                     <option value="stationery">{lang === 'bn' ? 'স্টেশনারি ও খাতা' : 'Stationery'}</option>
-                    <option value="utility">{lang === 'bn' ? 'বিদ্যুৎ/ওয়াইফাই বিল' : 'Utility'}</option>
+                    <option value="utility">{lang === 'bn' ? 'বিদ্যুৎ/ওয়াইফাই বিল' : 'Utility & Bills'}</option>
                     <option value="maintenance">{lang === 'bn' ? 'অফিস মেরামত/ক্লিনার' : 'Maintenance'}</option>
                     <option value="entertainment">{lang === 'bn' ? 'অতিথি আপ্যায়ন' : 'Guest Entertainment'}</option>
                     <option value="other">{lang === 'bn' ? 'অন্যান্য' : 'Other'}</option>

@@ -16,6 +16,7 @@ import { WorkerTrackingPanel } from './components/WorkerTrackingPanel';
 import { BranchOfficePanel } from './components/BranchOfficePanel';
 import { PriceListPanel } from './components/PriceListPanel';
 import { PrintStatements } from './components/PrintStatements';
+import { AllSheetsPanel } from './components/AllSheetsPanel';
 import { StatementSelectorModal } from './components/StatementSelectorModal';
 import { SecurityComplianceModal } from './components/SecurityComplianceModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
@@ -48,8 +49,10 @@ import {
 } from './types';
 import { storageService } from './lib/storage';
 import { translations } from './lib/translations';
+import { PeriodFilterMode } from './components/PettyCashPanel';
 
 export default function App() {
+  const todayStr = new Date().toISOString().split('T')[0];
   // Instant hydration and Splash removal
   useLayoutEffect(() => {
     // Hide initial splash screen smoothly as soon as React component layout is ready
@@ -156,6 +159,10 @@ export default function App() {
   const [activeStatementType, setActiveStatementType] = useState<StatementType | null>(null);
   const [activeStatementStaffId, setActiveStatementStaffId] = useState<string | null>(null);
   const [activeStatementMonth, setActiveStatementMonth] = useState<string | null>(null);
+  const [activeStatementFilterMode, setActiveStatementFilterMode] = useState<PeriodFilterMode>('month');
+  const [activeStatementSelectedDate, setActiveStatementSelectedDate] = useState<string>(todayStr);
+  const [activeStatementStartDate, setActiveStatementStartDate] = useState<string>(todayStr);
+  const [activeStatementEndDate, setActiveStatementEndDate] = useState<string>(todayStr);
 
   // User Session & Role-Based Auth State
   const [userSession, setUserSession] = useState<UserSession | null>(() => {
@@ -816,11 +823,12 @@ export default function App() {
     refreshAllData();
   };
 
-  // Combine expenses for dashboard & statements
+  // Combine expenses for dashboard & statements (Preserving cash in vs expense out)
   const allExpensesCombined: OfficeExpense[] = [
     ...pettyCashExpenses.map((p) => ({
       id: p.id,
       date: p.date,
+      type: p.type || 'out',
       category: p.category,
       title: p.title,
       amount: p.amount,
@@ -831,6 +839,7 @@ export default function App() {
     ...carExpenses.map((c) => ({
       id: c.id,
       date: c.date,
+      type: 'out' as const,
       category: 'other' as const,
       title: `${c.title || c.expenseType || 'Vehicle'}: ${c.description || c.vehicleNo || ''}`,
       amount: c.amount,
@@ -903,6 +912,10 @@ export default function App() {
             expenses={allExpensesCombined}
             initialStaffId={activeStatementStaffId}
             initialMonth={activeStatementMonth}
+            filterMode={activeStatementFilterMode}
+            selectedDate={activeStatementSelectedDate}
+            startDate={activeStatementStartDate}
+            endDate={activeStatementEndDate}
             onBack={() => {
               setActiveStatementType(null);
               setActiveStatementStaffId(null);
@@ -1044,7 +1057,14 @@ export default function App() {
                 lang={lang}
                 onSaveExpense={handleSavePettyCash}
                 onDeleteExpense={handleDeletePettyCash}
-                onPrintStatement={() => setActiveStatementType('expense')}
+                onPrintStatement={(filters) => {
+                  setActiveStatementFilterMode(filters.filterMode);
+                  setActiveStatementMonth(filters.selectedMonth);
+                  setActiveStatementSelectedDate(filters.selectedDate);
+                  setActiveStatementStartDate(filters.startDate);
+                  setActiveStatementEndDate(filters.endDate);
+                  setActiveStatementType('expense');
+                }}
               />
             )}
 
@@ -1105,107 +1125,22 @@ export default function App() {
               />
             )}
 
-            {/* Statements Hub */}
+            {/* Statements Hub (All Sheets Panel with Date & Month Filters) */}
             {currentTab === 'statements' && (
-              <div className="space-y-6">
-                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    {t.statements} (1-Page Smart Print Optimization)
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {lang === 'bn'
-                      ? 'যেকোনো রিপোর্ট ১ পৃষ্ঠার এ-ফোর (A4) সাইজে প্রিন্ট ও সরাসরি হোয়াটসঅ্যাপে শেয়ার করুন'
-                      : 'Generate 1-Page A4 printer-ready statements and instant WhatsApp reports'}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                  <div
-                    onClick={() => setActiveStatementType('stock')}
-                    className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-500 cursor-pointer transition-all shadow-xs hover:shadow-md space-y-2 group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center font-bold text-lg">
-                      1
-                    </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 transition-colors">
-                      {t.stockStatement1Page}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      {lang === 'bn'
-                        ? '৪ ক্যাটাগরির বর্তমান মজুত ও গড় ক্রয় দরে মূল্যায়ন রিপোর্ট'
-                        : 'Current stock across 4 categories and valuation by avg purchase rate'}
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setActiveStatementType('party')}
-                    className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-500 cursor-pointer transition-all shadow-xs hover:shadow-md space-y-2 group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center font-bold text-lg">
-                      2
-                    </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors">
-                      {t.partyStatement1Page}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      {lang === 'bn'
-                        ? 'মহাজন ও পার্টির বাকি এবং মোট অগ্রিম জমার বিবরণী'
-                        : 'Comprehensive supplier & buyer due and advance statement'}
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setActiveStatementType('payroll')}
-                    className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-purple-500 cursor-pointer transition-all shadow-xs hover:shadow-md space-y-2 group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center font-bold text-lg">
-                      3
-                    </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white group-hover:text-purple-600 transition-colors">
-                      {t.payrollStatement1Page}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      {lang === 'bn'
-                        ? 'স্টাফ হাজিরা ও ৬০ টাকা হারে ওভারটাইম সহ বেতন শিট'
-                        : 'Staff salary sheet with ৳60/hr OT and advance deductions'}
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setActiveStatementType('expense')}
-                    className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-amber-500 cursor-pointer transition-all shadow-xs hover:shadow-md space-y-2 group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950 text-amber-600 flex items-center justify-center font-bold text-lg">
-                      4
-                    </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white group-hover:text-amber-600 transition-colors">
-                      {t.expenseStatement1Page}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      {lang === 'bn'
-                        ? 'অফিস পেটি ক্যাশ ও গাড়ি খরচের সমন্বিত হিসাব শিট'
-                        : 'Unified office petty cash and car expenses statement'}
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setActiveStatementType('financial')}
-                    className="p-5 rounded-2xl border border-emerald-300 dark:border-emerald-800/80 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 hover:border-emerald-500 cursor-pointer transition-all shadow-xs hover:shadow-md space-y-2 group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg">
-                      5
-                    </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 transition-colors">
-                      {t.financialAnalyticsStatement1Page}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      {lang === 'bn'
-                        ? 'বিক্রয় আয়, ক্রয় খরচ, অফিস ব্যয়, নিট লাভ-ক্ষতি (P&L) ও ROI শিট'
-                        : 'Revenue, purchases, expenses, paid salaries, P&L & ROI report'}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <AllSheetsPanel
+                lang={lang}
+                stock={stock}
+                invoices={invoices}
+                parties={parties}
+                staff={staff}
+                attendance={attendance}
+                expenses={allExpensesCombined}
+                branchConsignments={branchConsignments}
+                branchRemittances={branchRemittances}
+                rmbConversions={rmbConversions}
+                workerTasks={workerTasks}
+                initialType={activeStatementType || 'stock'}
+              />
             )}
           </>
         )}

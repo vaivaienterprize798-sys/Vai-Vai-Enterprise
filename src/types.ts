@@ -187,6 +187,9 @@ export interface AttendanceRecord {
 export type PettyCashCategory =
   | 'tea_food' // আপ্যায়ন, চা ও নাস্তা
   | 'tea_snacks'
+  | 'courier_bill' // কুরিয়ার বিল (Courier Bill)
+  | 'transport_allowance' // যাতায়াত ও ভাড়া (Transport Allowance)
+  | 'service_charge' // সার্ভিস চার্জ ও ফি (Service Charge)
   | 'coolie_labor' // কুলি ও লেবার মজুরি
   | 'labor'
   | 'utility_bills' // বিদ্যুৎ ও ইউটিলিটি বিল
@@ -268,6 +271,7 @@ export type ExpenseCategory =
 export interface OfficeExpense {
   id: string;
   date: string;
+  type?: 'in' | 'out' | string;
   category: ExpenseCategory;
   description?: string;
   title?: string;

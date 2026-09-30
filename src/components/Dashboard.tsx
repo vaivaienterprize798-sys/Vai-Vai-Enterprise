@@ -141,7 +141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const todayExpensesAmount = useMemo(() => {
     return expenses
-      .filter((e) => e.date === todayStr)
+      .filter((e) => e.date === todayStr && e.type !== 'in')
       .reduce((sum, e) => sum + e.amount, 0);
   }, [expenses, todayStr]);
 

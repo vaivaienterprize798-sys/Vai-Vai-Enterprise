@@ -2,42 +2,37 @@ import { Language } from '../types';
 
 export const toBengaliDigits = (num: number | string): string => {
   if (num === null || num === undefined) return '';
-  const bnDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-  return num
-    .toString()
-    .replace(/[0-9]/g, (digit) => bnDigits[parseInt(digit, 10)]);
+  // English Digits Rule: Always render digits in English (0-9) per user requirement
+  return num.toString();
 };
 
 /**
  * Standard currency formatting. If roundToWhole is true, rounds with Math.round (.5 or higher becomes 1+)
+ * English Digits Rule: strictly renders numbers in English digits (0-9) with Taka sign (৳)
  */
-export const formatCurrency = (amount: number, lang: Language, roundToWhole: boolean = false): string => {
+export const formatCurrency = (amount: number, _lang?: Language, roundToWhole: boolean = false): string => {
   const num = roundToWhole ? Math.round(amount || 0) : (amount || 0);
   const formatted = Math.abs(num).toLocaleString('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: roundToWhole ? 0 : 2,
   });
 
-  if (lang === 'bn') {
-    const bnFormatted = toBengaliDigits(formatted);
-    return num < 0 ? `-৳${bnFormatted}` : `৳${bnFormatted}`;
-  }
-  return num < 0 ? `-৳${formatted}` : `৳${formatted}`;
+  return num < 0 ? `-${formatted}` : `${formatted}`;
 };
 
 /**
  * Formats currency as an exact whole number for Dashboard (no decimals; .5+ rounds up to 1+)
  */
-export const formatDashboardCurrency = (amount: number, lang: Language): string => {
+export const formatDashboardCurrency = (amount: number, lang?: Language): string => {
   return formatCurrency(amount, lang, true);
 };
 
 /**
- * Formats numbers for all sheet panels with exactly up to 3 decimal places
+ * Formats numbers for all sheet panels with exactly up to 3 decimal places (English digits 0-9)
  */
-export const formatSheetDecimal = (num: number | string, lang: Language, fixed: boolean = false): string => {
+export const formatSheetDecimal = (num: number | string, _lang?: Language, fixed: boolean = false): string => {
   const n = Number(num);
-  if (isNaN(n)) return lang === 'bn' ? (fixed ? '০.০০০' : '০') : (fixed ? '0.000' : '0');
+  if (isNaN(n)) return fixed ? '0.000' : '0';
   let formatted: string;
   if (fixed) {
     formatted = n.toFixed(3);
@@ -47,24 +42,23 @@ export const formatSheetDecimal = (num: number | string, lang: Language, fixed: 
     // Has decimal places: show exactly 3 decimal places per requirement
     formatted = n.toFixed(3);
   }
-  return lang === 'bn' ? toBengaliDigits(formatted) : formatted;
+  return formatted;
 };
 
-export const formatSheetNumber = (num: number | string, lang: Language, fixed: boolean = false): string => {
+export const formatSheetNumber = (num: number | string, lang?: Language, fixed: boolean = false): string => {
   return formatSheetDecimal(num, lang, fixed);
 };
 
-export const formatDecimal3 = (num: number | string, lang: Language): string => {
+export const formatDecimal3 = (num: number | string, _lang?: Language): string => {
   const n = Number(num);
-  if (isNaN(n)) return lang === 'bn' ? '০.০০০' : '0.000';
-  const formatted = n.toFixed(3);
-  return lang === 'bn' ? toBengaliDigits(formatted) : formatted;
+  if (isNaN(n)) return '0.000';
+  return n.toFixed(3);
 };
 
 /**
- * Formats quantities/weights: if integer, shows integer; if decimal, shows up to 3 decimal places
+ * Formats quantities/weights: if integer, shows integer; if decimal, shows up to 3 decimal places (English digits)
  */
-export const formatQuantity = (qty: number | string, lang: Language): string => {
+export const formatQuantity = (qty: number | string, lang?: Language): string => {
   const n = Number(qty);
   if (isNaN(n)) return '0';
   if (Number.isInteger(n)) {
@@ -73,22 +67,16 @@ export const formatQuantity = (qty: number | string, lang: Language): string => 
   return formatDecimal3(n, lang);
 };
 
-export const formatNumber = (num: number | string, lang: Language): string => {
+export const formatNumber = (num: number | string, _lang?: Language): string => {
   if (num === null || num === undefined) return '';
-  if (lang === 'bn') {
-    return toBengaliDigits(num);
-  }
   return num.toString();
 };
 
-export const formatDate = (dateStr: string, lang: Language): string => {
+export const formatDate = (dateStr: string, _lang?: Language): string => {
   if (!dateStr) return '';
   try {
     const [year, month, day] = dateStr.split('-');
     if (!year || !month || !day) return dateStr;
-    if (lang === 'bn') {
-      return `${toBengaliDigits(day)}/${toBengaliDigits(month)}/${toBengaliDigits(year)}`;
-    }
     return `${day}/${month}/${year}`;
   } catch {
     return dateStr;

@@ -137,9 +137,7 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
         'জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন',
         'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'
       ];
-      const bnDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-      const bnYear = y.toString().replace(/[0-9]/g, (d) => bnDigits[parseInt(d, 10)]);
-      return `${bnMonths[m - 1]} ${bnYear}`;
+      return `${bnMonths[m - 1]} ${y}`;
     }
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };

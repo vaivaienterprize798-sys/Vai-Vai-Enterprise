@@ -22,6 +22,8 @@ import {
   Language,
   Invoice,
   StatementType,
+  BranchConsignment,
+  WorkerTaskRecord,
 } from '../types';
 
 export type { StatementType };
@@ -36,6 +38,8 @@ import { executePrint, exportElementToPdf } from '../lib/printUtils';
 import { CompanyLogo } from './CompanyLogo';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
+export type PeriodFilterMode = 'month' | 'date' | 'range' | 'all';
+
 interface PrintStatementsProps {
   type: StatementType;
   lang: Language;
@@ -43,11 +47,17 @@ interface PrintStatementsProps {
   invoices?: Invoice[];
   parties: Party[];
   staff: Staff[];
-  attendance: AttendanceRecord[];
-  expenses: Expense[];
+  attendance?: AttendanceRecord[];
+  expenses?: Expense[];
+  branchConsignments?: BranchConsignment[];
+  workerTasks?: WorkerTaskRecord[];
   onBack: () => void;
   initialStaffId?: string | null;
   initialMonth?: string | null;
+  filterMode?: PeriodFilterMode;
+  selectedDate?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export const PrintStatements: React.FC<PrintStatementsProps> = ({
@@ -59,16 +69,72 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
   staff,
   attendance,
   expenses,
+  branchConsignments,
+  workerTasks,
   onBack,
   initialStaffId,
   initialMonth,
+  filterMode: propFilterMode,
+  selectedDate: propSelectedDate,
+  startDate: propStartDate,
+  endDate: propEndDate,
 }) => {
   const t = translations[lang];
   const company = storageService.getCompanyInfo();
   const todayStr = new Date().toISOString().split('T')[0];
   const currentMonthStr = todayStr.slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState<string>(initialMonth || currentMonthStr);
-  const allInvoices = invoices || storageService.getInvoices();
+  const [filterMode, setFilterMode] = useState<PeriodFilterMode>(propFilterMode || 'month');
+  const [selectedDate, setSelectedDate] = useState<string>(propSelectedDate || todayStr);
+  const [startDate, setStartDate] = useState<string>(propStartDate || todayStr);
+  const [endDate, setEndDate] = useState<string>(propEndDate || todayStr);
+
+  React.useEffect(() => {
+    if (initialMonth) {
+      setSelectedMonth(initialMonth);
+    }
+  }, [initialMonth]);
+
+  React.useEffect(() => {
+    if (propFilterMode) setFilterMode(propFilterMode);
+    if (propSelectedDate) setSelectedDate(propSelectedDate);
+    if (propStartDate) setStartDate(propStartDate);
+    if (propEndDate) setEndDate(propEndDate);
+  }, [propFilterMode, propSelectedDate, propStartDate, propEndDate]);
+
+  const isDateInPeriod = (dateStr?: string) => {
+    if (!dateStr) return false;
+    if (filterMode === 'all') return true;
+    if (filterMode === 'date') return dateStr === selectedDate;
+    if (filterMode === 'month') return dateStr.startsWith(selectedMonth);
+    if (filterMode === 'range') return dateStr >= startDate && dateStr <= endDate;
+    return true;
+  };
+
+  const getPeriodBounds = () => {
+    if (filterMode === 'date') {
+      return { start: selectedDate, end: selectedDate };
+    }
+    if (filterMode === 'month') {
+      const [y, m] = selectedMonth.split('-').map(Number);
+      const start = `${selectedMonth}-01`;
+      const lastDay = new Date(y, m, 0).getDate();
+      const end = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
+      return { start, end };
+    }
+    if (filterMode === 'range') {
+      return { start: startDate, end: endDate };
+    }
+    return { start: '', end: '' };
+  };
+
+  const activeInvoices = invoices !== undefined ? invoices : (storageService.getInvoices() || []).filter(inv => isDateInPeriod(inv.date));
+  const activeExpenses = expenses !== undefined ? expenses : (storageService.getExpenses() || []).filter(e => isDateInPeriod(e.date));
+  const activeAttendance = attendance !== undefined ? attendance : (storageService.getAttendance() || []).filter(a => isDateInPeriod(a.date));
+  const activeBranchConsignments = branchConsignments !== undefined ? branchConsignments : (storageService.getBranchConsignments() || []).filter(c => isDateInPeriod(c.date));
+  const activeWorkerTasks = workerTasks !== undefined ? workerTasks : (storageService.getWorkerTasks() || []).filter(t => isDateInPeriod(t.date));
+
+  const allInvoices = activeInvoices;
 
   const isFriday = (dateStr?: string) => {
     if (!dateStr) return false;
@@ -87,9 +153,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         'জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন',
         'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'
       ];
-      const bnDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-      const bnYear = y.toString().replace(/[0-9]/g, (d) => bnDigits[parseInt(d, 10)]);
-      return `${bnMonths[m - 1]} ${bnYear}`;
+      return `${bnMonths[m - 1]} ${y}`;
     }
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
@@ -194,16 +258,16 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       summaryText += `👥 মোট পার্টি: ${parties.length} জন\n🔴 মোট পাওনা বকেয়া (Receivable Due): ৳${totalDue.toLocaleString()}\n🟢 মোট অগ্রিম জমা (Party Advance): ৳${totalAdv.toLocaleString()}\n`;
     } else if (type === 'financial') {
       const monthLabel = formatMonthDisplay(selectedMonth);
-      const periodInvoices = allInvoices.filter((inv) => inv.date && inv.date.startsWith(selectedMonth));
+      const periodInvoices = activeInvoices;
       const totalSales = periodInvoices.filter((inv) => inv.mode === 'sales').reduce((s, i) => s + i.netInvoiceAmount, 0);
       const totalPurchases = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + i.netInvoiceAmount, 0);
-      const periodExpenses = expenses.filter((e) => e.date && e.date.startsWith(selectedMonth)).reduce((s, e) => s + e.amount, 0);
+      const periodExpenses = activeExpenses.reduce((s, e) => s + e.amount, 0);
       
       let totalPaidSal = 0;
       staff.forEach((stf) => {
         if (storageService.getStaffPaymentStatus(selectedMonth, stf.id) === 'Paid') {
           const isOffice = stf.category === 'office';
-          const records = attendance.filter((a) => a.staffId === stf.id && a.date && a.date.startsWith(selectedMonth));
+          const records = activeAttendance.filter((a) => a.staffId === stf.id);
           const daysPresent = records.filter((a) => a.status === 'present' || a.status === 'late').length;
           const leaveDays = records.filter((a) => a.status === 'full_day_leave' || a.status === 'half_day_leave' || a.status === 'leave' || a.status === 'holiday').length;
           const daysBase = isOffice ? 30 : 26;
@@ -229,7 +293,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
       if (selectedStaffMember) {
         const isOffice = selectedStaffMember.category === 'office';
-        const records = attendance.filter((a) => a.staffId === selectedStaffMember.id && a.date && a.date.startsWith(selectedMonth));
+        const records = activeAttendance.filter((a) => a.staffId === selectedStaffMember.id);
         const totalOt = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
         const otMoney = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
         const totalAdv = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
@@ -247,7 +311,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       } else {
         const staffComputed = staff.map((st) => {
           const isOffice = st.category === 'office';
-          const records = attendance.filter((a) => a.staffId === st.id && a.date && a.date.startsWith(selectedMonth));
+          const records = activeAttendance.filter((a) => a.staffId === st.id);
           const totalOt = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
           const otMoney = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
           const totalAdv = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
@@ -273,10 +337,10 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         });
       }
     } else if (type === 'expense') {
-      const totalExp = expenses.reduce((s, e) => s + e.amount, 0);
-      summaryText += `💸 মোট অফিস খরচ: ৳${totalExp.toLocaleString()}\n📝 মোট এন্ট্রি: ${expenses.length} টি\n`;
+      const totalExp = activeExpenses.reduce((s, e) => s + e.amount, 0);
+      summaryText += `💸 মোট অফিস খরচ: ৳${totalExp.toLocaleString()}\n📝 মোট এন্ট্রি: ${activeExpenses.length} টি\n`;
     } else if (type === 'worker_tracking') {
-      const workerTasks = storageService.getWorkerTasks();
+      const workerTasks = activeWorkerTasks;
       const totalGiven = workerTasks.reduce((s, t) => s + t.givenPcs, 0);
       const totalCompleted = workerTasks.reduce((s, t) => s + t.completedPcs, 0);
       const totalDamaged = workerTasks.reduce((s, t) => s + t.damagedPcs, 0);
@@ -306,24 +370,24 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
             <span>{lang === 'bn' ? 'ফিরে যান' : 'Back'}</span>
           </button>
 
-          {/* Month & Staff Selectors for Payroll */}
-          {type === 'payroll' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                  {lang === 'bn' ? 'মাস:' : 'Month:'}
-                </span>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => {
-                    if (e.target.value) setSelectedMonth(e.target.value);
-                  }}
-                  className="bg-transparent text-xs font-bold font-mono text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-                />
-              </div>
+          {/* Month & Staff Selectors for All Statements */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                {lang === 'bn' ? 'হিসাবের মাস:' : 'Month:'}
+              </span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => {
+                  if (e.target.value) setSelectedMonth(e.target.value);
+                }}
+                className="bg-transparent text-xs font-bold font-mono text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+              />
+            </div>
 
+            {type === 'payroll' && (
               <div className="flex items-center gap-1.5">
                 <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
                   <User className="w-3.5 h-3.5 text-emerald-600" />
@@ -344,8 +408,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                   ))}
                 </select>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -625,8 +689,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
             {selectedStaffMember ? (
               (() => {
                 const stf = selectedStaffMember;
-                const records = attendance.filter(
-                  (a) => a.staffId === stf.id && a.date && a.date.startsWith(selectedMonth)
+                const records = activeAttendance.filter(
+                  (a) => a.staffId === stf.id
                 );
                 const isOffice = stf.category === 'office';
                 const totalOtHours = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
@@ -877,8 +941,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
               (() => {
                 const staffComputedList = displayedStaff.map((stf) => {
                   const isOffice = stf.category === 'office';
-                  const records = attendance.filter(
-                    (a) => a.staffId === stf.id && a.date && a.date.startsWith(selectedMonth)
+                  const records = activeAttendance.filter(
+                    (a) => a.staffId === stf.id
                   );
                   const totalOt = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
                   const otMoney = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
@@ -1053,53 +1117,194 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
         {/* 4. EXPENSE STATEMENT SHEET */}
         {type === 'expense' && (
-          <div className="mt-4 space-y-3">
-            <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-              <thead>
-                <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                  <th className="py-1 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
-                  <th className="py-1 px-2 border-r border-slate-300 w-24">{t.invoiceDate}</th>
-                  <th className="py-1 px-2 border-r border-slate-300 w-28">{t.category}</th>
-                  <th className="py-1 px-2 border-r border-slate-300">{t.expenseTitle}</th>
-                  <th className="py-1 px-2 border-r border-slate-300 w-28">{lang === 'bn' ? 'প্রাপক' : 'Paid To'}</th>
-                  <th className="py-1 px-2 text-right w-28">{t.amount}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map((e, idx) => (
-                  <tr key={e.id} className="border-b border-slate-200">
-                    <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
-                      {formatNumber(idx + 1, lang)}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">
-                      {formatDate(e.date, lang)}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 capitalize text-[10px]">
-                      {e.category}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 font-medium">
-                      {e.title}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 text-slate-600">
-                      {e.paidTo || '-'}
-                    </td>
-                    <td className="py-1 px-2 text-right font-mono font-bold text-rose-700">
-                      {formatCurrency(e.amount, lang)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                  <td colSpan={5} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
-                    {lang === 'bn' ? 'সর্বমোট অফিস খরচ:' : 'Total Office Expense:'}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono text-rose-800">
-                    {formatCurrency(expenses.reduce((s, e) => s + e.amount, 0), lang)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+          <div className="mt-4 space-y-4">
+            {(() => {
+              const monthExpenses = activeExpenses;
+              const { start: periodStart } = getPeriodBounds();
+              const openingBalance = periodStart
+                ? (storageService.getPettyCashExpenses() || []).reduce((bal, e) => {
+                    if (e.date && e.date < periodStart) {
+                      return e.type === 'in' ? bal + e.amount : bal - e.amount;
+                    }
+                    return bal;
+                  }, 0)
+                : 0;
+
+              const cashInList = monthExpenses.filter((e) => e.type === 'in');
+              const cashOutList = monthExpenses.filter((e) => e.type !== 'in');
+              const totalCashIn = cashInList.reduce((s, e) => s + e.amount, 0);
+              const totalCashOut = cashOutList.reduce((s, e) => s + e.amount, 0);
+              const closingBalance = openingBalance + totalCashIn - totalCashOut;
+
+              return (
+                <div className="space-y-4">
+                  {/* Executive Header Banner */}
+                  <div className="p-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-bold uppercase tracking-wider text-amber-400 text-sm block">
+                        {lang === 'bn' ? 'অফিস পেটি ক্যাশ ও পরিচালন খরচ বিবরণী' : 'Office Petty Cash & Expense Statement'}
+                      </span>
+                      <p className="text-[11px] text-slate-300">
+                        {lang === 'bn' ? `হিসাবের মাস/সময়কাল: ${formatMonthDisplay(selectedMonth)}` : `Statement Period: ${formatMonthDisplay(selectedMonth)}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono text-xs bg-white/10 px-3 py-1 rounded-lg border border-white/20">
+                        {lang === 'bn' ? 'মোট এন্ট্রি:' : 'Total Entries:'} {monthExpenses.length}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 4 Executive Summary KPI Cards (Opening, In, Out, Closing) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-xs">
+                      <span className="text-[10px] text-slate-700 font-bold block">
+                        {lang === 'bn' ? 'প্রারম্ভিক ব্যালেন্স (Opening O/B)' : 'Opening Balance (O/B)'}
+                      </span>
+                      <div className="text-base font-black font-mono text-slate-900 mt-0.5">
+                        {formatCurrency(openingBalance, lang)}
+                      </div>
+                      <span className="text-[9px] text-slate-500">
+                        {lang === 'bn' ? 'শুরুর স্থিতি' : 'Start of period'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl border border-teal-300 bg-teal-50 text-xs">
+                      <span className="text-[10px] text-teal-800 font-semibold block">
+                        {lang === 'bn' ? 'ফান্ড জমা (Cash In)' : 'Cash In (+)'}
+                      </span>
+                      <div className="text-base font-black font-mono text-teal-900 mt-0.5">
+                        +{formatCurrency(totalCashIn, lang)}
+                      </div>
+                      <span className="text-[9px] text-teal-700">
+                        {lang === 'bn' ? 'মেয়াদকালীন জমা' : 'Period refill'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl border border-rose-300 bg-rose-50 text-xs">
+                      <span className="text-[10px] text-rose-800 font-bold block">
+                        {lang === 'bn' ? 'অফিস খরচ (Cash Out)' : 'Cash Out (-)'}
+                      </span>
+                      <div className="text-base font-black font-mono text-rose-900 mt-0.5">
+                        -{formatCurrency(totalCashOut, lang)}
+                      </div>
+                      <span className="text-[9px] text-rose-700">
+                        {lang === 'bn' ? 'মেয়াদকালীন খরচ' : 'Period expenses'}
+                      </span>
+                    </div>
+
+                    <div className={`p-2.5 rounded-xl border text-xs ${closingBalance >= 0 ? 'border-emerald-300 bg-emerald-50' : 'border-rose-400 bg-rose-100'}`}>
+                      <span className="text-[10px] font-bold block text-slate-700">
+                        {lang === 'bn' ? 'সমাপনী ব্যালেন্স (Closing C/B)' : 'Closing Balance (C/B)'}
+                      </span>
+                      <div className={`text-base font-black font-mono mt-0.5 ${closingBalance >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
+                        {formatCurrency(closingBalance, lang)}
+                      </div>
+                      <span className={`text-[9px] ${closingBalance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {closingBalance >= 0 ? (lang === 'bn' ? 'উদ্বৃত্ত ক্যাশ' : 'Net balance') : (lang === 'bn' ? 'ঘাটতি' : 'Deficit')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Expense Ledger Table */}
+                  <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
+                        <th className="py-1.5 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
+                        <th className="py-1.5 px-2 border-r border-slate-300 w-24">{t.invoiceDate}</th>
+                        <th className="py-1.5 px-2 border-r border-slate-300 text-center w-20">{lang === 'bn' ? 'ধরন' : 'Type'}</th>
+                        <th className="py-1.5 px-2 border-r border-slate-300 w-28">{t.category}</th>
+                        <th className="py-1.5 px-2 border-r border-slate-300">{lang === 'bn' ? 'খরচ / জমার বিবরণ' : 'Description / Title'}</th>
+                        <th className="py-1.5 px-2 border-r border-slate-300 w-28">{lang === 'bn' ? 'গ্রহীতা / পেয়ি' : 'Paid To'}</th>
+                        <th className="py-1.5 px-2 text-right w-32">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthExpenses.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-6 text-center text-slate-400">
+                            {lang === 'bn' ? 'এই মাসে কোনো খরচের রেকর্ড নেই' : 'No expense records found for this period'}
+                          </td>
+                        </tr>
+                      ) : (
+                        monthExpenses.map((e, idx) => {
+                          const isCashIn = e.type === 'in';
+                          return (
+                            <tr key={e.id} className="border-b border-slate-200">
+                              <td className="py-1.5 px-2 border-r border-slate-200 text-center font-mono">
+                                {formatNumber(idx + 1, lang)}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-slate-200 font-mono text-[11px]">
+                                {formatDate(e.date, lang)}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-slate-200 text-center">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  isCashIn ? 'bg-teal-100 text-teal-800 border border-teal-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                }`}>
+                                  {isCashIn ? (lang === 'bn' ? 'জমা (+)' : 'IN (+)') : (lang === 'bn' ? 'খরচ (-)' : 'OUT (-)')}
+                                </span>
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-slate-200 capitalize text-[10px]">
+                                {e.category === 'tea_snacks' || e.category === 'food_tea' || e.category === 'tea_food'
+                                  ? (lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks')
+                                  : e.category === 'courier_bill'
+                                  ? (lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill')
+                                  : e.category === 'transport_allowance' || e.category === 'transport'
+                                  ? (lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport Allowance')
+                                  : e.category === 'service_charge'
+                                  ? (lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge')
+                                  : e.category === 'stationery'
+                                  ? (lang === 'bn' ? 'স্টেশনারি' : 'Stationery')
+                                  : e.category === 'utility' || e.category === 'utility_bills' || e.category === 'electricity'
+                                  ? (lang === 'bn' ? 'বিদ্যুৎ/বিল' : 'Utility')
+                                  : e.category === 'maintenance' || e.category === 'repair' || e.category === 'cleaning_maint'
+                                  ? (lang === 'bn' ? 'মেরামত' : 'Maintenance')
+                                  : e.category === 'entertainment'
+                                  ? (lang === 'bn' ? 'আপ্যায়ন' : 'Entertainment')
+                                  : e.category === 'labor' || e.category === 'labour_coolie' || e.category === 'coolie_labor'
+                                  ? (lang === 'bn' ? 'কুলি ও লেবার' : 'Labor')
+                                  : e.category === 'rent'
+                                  ? (lang === 'bn' ? 'দোকান/অফিস ভাড়া' : 'Rent')
+                                  : (lang === 'bn' ? 'অন্যান্য' : 'Other')}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-slate-200 font-medium">
+                                <div>{e.title}</div>
+                                {e.notes && <div className="text-[10px] text-slate-500 italic">{e.notes}</div>}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-slate-200 text-slate-700">
+                                {e.paidTo || '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono font-bold">
+                                <span className={isCashIn ? 'text-teal-700' : 'text-rose-700'}>
+                                  {isCashIn ? '+' : '-'}{formatCurrency(e.amount, lang)}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
+                        <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                          {lang === 'bn' ? 'মোট হিসাব বিবরণী:' : 'Total Statement Summary:'}
+                        </td>
+                        <td colSpan={2} className="py-1.5 px-2 border-r border-slate-300 text-slate-700 text-[11px]">
+                          <span>{lang === 'bn' ? 'ফান্ড জমা:' : 'Cash In:'} <strong className="text-teal-700 font-mono">+{formatCurrency(totalCashIn, lang)}</strong></span>
+                          {' | '}
+                          <span>{lang === 'bn' ? 'প্রকৃত মোট খরচ:' : 'Total Expense:'} <strong className="text-rose-700 font-mono">-{formatCurrency(totalCashOut, lang)}</strong></span>
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-mono text-sm font-black">
+                          <span className={closingBalance >= 0 ? 'text-emerald-800' : 'text-rose-800'}>
+                            = {formatCurrency(closingBalance, lang)}
+                          </span>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1107,17 +1312,20 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         {type === 'financial' && (
           <div className="mt-4 space-y-4">
             {(() => {
-              const periodInvoices = allInvoices.filter((inv) => inv.date && inv.date.startsWith(selectedMonth));
-              const totalSales = periodInvoices.filter((inv) => inv.mode === 'sales').reduce((s, i) => s + i.netInvoiceAmount, 0);
-              const totalPurchases = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + i.netInvoiceAmount, 0);
+              const periodInvoices = activeInvoices;
+              const periodConsignments = activeBranchConsignments;
+              const totalChinaExportRevenue = periodConsignments.reduce((sum, c) => sum + (Number(c.totalBdtValue) || 0), 0);
+              const domesticSales = periodInvoices.filter((inv) => inv.mode === 'sales' || !inv.mode).reduce((s, i) => s + (i.netInvoiceAmount || i.subtotal || 0), 0);
+              const totalSales = domesticSales + totalChinaExportRevenue;
+              const totalPurchases = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + (i.netInvoiceAmount || i.subtotal || 0), 0);
               const grossMargin = totalSales - totalPurchases;
               
-              const periodPettyCash = expenses.filter((e) => e.date && e.date.startsWith(selectedMonth)).reduce((s, e) => s + e.amount, 0);
+              const periodPettyCash = activeExpenses.filter((e) => e.type !== 'in').reduce((s, e) => s + e.amount, 0);
               
               let totalPaidSal = 0;
               staff.forEach((stf) => {
                 if (storageService.getStaffPaymentStatus(selectedMonth, stf.id) === 'Paid') {
-                  const records = attendance.filter((a) => a.staffId === stf.id && a.date && a.date.startsWith(selectedMonth));
+                  const records = activeAttendance.filter((a) => a.staffId === stf.id);
                   const absentDays = records.filter((a) => a.status === 'absent').length;
                   const totalOt = stf.category === 'office' ? 0 : records.reduce((s, a) => s + (a.otHours || 0), 0);
                   const otAmount = totalOt * 60;
@@ -1209,7 +1417,14 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                       <tbody>
                         <tr className="border-b border-slate-200">
                           <td className="py-1.5 px-2 border-r border-slate-200 font-bold text-emerald-800">
-                            (+) {lang === 'bn' ? 'মোট বিক্রয় আয় (Invoiced Sales Turnover)' : 'Total Invoiced Sales Turnover'}
+                            (+) {lang === 'bn' ? 'মোট বিক্রয় ও এক্সপোর্ট আয় (Sales & China Export Turnover)' : 'Total Sales & China Export Turnover'}
+                            {totalChinaExportRevenue > 0 && (
+                              <span className="block text-[10px] text-emerald-700 font-normal">
+                                {lang === 'bn'
+                                  ? `(লোকাল বিক্রয়: ${formatCurrency(domesticSales, lang)} + চায়না ব্রাঞ্চ এক্সপোর্ট: ${formatCurrency(totalChinaExportRevenue, lang)})`
+                                  : `(Domestic: ${formatCurrency(domesticSales, lang)} + China Branch Export: ${formatCurrency(totalChinaExportRevenue, lang)})`}
+                              </span>
+                            )}
                           </td>
                           <td className="py-1.5 px-2 border-r border-slate-200 text-center text-emerald-700 font-semibold text-[10px]">
                             {lang === 'bn' ? 'আয় (Revenue)' : 'Revenue'}
@@ -1313,7 +1528,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         {type === 'worker_tracking' && (
           <div className="space-y-4">
             {(() => {
-              const workerTasks = storageService.getWorkerTasks();
+              const workerTasks = activeWorkerTasks;
               const totalGiven = workerTasks.reduce((s, t) => s + t.givenPcs, 0);
               const totalCompleted = workerTasks.reduce((s, t) => s + t.completedPcs, 0);
               const totalDamaged = workerTasks.reduce((s, t) => s + t.damagedPcs, 0);

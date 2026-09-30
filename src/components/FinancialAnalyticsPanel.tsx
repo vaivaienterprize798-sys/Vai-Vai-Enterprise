@@ -33,6 +33,7 @@ import {
   AttendanceRecord,
   PettyCashExpense,
   CarExpense,
+  BranchConsignment,
 } from '../types';
 import {
   translations,
@@ -53,6 +54,7 @@ interface FinancialAnalyticsPanelProps {
   attendance: AttendanceRecord[];
   pettyCashExpenses: PettyCashExpense[];
   carExpenses: CarExpense[];
+  branchConsignments?: BranchConsignment[];
   onPrintFinancialStatement: (
     mode: DateFilterMode,
     selectedDate: string,
@@ -70,6 +72,7 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
   attendance,
   pettyCashExpenses,
   carExpenses,
+  branchConsignments,
   onPrintFinancialStatement,
 }) => {
   const t = translations[lang];
@@ -114,9 +117,7 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
         'জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন',
         'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'
       ];
-      const bnDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-      const bnYear = y.toString().replace(/[0-9]/g, (d) => bnDigits[parseInt(d, 10)]);
-      return `${bnMonths[m - 1]} ${bnYear}`;
+      return `${bnMonths[m - 1]} ${y}`;
     }
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
@@ -156,11 +157,26 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
     return 0;
   };
 
-  const totalSalesRevenue = useMemo(() => {
+  // China Branch Export Consignments Integration (User Requirement: include China branch consignments in sales revenue)
+  const filteredConsignments = useMemo(() => {
+    const list = branchConsignments && branchConsignments.length > 0
+      ? branchConsignments
+      : storageService.getBranchConsignments();
+    return (list || []).filter((c) => isDateInPeriod(c.date));
+  }, [branchConsignments, filterMode, selectedDate, selectedMonth, startDate, endDate]);
+
+  const totalChinaExportRevenue = useMemo(() => {
+    return filteredConsignments.reduce((sum, c) => sum + (Number(c.totalBdtValue) || 0), 0);
+  }, [filteredConsignments]);
+
+  const totalDomesticSalesRevenue = useMemo(() => {
     return filteredInvoices
       .filter((inv) => inv.mode === 'sales' || !inv.mode)
       .reduce((sum, inv) => sum + getInvoiceAmount(inv), 0);
   }, [filteredInvoices]);
+
+  // Combined Total Sales Turnover = Invoiced Sales + China Branch Export Consignments
+  const totalSalesRevenue = totalDomesticSalesRevenue + totalChinaExportRevenue;
 
   const totalPurchaseCost = useMemo(() => {
     return filteredInvoices
@@ -171,8 +187,9 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
   const grossSalesBalance = totalSalesRevenue - totalPurchaseCost;
 
   // 2. Expenses
+  // 2. Expenses (Excludes cash deposits / cash-in additions per financial accounting standards)
   const filteredPettyCash = useMemo(() => {
-    return pettyCashExpenses.filter((e) => isDateInPeriod(e.date));
+    return pettyCashExpenses.filter((e) => isDateInPeriod(e.date) && e.type !== 'in');
   }, [pettyCashExpenses, filterMode, selectedDate, selectedMonth, startDate, endDate]);
 
   const totalPettyCashAmount = useMemo(() => {
@@ -278,8 +295,18 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
       });
     });
 
+    if (totalChinaExportRevenue > 0) {
+      cats['china_export'] = {
+        code: 'china_export',
+        labelBn: 'চীন শাখা অফিস রপ্তানি চালান',
+        labelEn: 'China Branch Export Consignments',
+        sales: totalChinaExportRevenue,
+        purchase: 0,
+      };
+    }
+
     return Object.values(cats);
-  }, [filteredInvoices]);
+  }, [filteredInvoices, totalChinaExportRevenue]);
 
   return (
     <div className="space-y-6">
@@ -467,7 +494,7 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
         <div className="p-5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
-              {t.totalSalesRevenue}
+              {lang === 'bn' ? 'মোট বিক্রয় ও শাখা রপ্তানি আয়' : 'Total Sales & Export Revenue'}
             </span>
             <div className="w-8 h-8 rounded-xl bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300 flex items-center justify-center">
               <ArrowUpRight className="w-4 h-4" />
@@ -476,9 +503,18 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
           <div className="text-2xl font-black font-mono text-emerald-900 dark:text-emerald-300">
             {formatCurrency(totalSalesRevenue, lang)}
           </div>
-          <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
-            {lang === 'bn' ? 'ইনভয়েস হতে অর্জিত মোট ক্যাশ ও বাকি বিক্রয়' : 'Total invoiced sales turnover'}
-          </p>
+          <div className="text-[11px] text-emerald-700 dark:text-emerald-400 space-y-0.5 pt-1 border-t border-emerald-200/60 dark:border-emerald-800/40 font-mono">
+            <div className="flex justify-between">
+              <span>{lang === 'bn' ? 'লোকাল ইনভয়েস বিক্রয়:' : 'Local Invoices:'}</span>
+              <strong className="text-slate-900 dark:text-white">{formatCurrency(totalDomesticSalesRevenue, lang)}</strong>
+            </div>
+            {totalChinaExportRevenue > 0 && (
+              <div className="flex justify-between text-cyan-800 dark:text-cyan-300">
+                <span>{lang === 'bn' ? 'চীন শাখা রপ্তানি চালান:' : 'China Export Consignments:'}</span>
+                <strong>{formatCurrency(totalChinaExportRevenue, lang)} ({filteredConsignments.length})</strong>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Total Purchase Cost */}
@@ -601,15 +637,29 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
           </div>
 
           <div className="space-y-2 text-xs">
-            {/* Sales */}
-            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 font-semibold">
-              <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                <ArrowUpRight className="w-4 h-4" />
-                <span>(+) {t.totalSalesRevenue}</span>
-              </span>
-              <span className="font-mono text-slate-900 dark:text-white font-bold">
-                {formatCurrency(totalSalesRevenue, lang)}
-              </span>
+            {/* Combined Sales & Export Turnover */}
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+              <div className="flex items-center justify-between font-bold">
+                <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                  <ArrowUpRight className="w-4 h-4" />
+                  <span>(+) {lang === 'bn' ? 'মোট বিক্রয় ও চীন শাখা রপ্তানি আয়' : 'Total Sales & China Export Turnover'}</span>
+                </span>
+                <span className="font-mono text-emerald-800 dark:text-emerald-300 font-black">
+                  {formatCurrency(totalSalesRevenue, lang)}
+                </span>
+              </div>
+              <div className="pl-6 text-[11px] text-slate-500 font-mono space-y-0.5">
+                <div className="flex justify-between">
+                  <span>• {lang === 'bn' ? 'লোকাল ইনভয়েস বিক্রয় আয়' : 'Local Invoice Sales'}:</span>
+                  <span>{formatCurrency(totalDomesticSalesRevenue, lang)}</span>
+                </div>
+                {totalChinaExportRevenue > 0 && (
+                  <div className="flex justify-between text-cyan-700 dark:text-cyan-300 font-semibold">
+                    <span>• {lang === 'bn' ? 'চীন শাখা অফিসে প্রেরিত চালান (রপ্তানি ভলিউম)' : 'China Branch Export Consignments'}:</span>
+                    <span>{formatCurrency(totalChinaExportRevenue, lang)} ({filteredConsignments.length} {lang === 'bn' ? 'টি চালান' : 'challans'})</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Purchases */}
