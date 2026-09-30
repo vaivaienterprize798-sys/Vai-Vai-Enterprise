@@ -35,17 +35,22 @@ import {
   ThirdPartyRmbConversion,
   ConsignmentStatus,
   SettlementStatus,
+  ThirdParty,
+  ChinaDirectPayment,
 } from '../types';
 import { formatCurrency, formatNumber, formatDate, formatSheetNumber } from '../lib/translations';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 import { WeChatShareDropdown } from './WeChatShareDropdown';
 import { CompanyLogo } from './CompanyLogo';
 import { executePrint } from '../lib/printUtils';
+import { storageService } from '../lib/storage';
 
 interface BranchOfficePanelProps {
   consignments: BranchConsignment[];
   remittances: BranchRmbRemittance[];
   conversions: ThirdPartyRmbConversion[];
+  thirdParties?: ThirdParty[];
+  chinaDirectPayments?: ChinaDirectPayment[];
   companyInfo: CompanyInfo;
   lang: Language;
   onSaveConsignment: (item: BranchConsignment) => void;
@@ -54,6 +59,10 @@ interface BranchOfficePanelProps {
   onDeleteRemittance: (id: string) => void;
   onSaveConversion: (item: ThirdPartyRmbConversion) => void;
   onDeleteConversion: (id: string) => void;
+  onSaveThirdParty?: (item: ThirdParty) => void;
+  onDeleteThirdParty?: (id: string) => void;
+  onSaveChinaDirectPayment?: (item: ChinaDirectPayment) => void;
+  onDeleteChinaDirectPayment?: (id: string) => void;
   isSuperAdmin?: boolean;
 }
 
@@ -61,6 +70,8 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   consignments,
   remittances,
   conversions,
+  thirdParties = [],
+  chinaDirectPayments = [],
   companyInfo,
   lang,
   onSaveConsignment,
@@ -69,9 +80,13 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   onDeleteRemittance,
   onSaveConversion,
   onDeleteConversion,
+  onSaveThirdParty,
+  onDeleteThirdParty,
+  onSaveChinaDirectPayment,
+  onDeleteChinaDirectPayment,
   isSuperAdmin = true,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'consignments' | 'remittances' | 'conversions'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'consignments' | 'remittances' | 'conversions' | 'third_parties' | 'china_direct_payments'>('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -80,10 +95,15 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   const [isRemittanceModalOpen, setIsRemittanceModalOpen] = useState(false);
   const [isConversionModalOpen, setIsConversionModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isThirdPartyModalOpen, setIsThirdPartyModalOpen] = useState(false);
+  const [isChinaPaymentModalOpen, setIsChinaPaymentModalOpen] = useState(false);
+
   const [selectedConversion, setSelectedConversion] = useState<ThirdPartyRmbConversion | null>(null);
   const [printingConsignment, setPrintingConsignment] = useState<BranchConsignment | null>(null);
   const [isBranchStatementModalOpen, setIsBranchStatementModalOpen] = useState(false);
   const [statementType, setStatementType] = useState<'third_party' | 'consignments' | 'remittances' | 'combined'>('third_party');
+  const [statementPartyFilter, setStatementPartyFilter] = useState<string>('all');
+  const [statementBranchFilter, setStatementBranchFilter] = useState<string>('all');
 
   // Month & Date Filter States (User Requirement)
   const todayStr = new Date().toISOString().split('T')[0];
@@ -96,6 +116,26 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   const [editingConsignment, setEditingConsignment] = useState<BranchConsignment | null>(null);
   const [editingRemittance, setEditingRemittance] = useState<BranchRmbRemittance | null>(null);
   const [editingConversion, setEditingConversion] = useState<ThirdPartyRmbConversion | null>(null);
+  const [editingThirdParty, setEditingThirdParty] = useState<ThirdParty | null>(null);
+  const [editingChinaPayment, setEditingChinaPayment] = useState<ChinaDirectPayment | null>(null);
+
+  // Third Party Form State
+  const [tpName, setTpName] = useState('');
+  const [tpContactPerson, setTpContactPerson] = useState('');
+  const [tpPhone, setTpPhone] = useState('');
+  const [tpEmail, setTpEmail] = useState('');
+  const [tpCity, setTpCity] = useState('');
+  const [tpAddress, setTpAddress] = useState('');
+  const [tpNotes, setTpNotes] = useState('');
+
+  // China Direct Payment Form State
+  const [cdpDate, setCdpDate] = useState(new Date().toISOString().split('T')[0]);
+  const [cdpRefNo, setCdpRefNo] = useState(() => `CDP-${Date.now().toString().slice(-4)}`);
+  const [cdpBranchName, setCdpBranchName] = useState('চীন/গুয়াংজু শাখা অফিস');
+  const [cdpAmountBdt, setCdpAmountBdt] = useState<number>(0);
+  const [cdpPaymentMethod, setCdpPaymentMethod] = useState<'bank_transfer' | 'cash' | 'bKash' | 'nagad' | 'other'>('bank_transfer');
+  const [cdpBankDetails, setCdpBankDetails] = useState('');
+  const [cdpNotes, setCdpNotes] = useState('');
 
   // Sequential Auto-Increment Number Generators
   const getNextConsignmentNo = () => {
@@ -292,6 +332,127 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     setIsConversionModalOpen(true);
   };
 
+  // Third Party Handlers (Requirement 1)
+  const openNewThirdPartyModal = () => {
+    setEditingThirdParty(null);
+    setTpName('');
+    setTpContactPerson('');
+    setTpPhone('');
+    setTpEmail('');
+    setTpCity('');
+    setTpAddress('');
+    setTpNotes('');
+    setIsThirdPartyModalOpen(true);
+  };
+
+  const openEditThirdPartyModal = (tp: ThirdParty) => {
+    setEditingThirdParty(tp);
+    setTpName(tp.name);
+    setTpContactPerson(tp.contactPerson || '');
+    setTpPhone(tp.phone || '');
+    setTpEmail(tp.email || '');
+    setTpCity(tp.city || '');
+    setTpAddress(tp.address || '');
+    setTpNotes(tp.notes || '');
+    setIsThirdPartyModalOpen(true);
+  };
+
+  const handleThirdPartySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tpName.trim()) return;
+    const now = new Date().toISOString();
+    const item: ThirdParty = {
+      id: editingThirdParty ? editingThirdParty.id : `tp-${Date.now()}`,
+      name: tpName.trim(),
+      contactPerson: tpContactPerson.trim(),
+      phone: tpPhone.trim(),
+      email: tpEmail.trim(),
+      city: tpCity.trim(),
+      address: tpAddress.trim(),
+      notes: tpNotes.trim(),
+      status: 'active',
+      createdAt: editingThirdParty ? editingThirdParty.createdAt : now,
+      updatedAt: now,
+    };
+    if (onSaveThirdParty) {
+      onSaveThirdParty(item);
+    } else {
+      storageService.saveThirdParty(item);
+    }
+    setConvPartyName(item.name);
+    if (item.phone) setConvPartyPhone(item.phone);
+    setIsThirdPartyModalOpen(false);
+  };
+
+  const handleDeleteThirdPartyConfirm = (id: string) => {
+    if (confirm(lang === 'bn' ? 'আপনি কি নিশ্চিত যে এই ৩য়-পক্ষ এক্সচেঞ্জার মুছে ফেলতে চান?' : 'Are you sure you want to remove this 3rd party?')) {
+      if (onDeleteThirdParty) {
+        onDeleteThirdParty(id);
+      } else {
+        storageService.deleteThirdParty(id);
+      }
+    }
+  };
+
+  // China Direct Payment Handlers (Requirement 2)
+  const openNewChinaDirectPaymentModal = () => {
+    setEditingChinaPayment(null);
+    setCdpDate(new Date().toISOString().split('T')[0]);
+    setCdpRefNo(`CDP-${Date.now().toString().slice(-4)}`);
+    setCdpBranchName('চীন/গুয়াংজু শাখা অফিস');
+    setCdpAmountBdt(0);
+    setCdpPaymentMethod('bank_transfer');
+    setCdpBankDetails('');
+    setCdpNotes('');
+    setIsChinaPaymentModalOpen(true);
+  };
+
+  const openEditChinaDirectPaymentModal = (cdp: ChinaDirectPayment) => {
+    setEditingChinaPayment(cdp);
+    setCdpDate(cdp.date);
+    setCdpRefNo(cdp.referenceNo);
+    setCdpBranchName(cdp.branchName);
+    setCdpAmountBdt(cdp.amountBdt);
+    setCdpPaymentMethod(cdp.paymentMethod);
+    setCdpBankDetails(cdp.bankAccountDetails || '');
+    setCdpNotes(cdp.notes || '');
+    setIsChinaPaymentModalOpen(true);
+  };
+
+  const handleChinaDirectPaymentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (cdpAmountBdt <= 0) return;
+    const now = new Date().toISOString();
+    const item: ChinaDirectPayment = {
+      id: editingChinaPayment ? editingChinaPayment.id : `cdp-${Date.now()}`,
+      date: cdpDate,
+      referenceNo: cdpRefNo || `CDP-${Date.now().toString().slice(-4)}`,
+      branchName: cdpBranchName || 'চীন/গুয়াংজু শাখা অফিস',
+      amountBdt: cdpAmountBdt,
+      paymentMethod: cdpPaymentMethod,
+      bankAccountDetails: cdpBankDetails.trim(),
+      notes: cdpNotes.trim(),
+      createdAt: editingChinaPayment ? editingChinaPayment.createdAt : now,
+      updatedAt: now,
+    };
+    if (onSaveChinaDirectPayment) {
+      onSaveChinaDirectPayment(item);
+    } else {
+      storageService.saveChinaDirectPayment(item);
+    }
+    setIsChinaPaymentModalOpen(false);
+  };
+
+  const handleDeleteChinaPaymentConfirm = (id: string) => {
+    if (confirm(lang === 'bn' ? 'চীন অফিসের এই সরাসরি BDT পেমেন্ট মুছে ফেলতে চান?' : 'Delete this China direct payment?')) {
+      if (onDeleteChinaDirectPayment) {
+        onDeleteChinaDirectPayment(id);
+      } else {
+        storageService.deleteChinaDirectPayment(id);
+      }
+    }
+  };
+
   // Installment Payment Modal State
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
   const [payAmountBdt, setPayAmountBdt] = useState<number>(0);
@@ -333,6 +494,30 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     return conversions.filter((cv) => isDateInFilter(cv.date));
   }, [conversions, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
 
+  const filteredChinaDirectPayments = useMemo(() => {
+    return chinaDirectPayments.filter((p) => isDateInFilter(p.date));
+  }, [chinaDirectPayments, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
+
+  // Unique lists for party-wise & branch-wise filtering (Requirement 3)
+  const uniqueThirdPartiesList = useMemo(() => {
+    const set = new Set<string>();
+    thirdParties.forEach((p) => { if (p.name) set.add(p.name); });
+    conversions.forEach((cv) => {
+      const name = cv.partyName || (cv as any).thirdPartyName;
+      if (name) set.add(name);
+    });
+    return Array.from(set);
+  }, [thirdParties, conversions]);
+
+  const uniqueBranchesList = useMemo(() => {
+    const set = new Set<string>();
+    consignments.forEach((c) => { if (c.branchName) set.add(c.branchName); });
+    remittances.forEach((r) => { if (r.branchName) set.add(r.branchName); });
+    chinaDirectPayments.forEach((p) => { if (p.branchName) set.add(p.branchName); });
+    if (set.size === 0) set.add('চীন/গুয়াংজু শাখা অফিস');
+    return Array.from(set);
+  }, [consignments, remittances, chinaDirectPayments]);
+
   // KPI Calculations
   const metrics = useMemo(() => {
     const totalBdtSent = consignments.reduce((acc, c) => acc + (Number(c.totalBdtValue) || 0), 0);
@@ -347,10 +532,13 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     const rmbBalanceInHand = Math.max(0, totalRmbReceived - totalRmbConverted);
     const branchNetRmbDue = totalRmbEstSent > 0 ? (totalRmbEstSent - totalRmbReceived) : 0;
 
+    // Direct China BDT payments without third parties
+    const totalChinaDirectBdt = chinaDirectPayments.reduce((acc, p) => acc + (Number(p.amountBdt) || 0), 0);
+
     // User exact calculation:
-    // Total Stock BDT থেকে RMB Converted BDT বিয়োগ (-) হয়ে স্বয়ংক্রয়ভাবে হিসাব দেখাবে এবং স্ক্রিনে শো করবে যে চায়না অফিসে আমার স্টক বা বিডিটি টাকার কত অংশ অবশিষ্টাংশ (Remaining/Due) বাকি আছে
+    // Total Stock BDT থেকে RMB Converted BDT এবং China Direct BDT বিয়োগ (-) হয়ে স্বয়ংক্রয়ভাবে হিসাব দেখাবে
     const rmbConvertedBdt = totalExpectedBdt > 0 ? totalExpectedBdt : totalBdtReceived;
-    const chinaRemainingStockBdt = totalBdtSent - rmbConvertedBdt;
+    const chinaRemainingStockBdt = totalBdtSent - rmbConvertedBdt - totalChinaDirectBdt;
 
     return {
       totalBdtSent,
@@ -361,18 +549,19 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
       totalBdtReceived,
       totalExpectedBdt,
       totalThirdPartyDueBdt,
+      totalChinaDirectBdt,
       branchNetRmbDue,
       rmbConvertedBdt,
       chinaRemainingStockBdt,
     };
-  }, [consignments, remittances, conversions]);
+  }, [consignments, remittances, conversions, chinaDirectPayments]);
 
-  // Comprehensive China Stock BDT & RMB Conversion History Ledger
+  // Comprehensive China Stock BDT, RMB Conversion & Direct BDT Payment History Ledger
   const chinaBdtHistoryLedger = useMemo(() => {
     type LedgerEntry = {
       id: string;
       date: string;
-      type: 'consignment_sent' | 'rmb_converted';
+      type: 'consignment_sent' | 'rmb_converted' | 'china_direct_payment';
       title: string;
       refNo: string;
       stockDebitBdt: number;
@@ -407,6 +596,18 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
       });
     });
 
+    chinaDirectPayments.forEach((p) => {
+      entries.push({
+        id: `cdp-${p.id}`,
+        date: p.date,
+        type: 'china_direct_payment',
+        title: lang === 'bn' ? `চীন অফিস সরাসরি BDT পেমেন্ট (${p.paymentMethod})` : `China Direct BDT Payment (${p.paymentMethod})`,
+        refNo: p.referenceNo,
+        stockDebitBdt: 0,
+        convertedCreditBdt: Number(p.amountBdt) || 0,
+      });
+    });
+
     entries.sort((a, b) => (a.date > b.date ? 1 : -1));
 
     let currentBalance = 0;
@@ -419,7 +620,42 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     });
 
     return result;
-  }, [consignments, conversions, lang]);
+  }, [consignments, conversions, chinaDirectPayments, lang]);
+
+  // Filtered lists for statement printing & sharing (party-wise and branch-wise)
+  const statementConversions = useMemo(() => {
+    if (statementPartyFilter === 'all') return conversions;
+    return conversions.filter((c) => (c.partyName || (c as any).thirdPartyName)?.toLowerCase() === statementPartyFilter.toLowerCase());
+  }, [conversions, statementPartyFilter]);
+
+  const statementPartyMetrics = useMemo(() => {
+    const totalRmb = statementConversions.reduce((acc, c) => acc + (Number(c.rmbAmountGiven) || 0), 0);
+    const totalReceived = statementConversions.reduce((acc, c) => acc + (Number(c.receivedBdtAmount) || 0), 0);
+    const totalExpected = statementConversions.reduce((acc, c) => acc + (Number(c.expectedBdtAmount) || 0), 0);
+    const totalDue = statementConversions.reduce((acc, c) => acc + (Number(c.remainingDueBdt) || 0), 0);
+    return { totalRmb, totalReceived, totalExpected, totalDue };
+  }, [statementConversions]);
+
+  const statementConsignments = useMemo(() => {
+    if (statementBranchFilter === 'all') return consignments;
+    return consignments.filter((c) => c.branchName?.toLowerCase() === statementBranchFilter.toLowerCase());
+  }, [consignments, statementBranchFilter]);
+
+  const statementConsignmentMetrics = useMemo(() => {
+    const totalBdt = statementConsignments.reduce((acc, c) => acc + (Number(c.totalBdtValue) || 0), 0);
+    const totalRmb = statementConsignments.reduce((acc, c) => acc + (Number(c.totalRmbEstimated) || 0), 0);
+    return { totalBdt, totalRmb };
+  }, [statementConsignments]);
+
+  const statementRemittances = useMemo(() => {
+    if (statementBranchFilter === 'all') return remittances;
+    return remittances.filter((r) => r.branchName?.toLowerCase() === statementBranchFilter.toLowerCase());
+  }, [remittances, statementBranchFilter]);
+
+  const statementRemittanceMetrics = useMemo(() => {
+    const totalRmb = statementRemittances.reduce((acc, r) => acc + (Number(r.rmbAmount) || 0), 0);
+    return { totalRmb };
+  }, [statementRemittances]);
 
   // Consignment Item Handlers
   const handleAddItemRow = () => {
@@ -638,6 +874,26 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
           >
             <ArrowRightLeft className="w-4 h-4" />
             <span>{lang === 'bn' ? '+ ৩য়-পক্ষ RMB ➔ BDT' : '+ Convert RMB to BDT'}</span>
+          </button>
+
+          {/* New RMB Exchanger button (Requirement 1) */}
+          <button
+            onClick={openNewThirdPartyModal}
+            className="flex items-center gap-2 px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-xs cursor-pointer shadow-lg transition-transform active:scale-95"
+            title="নতুন ৩য়-পক্ষ আরএমবি এক্সচেঞ্জার যুক্ত করুন"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>{lang === 'bn' ? '+ নতুন মানি এক্সচেঞ্জার' : '+ Add 3rd Party / Exchanger'}</span>
+          </button>
+
+          {/* China Office Direct BDT Payment button (Requirement 2) */}
+          <button
+            onClick={openNewChinaDirectPaymentModal}
+            className="flex items-center gap-2 px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold text-xs cursor-pointer shadow-lg transition-transform active:scale-95"
+            title="চীন অফিস সরাসরি BDT পাঠালে এন্ট্রি করুন"
+          >
+            <Banknote className="w-4 h-4" />
+            <span>{lang === 'bn' ? '+ চীন সরাসরি BDT পেমেন্ট' : '+ China Direct BDT'}</span>
           </button>
 
           {/* Independent Branch Office Print Statement Button */}
@@ -868,7 +1124,7 @@ _${companyInfo.name}_`;
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
           {/* 1. Total Stock Sent BDT */}
           <div className="p-3.5 bg-white/5 border border-white/10 rounded-xl space-y-1">
             <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
@@ -885,26 +1141,45 @@ _${companyInfo.name}_`;
           {/* 2. Total RMB Converted to BDT */}
           <div className="p-3.5 bg-white/5 border border-white/10 rounded-xl space-y-1">
             <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">
-              {lang === 'bn' ? '২. (-) RMB হতে কনভার্ট হওয়া মোট টাকা (BDT)' : '2. (-) Total RMB Converted to BDT'}
+              {lang === 'bn' ? '২. (-) RMB হতে কনভার্ট হওয়া টাকা' : '2. (-) RMB Converted to BDT'}
             </span>
             <div className="text-xl sm:text-2xl font-black font-mono text-emerald-400">
               {formatCurrency(metrics.rmbConvertedBdt, lang)}
             </div>
             <p className="text-[10px] text-slate-400 font-mono">
-              {conversions.length} {lang === 'bn' ? 'টি RMB কনভার্শন সম্পন্ন' : 'conversions recorded'}
+              {conversions.length} {lang === 'bn' ? 'টি RMB কনভার্শন' : 'conversions recorded'}
             </p>
           </div>
 
-          {/* 3. China Remaining Due BDT */}
+          {/* 3. China Office Direct BDT Payment */}
+          <div className="p-3.5 bg-white/5 border border-teal-500/30 rounded-xl space-y-1">
+            <span className="text-[11px] font-bold text-teal-300 uppercase tracking-wider flex items-center justify-between">
+              <span>{lang === 'bn' ? '৩. (-) চীন অফিস সরাসরি BDT' : '3. (-) China Direct BDT'}</span>
+              <button
+                onClick={openNewChinaDirectPaymentModal}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500 text-slate-950 font-bold hover:bg-teal-400 cursor-pointer"
+              >
+                + এন্ট্রি
+              </button>
+            </span>
+            <div className="text-xl sm:text-2xl font-black font-mono text-teal-300">
+              {formatCurrency(metrics.totalChinaDirectBdt, lang)}
+            </div>
+            <p className="text-[10px] text-teal-200/80 font-mono">
+              {chinaDirectPayments.length} {lang === 'bn' ? 'টি সরাসরি ব্যাংক/ক্যাশ পেমেন্ট' : 'direct bank/cash payments'}
+            </p>
+          </div>
+
+          {/* 4. China Remaining Due BDT */}
           <div className="p-3.5 bg-sky-500/15 border border-cyan-400/50 rounded-xl space-y-1">
             <span className="text-[11px] font-black text-cyan-300 uppercase tracking-wider">
-              {lang === 'bn' ? '৩. (=) চায়না অফিসে অবশিষ্টাংশ / পাওনা (Remaining/Due)' : '3. (=) China Office Remaining / Due BDT'}
+              {lang === 'bn' ? '৪. (=) চায়না অফিসে অবশিষ্টাংশ পাওনা' : '4. (=) China Office Net Due'}
             </span>
             <div className="text-xl sm:text-2xl font-black font-mono text-cyan-300">
               {formatCurrency(metrics.chinaRemainingStockBdt, lang)}
             </div>
             <p className="text-[10px] text-cyan-200/90 font-mono">
-              = ৳{(metrics.totalBdtSent ?? 0).toLocaleString()} - ৳{(metrics.rmbConvertedBdt ?? 0).toLocaleString()}
+              = ৳{(metrics.totalBdtSent ?? 0).toLocaleString()} - ৳{(metrics.rmbConvertedBdt ?? 0).toLocaleString()} - ৳{(metrics.totalChinaDirectBdt ?? 0).toLocaleString()}
             </p>
           </div>
         </div>
@@ -1017,6 +1292,36 @@ _${companyInfo.name}_`;
           <span>{lang === 'bn' ? '৩য়-পক্ষ RMB ➔ BDT কনভার্শন লেজার' : '3rd Party RMB to BDT Ledger'}</span>
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-mono font-bold">
             {conversions.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('third_parties')}
+          className={`pb-3 px-4 font-bold text-xs sm:text-sm transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 ${
+            activeTab === 'third_parties'
+              ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Building className="w-4 h-4" />
+          <span>{lang === 'bn' ? '৩য়-পক্ষ এক্সচেঞ্জার খাতা' : '3rd Party Exchangers'}</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-mono font-bold">
+            {thirdParties.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('china_direct_payments')}
+          className={`pb-3 px-4 font-bold text-xs sm:text-sm transition-all border-b-2 cursor-pointer flex items-center gap-2 shrink-0 ${
+            activeTab === 'china_direct_payments'
+              ? 'border-teal-600 text-teal-600 dark:text-teal-400'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Banknote className="w-4 h-4" />
+          <span>{lang === 'bn' ? 'চীন সরাসরি BDT পেমেন্ট' : 'China Direct BDT'}</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 font-mono font-bold">
+            {chinaDirectPayments.length}
           </span>
         </button>
       </div>
@@ -1443,6 +1748,255 @@ _${companyInfo.name}_`;
         </div>
       )}
 
+      {/* TAB 5: 3RD PARTY EXCHANGERS MANAGEMENT (Requirement 1) */}
+      {activeTab === 'third_parties' && (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base flex items-center gap-2">
+                <Building className="w-4 h-4 text-purple-600" />
+                <span>{lang === 'bn' ? '৩য়-পক্ষ আরএমবি এক্সচেঞ্জার তালিকা ও প্রোফাইল' : '3rd Party RMB Exchangers Management'}</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {lang === 'bn'
+                  ? 'যাদের মাধ্যমে আরএমবি রেট সুবিধা পেয়ে BDT তে কনভার্ট করা হয় তাদের সংরক্ষিত তালিকা।'
+                  : 'Manage dynamic 3rd party brokers for RMB currency conversion rate comparison.'}
+              </p>
+            </div>
+            <button
+              onClick={openNewThirdPartyModal}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-transform active:scale-95"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>{lang === 'bn' ? '+ নতুন এক্সচেঞ্জার যোগ করুন' : '+ Add 3rd Party Exchanger'}</span>
+            </button>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="p-3">#</th>
+                    <th className="p-3">এক্সচেঞ্জারের নাম</th>
+                    <th className="p-3">যোগাযোগকারী</th>
+                    <th className="p-3">ফোন নম্বর</th>
+                    <th className="p-3">শহর / ঠিকানা</th>
+                    <th className="p-3">মোট কনভার্ট লেনদেন</th>
+                    <th className="p-3 text-right">বর্তমান বাকি (Due)</th>
+                    <th className="p-3 text-center">অ্যাকশন</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {thirdParties.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-10 text-center text-slate-400">
+                        <Building className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                        <p>{lang === 'bn' ? 'কোনো ৩য়-পক্ষ এক্সচেঞ্জার যুক্ত করা হয়নি। উপরের বাটনে চাপ দিয়ে যুক্ত করুন।' : 'No 3rd party exchangers added yet.'}</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    thirdParties.map((tp, idx) => {
+                      const partyConversions = conversions.filter(
+                        (cv) => cv.partyName?.toLowerCase() === tp.name.toLowerCase() || (cv as any).thirdPartyName?.toLowerCase() === tp.name.toLowerCase()
+                      );
+                      const partyDue = partyConversions.reduce((acc, cv) => acc + (Number(cv.remainingDueBdt) || 0), 0);
+                      const partyRmb = partyConversions.reduce((acc, cv) => acc + (Number(cv.rmbAmountGiven) || 0), 0);
+
+                      return (
+                        <tr key={tp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                          <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
+                          <td className="p-3 font-bold text-slate-900 dark:text-white">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                              <span>{tp.name}</span>
+                            </div>
+                            {tp.notes && <span className="text-[10px] text-slate-400 block font-normal">{tp.notes}</span>}
+                          </td>
+                          <td className="p-3 text-slate-700 dark:text-slate-300">{tp.contactPerson || '-'}</td>
+                          <td className="p-3 font-mono font-bold text-slate-800 dark:text-slate-200">{tp.phone || '-'}</td>
+                          <td className="p-3 text-slate-600 dark:text-slate-400">{tp.city || tp.address || '-'}</td>
+                          <td className="p-3 font-mono">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{partyConversions.length} টি</span>
+                            {partyRmb > 0 && <span className="text-[10px] text-cyan-600 dark:text-cyan-400 block">¥ {partyRmb.toLocaleString()}</span>}
+                          </td>
+                          <td className="p-3 text-right font-mono font-black text-sm">
+                            {partyDue > 0 ? (
+                              <span className="text-rose-600">৳{partyDue.toLocaleString()}</span>
+                            ) : (
+                              <span className="text-emerald-600">৳০</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => {
+                                  openNewConversionModal();
+                                  setConvPartyName(tp.name);
+                                  if (tp.phone) setConvPartyPhone(tp.phone);
+                                }}
+                                className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer"
+                                title="এই এক্সচেঞ্জারের মাধ্যমে RMB কনভার্ট করুন"
+                              >
+                                <ArrowRightLeft className="w-3 h-3" />
+                                <span>{lang === 'bn' ? 'RMB কনভার্ট' : 'Convert'}</span>
+                              </button>
+                              <button
+                                onClick={() => openEditThirdPartyModal(tp)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 cursor-pointer"
+                                title="সম্পাদনা"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              {isSuperAdmin && (
+                                <button
+                                  onClick={() => handleDeleteThirdPartyConfirm(tp.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 cursor-pointer"
+                                  title="মুছে ফেলুন"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: CHINA DIRECT BDT PAYMENTS (Requirement 2) */}
+      {activeTab === 'china_direct_payments' && (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+                  {lang === 'bn' ? 'সরাসরি ব্যাংক/ক্যাশ BDT' : 'Direct BDT'}
+                </span>
+                <span className="text-xs font-mono text-slate-400">
+                  {lang === 'bn' ? 'কোনো ৩য়-পক্ষ এক্সচেঞ্জার ছাড়া' : 'Direct from China Branch'}
+                </span>
+              </div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base mt-1 flex items-center gap-2">
+                <Banknote className="w-4 h-4 text-teal-600" />
+                <span>{lang === 'bn' ? 'চীন অফিস সরাসরি BDT পেমেন্ট এন্ট্রি খাতা' : 'China Office Direct BDT Inflows'}</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {lang === 'bn'
+                  ? 'চীন অফিস থেকে ব্যাংক বা ক্যাশে পাঠানো টাকা স্বয়ংক্রিয়ভাবে মোট আয়ে যোগ হবে এবং ROI তে হিসাব প্রতিফলিত হবে।'
+                  : 'Direct BDT remittances from China branch automatically calculating into business revenue & ROI reports.'}
+              </p>
+            </div>
+
+            <button
+              onClick={openNewChinaDirectPaymentModal}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-transform active:scale-95"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>{lang === 'bn' ? '+ নতুন সরাসরি BDT এন্ট্রি' : '+ Add Direct BDT Payment'}</span>
+            </button>
+          </div>
+
+          {/* Quick Metrics Ribbon */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <span className="text-xs text-slate-500 block">{lang === 'bn' ? 'মোট সরাসরি পেমেন্ট সংখ্যা' : 'Total Direct Payments'}</span>
+              <div className="text-xl font-black font-mono text-slate-900 dark:text-white mt-1">
+                {chinaDirectPayments.length} {lang === 'bn' ? 'টি' : 'records'}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl border border-teal-200 dark:border-teal-900/60 bg-teal-50/40 dark:bg-teal-950/20">
+              <span className="text-xs text-teal-700 dark:text-teal-400 block">{lang === 'bn' ? 'চীন হতে প্রাপ্ত মোট সরাসরি BDT' : 'Total Direct BDT Inflow'}</span>
+              <div className="text-xl font-black font-mono text-teal-600 dark:text-teal-300 mt-1">
+                {formatCurrency(metrics.totalChinaDirectBdt, lang)}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl border border-sky-200 dark:border-sky-900/60 bg-sky-50/40 dark:bg-sky-950/20">
+              <span className="text-xs text-sky-700 dark:text-sky-400 block">{lang === 'bn' ? 'চীন অফিসে অবশিষ্ট স্টক/পাওনা' : 'China Office Net Balance'}</span>
+              <div className="text-xl font-black font-mono text-cyan-600 dark:text-cyan-300 mt-1">
+                {formatCurrency(metrics.chinaRemainingStockBdt, lang)}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="p-3">তারিখ & রেফারেন্স</th>
+                    <th className="p-3">শাখা অফিস</th>
+                    <th className="p-3">পেমেন্ট মাধ্যম</th>
+                    <th className="p-3">ব্যাংক / অ্যাকাউন্ট বিবরণ</th>
+                    <th className="p-3 text-right">টাকার পরিমাণ (BDT)</th>
+                    <th className="p-3">মন্তব্য</th>
+                    <th className="p-3 text-center">অ্যাকশন</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredChinaDirectPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-10 text-center text-slate-400">
+                        <Banknote className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                        <p>{lang === 'bn' ? 'কোনো সরাসরি BDT পেমেন্ট এন্ট্রি পাওয়া যায়নি।' : 'No direct BDT payments found.'}</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredChinaDirectPayments.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
+                          <div>#{p.referenceNo}</div>
+                          <div className="text-[10px] text-slate-400 font-normal">{p.date}</div>
+                        </td>
+                        <td className="p-3 font-semibold text-slate-800 dark:text-slate-200">{p.branchName}</td>
+                        <td className="p-3">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 uppercase">
+                            {p.paymentMethod}
+                          </span>
+                        </td>
+                        <td className="p-3 font-mono text-slate-600 dark:text-slate-400">{p.bankAccountDetails || '-'}</td>
+                        <td className="p-3 text-right font-mono font-black text-sm text-teal-600 dark:text-teal-400">
+                          {formatCurrency(p.amountBdt, lang)}
+                        </td>
+                        <td className="p-3 text-slate-500 max-w-xs truncate">{p.notes || '-'}</td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => openEditChinaDirectPaymentModal(p)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 cursor-pointer"
+                              title="সম্পাদনা"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            {isSuperAdmin && (
+                              <button
+                                onClick={() => handleDeleteChinaPaymentConfirm(p.id)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 cursor-pointer"
+                                title="মুছে ফেলুন"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL 1: New Consignment Modal */}
       {isConsignmentModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -1801,6 +2355,42 @@ _${companyInfo.name}_`;
                 </div>
               </div>
 
+              {/* Pick from saved 3rd parties or add new dynamically (Requirement 1) */}
+              <div className="p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/40 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-purple-900 dark:text-purple-300 text-xs">
+                    {lang === 'bn' ? 'সেভ করা ৩য়-পক্ষ এক্সচেঞ্জার নির্বাচন করুন:' : 'Select Saved 3rd Party Exchanger:'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openNewThirdPartyModal}
+                    className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer shadow-xs transition-transform active:scale-95"
+                    title="নতুন ৩য়-পক্ষ আরএমবি এক্সচেঞ্জার যুক্ত করুন"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>{lang === 'bn' ? '+ নতুন এক্সচেঞ্জার' : '+ Add Exchanger'}</span>
+                  </button>
+                </div>
+                <select
+                  value={thirdParties.find(tp => tp.name.toLowerCase() === convPartyName.toLowerCase())?.id || ''}
+                  onChange={(e) => {
+                    const tp = thirdParties.find(p => p.id === e.target.value);
+                    if (tp) {
+                      setConvPartyName(tp.name);
+                      if (tp.phone) setConvPartyPhone(tp.phone);
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                >
+                  <option value="">-- এক্সচেঞ্জার তালিকা হতে নির্বাচন করুন অথবা নিচে লিখুন --</option>
+                  {thirdParties.map((tp) => (
+                    <option key={tp.id} value={tp.id}>
+                      {tp.name} {tp.phone ? `(${tp.phone})` : ''} {tp.city ? `- ${tp.city}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -2026,6 +2616,260 @@ _${companyInfo.name}_`;
         </div>
       )}
 
+      {/* MODAL 5: Add/Edit 3rd Party Exchanger Modal (Requirement 1) */}
+      {isThirdPartyModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4 text-xs animate-in fade-in duration-200 my-8">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Building className="w-4 h-4 text-purple-600" />
+                  <span>{editingThirdParty ? (lang === 'bn' ? '৩য়-পক্ষ এক্সচেঞ্জার সম্পাদনা' : 'Edit 3rd Party') : (lang === 'bn' ? 'নতুন ৩য়-পক্ষ এক্সচেঞ্জার যুক্ত করুন' : 'Add 3rd Party Exchanger')}</span>
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {lang === 'bn' ? 'RMB কনভার্ট করার জন্য এক্সচেঞ্জারের প্রোফাইল তথ্য সেভ করুন' : 'Save 3rd party broker contact & profile'}
+                </p>
+              </div>
+              <button onClick={() => setIsThirdPartyModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleThirdPartySubmit} className="space-y-3">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  এক্সচেঞ্জার / এজেন্টের নাম <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={tpName}
+                  onChange={(e) => setTpName(e.target.value)}
+                  placeholder="e.g. আকাশ মানি এক্সচেঞ্জ"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">যোগাযোগকারী ব্যক্তি</label>
+                  <input
+                    type="text"
+                    value={tpContactPerson}
+                    onChange={(e) => setTpContactPerson(e.target.value)}
+                    placeholder="e.g. তারেক ভাই"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">মোবাইল নম্বর</label>
+                  <input
+                    type="text"
+                    value={tpPhone}
+                    onChange={(e) => setTpPhone(e.target.value)}
+                    placeholder="017..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">শহর (City)</label>
+                  <input
+                    type="text"
+                    value={tpCity}
+                    onChange={(e) => setTpCity(e.target.value)}
+                    placeholder="e.g. ঢাকা / গুয়াংজু"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">ইমেইল / উইচ্যাট আইডি</label>
+                  <input
+                    type="text"
+                    value={tpEmail}
+                    onChange={(e) => setTpEmail(e.target.value)}
+                    placeholder="wechat / email..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">ঠিকানা</label>
+                <input
+                  type="text"
+                  value={tpAddress}
+                  onChange={(e) => setTpAddress(e.target.value)}
+                  placeholder="অফিস বা দোকানের ঠিকানা..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">মন্তব্য / রেট সুবিধা সংক্রান্ত নোট</label>
+                <textarea
+                  value={tpNotes}
+                  onChange={(e) => setTpNotes(e.target.value)}
+                  placeholder="রেট ভালো দেয়, দ্রুত ক্যাশ করে ইত্যাদি..."
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsThirdPartyModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 cursor-pointer"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl cursor-pointer shadow-md"
+                >
+                  {editingThirdParty ? 'আপডেট করুন' : 'সংরক্ষণ করুন'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: Add/Edit China Direct Payment Modal (Requirement 2) */}
+      {isChinaPaymentModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4 text-xs animate-in fade-in duration-200 my-8">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Banknote className="w-4 h-4 text-teal-600" />
+                  <span>{editingChinaPayment ? (lang === 'bn' ? 'সরাসরি পেমেন্ট সম্পাদনা' : 'Edit Direct Payment') : (lang === 'bn' ? 'চীন অফিস সরাসরি BDT পেমেন্ট এন্ট্রি' : 'China Office Direct BDT Payment')}</span>
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {lang === 'bn' ? 'চীন অফিস সরাসরি ব্যাংক বা ক্যাশে BDT পাঠালে এখানে এন্ট্রি করুন' : 'Direct remittances from China branch without 3rd party brokers'}
+                </p>
+              </div>
+              <button onClick={() => setIsChinaPaymentModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleChinaDirectPaymentSubmit} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">তারিখ</label>
+                  <input
+                    type="date"
+                    value={cdpDate}
+                    onChange={(e) => setCdpDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">রেফারেন্স / ভাউচার</label>
+                  <input
+                    type="text"
+                    value={cdpRefNo}
+                    onChange={(e) => setCdpRefNo(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">চীন শাখা অফিসের নাম</label>
+                <input
+                  type="text"
+                  value={cdpBranchName}
+                  onChange={(e) => setCdpBranchName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-teal-600 dark:text-teal-400 mb-1">
+                    টাকার পরিমাণ (BDT ৳) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    value={cdpAmountBdt || ''}
+                    onChange={(e) => setCdpAmountBdt(parseFloat(e.target.value) || 0)}
+                    placeholder="e.g. 500000"
+                    className="w-full px-3 py-2 rounded-xl border border-teal-400 dark:border-teal-700 bg-white dark:bg-slate-800 font-mono font-black text-base text-teal-600"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">পেমেন্ট মাধ্যম</label>
+                  <select
+                    value={cdpPaymentMethod}
+                    onChange={(e) => setCdpPaymentMethod(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold"
+                  >
+                    <option value="bank_transfer">Bank Transfer (ব্যাংক)</option>
+                    <option value="cash">Cash (নগদ টাকা)</option>
+                    <option value="bKash">bKash (বিকাশ)</option>
+                    <option value="nagad">Nagad (নগদ)</option>
+                    <option value="other">Other (অন্যান্য)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">ব্যাংক অ্যাকাউন্ট / ট্রানজেকশন বিবরণ</label>
+                <input
+                  type="text"
+                  value={cdpBankDetails}
+                  onChange={(e) => setCdpBankDetails(e.target.value)}
+                  placeholder="e.g. ডাচ বাংলা ব্যাংক A/C: 123... / ক্যাশ ভাউচার"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">মন্তব্য / বিবরণ</label>
+                <input
+                  type="text"
+                  value={cdpNotes}
+                  onChange={(e) => setCdpNotes(e.target.value)}
+                  placeholder="চীন অফিস হতে সরাসরি পাঠানো..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsChinaPaymentModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 cursor-pointer"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl cursor-pointer shadow-md"
+                >
+                  {editingChinaPayment ? 'আপডেট করুন' : 'পেমেন্ট সংরক্ষণ'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* PRINT VIEW MODAL FOR CONSIGNMENT */}
       {printingConsignment && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
@@ -2211,6 +3055,79 @@ _${companyInfo.name}_`;
               </div>
             </div>
 
+            {/* Dynamic Filter Controls for Individual Party or Branch Statement (Requirement 3) */}
+            <div className="bg-slate-50 dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
+              {statementType === 'third_party' && (
+                <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+                  <label className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5 shrink-0">
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{lang === 'bn' ? 'পার্টি নির্বাচন (আলাদা বিবরণী):' : 'Filter by 3rd Party:'}</span>
+                  </label>
+                  <select
+                    value={statementPartyFilter}
+                    onChange={(e) => setStatementPartyFilter(e.target.value)}
+                    className="flex-1 px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-100 cursor-pointer shadow-xs focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="all">{lang === 'bn' ? '👥 সকল ৩য়-পক্ষ এক্সচেঞ্জার (একত্রে)' : '👥 All 3rd Parties (Combined)'}</option>
+                    {thirdParties.map((tp) => (
+                      <option key={tp.id} value={tp.name}>
+                        👤 {tp.name} {tp.phone ? `(${tp.phone})` : ''} {tp.city ? `- ${tp.city}` : ''}
+                      </option>
+                    ))}
+                    {Array.from(new Set(conversions.map((c) => c.partyName || (c as any).thirdPartyName).filter(Boolean)))
+                      .filter((name) => !thirdParties.some((tp) => tp.name === name))
+                      .map((name) => (
+                        <option key={name} value={name}>👤 {name}</option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              {(statementType === 'consignments' || statementType === 'remittances') && (
+                <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+                  <label className="font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5 shrink-0">
+                    <Building className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{lang === 'bn' ? 'চীন শাখা অফিস নির্বাচন (আলাদা বিবরণী):' : 'Filter by China Branch:'}</span>
+                  </label>
+                  <select
+                    value={statementBranchFilter}
+                    onChange={(e) => setStatementBranchFilter(e.target.value)}
+                    className="flex-1 px-3 py-1.5 rounded-xl border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-100 cursor-pointer shadow-xs focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">{lang === 'bn' ? '🇨🇳 সকল শাখা অফিস (একত্রে)' : '🇨🇳 All Branch Offices (Combined)'}</option>
+                    {Array.from(
+                      new Set([
+                        ...consignments.map((c) => c.branchName),
+                        ...remittances.map((r) => r.branchName),
+                        'চীন/গুয়াংজু শাখা অফিস',
+                      ].filter(Boolean))
+                    ).map((bName) => (
+                      <option key={bName} value={bName}>🏢 {bName}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="text-[11px] font-mono text-slate-600 dark:text-slate-400 font-semibold ml-auto">
+                {statementType === 'third_party' && (
+                  statementPartyFilter === 'all'
+                    ? `${statementConversions.length} টি কনভার্শন রেকর্ড (সকল পার্টি)`
+                    : `"${statementPartyFilter}" এর জন্য একক বিবরণী (${statementConversions.length} টি রেকর্ড)`
+                )}
+                {statementType === 'consignments' && (
+                  statementBranchFilter === 'all'
+                    ? `${statementConsignments.length} টি চালান রেকর্ড (সকল শাখা)`
+                    : `"${statementBranchFilter}" এর জন্য একক চালান (${statementConsignments.length} টি)`
+                )}
+                {statementType === 'remittances' && (
+                  statementBranchFilter === 'all'
+                    ? `${statementRemittances.length} টি রেমিট্যান্স রেকর্ড (সকল শাখা)`
+                    : `"${statementBranchFilter}" এর জন্য একক RMB হিস্ট্রি (${statementRemittances.length} টি)`
+                )}
+                {statementType === 'combined' && 'অভ্যন্তরীণ সার্বিক সমন্বিত শাখা ও কনভার্শন খাতা'}
+              </div>
+            </div>
+
             {/* PREVIEW: 1. Third Party RMB Statement */}
             {statementType === 'third_party' && (
               <div className="border border-amber-200 rounded-2xl p-4 bg-amber-50/30 space-y-3">
@@ -2220,11 +3137,15 @@ _${companyInfo.name}_`;
                       {lang === 'bn' ? '৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া স্টেটমেন্ট প্রিভিউ' : '3rd Party RMB to BDT Statement Preview'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      {lang === 'bn' ? 'এতে শুধু মানি এক্সচেঞ্জ লেনদেন ও দেনা-পাওনা থাকবে' : 'Money exchange & payment balance only'}
+                      {statementPartyFilter === 'all'
+                        ? (lang === 'bn' ? 'সকল ৩য়-পক্ষ এক্সচেঞ্জারের সার্বিক খাতা' : 'All 3rd party brokers combined')
+                        : `পার্টি: ${statementPartyFilter}`}
                     </p>
                   </div>
                   <div className="text-right font-mono">
-                    <span className="text-xs font-bold text-rose-600">মোট বাকি: ৳{(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</span>
+                    <span className="text-xs font-bold text-rose-600">
+                      বাকি পাওনা: ৳{statementPartyMetrics.totalDue.toLocaleString()}
+                    </span>
                   </div>
                 </div>
 
@@ -2242,19 +3163,27 @@ _${companyInfo.name}_`;
                       </tr>
                     </thead>
                     <tbody className="divide-y text-[11px]">
-                      {conversions.slice(0, 8).map((cv) => (
-                        <tr key={cv.id}>
-                          <td className="p-2 font-mono font-bold">{cv.voucherNo}<div className="text-[10px] text-slate-400 font-normal">{cv.date}</div></td>
-                          <td className="p-2 font-semibold">{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
-                          <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}</td>
-                          <td className="p-2 text-center font-mono">{cv.exchangeRate || 0}</td>
-                          <td className="p-2 text-right font-mono font-bold">৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}</td>
-                          <td className="p-2 text-right font-mono text-emerald-600">৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}</td>
-                          <td className="p-2 text-right font-mono font-bold text-rose-600">
-                            {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                      {statementConversions.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-6 text-center text-slate-400">
+                            কোনো লেনদেন পাওয়া যায়নি।
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        statementConversions.slice(0, 15).map((cv) => (
+                          <tr key={cv.id}>
+                            <td className="p-2 font-mono font-bold">{cv.voucherNo}<div className="text-[10px] text-slate-400 font-normal">{cv.date}</div></td>
+                            <td className="p-2 font-semibold">{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
+                            <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}</td>
+                            <td className="p-2 text-center font-mono">{cv.exchangeRate || 0}</td>
+                            <td className="p-2 text-right font-mono font-bold">৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}</td>
+                            <td className="p-2 text-right font-mono text-emerald-600">৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}</td>
+                            <td className="p-2 text-right font-mono font-bold text-rose-600">
+                              {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2270,7 +3199,7 @@ _${companyInfo.name}_`;
                       {lang === 'bn' ? 'চীন শাখা অফিসে প্রেরিত মালামাল চালান বিবরণী প্রিভিউ' : 'Consignments Sent to China Branch Preview'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      {lang === 'bn' ? 'মোট প্রেরিত স্টক মূল্য: ৳' + (metrics.totalBdtSent ?? 0).toLocaleString() : 'Total stock sent'}
+                      {statementBranchFilter === 'all' ? 'সকল শাখা অফিস' : `শাখা: ${statementBranchFilter}`} • মোট প্রেরিত স্টক: ৳{statementConsignmentMetrics.totalBdt.toLocaleString()}
                     </p>
                   </div>
                 </div>
@@ -2287,15 +3216,23 @@ _${companyInfo.name}_`;
                       </tr>
                     </thead>
                     <tbody className="divide-y text-[11px]">
-                      {consignments.slice(0, 8).map((c) => (
-                        <tr key={c.id}>
-                          <td className="p-2 font-mono font-bold">{c.consignmentNo}<div className="text-[10px] text-slate-400 font-normal">{c.date}</div></td>
-                          <td className="p-2">{c.branchName}</td>
-                          <td className="p-2">{c.items?.map((i) => `${i.name} (${formatSheetNumber(i.quantity, lang)} ${i.unit})`).join(', ')}</td>
-                          <td className="p-2 text-right font-mono font-bold">৳{(c.totalBdtValue || 0).toLocaleString()}</td>
-                          <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{(c.totalRmbEstimated ?? 0).toLocaleString()}</td>
+                      {statementConsignments.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-slate-400">
+                            কোনো চালান পাওয়া যায়নি।
+                          </td>
                         </tr>
-                      ))}
+                      ) : (
+                        statementConsignments.slice(0, 15).map((c) => (
+                          <tr key={c.id}>
+                            <td className="p-2 font-mono font-bold">{c.consignmentNo}<div className="text-[10px] text-slate-400 font-normal">{c.date}</div></td>
+                            <td className="p-2">{c.branchName}</td>
+                            <td className="p-2">{c.items?.map((i) => `${i.name} (${formatSheetNumber(i.quantity, lang)} ${i.unit})`).join(', ')}</td>
+                            <td className="p-2 text-right font-mono font-bold">৳{(c.totalBdtValue || 0).toLocaleString()}</td>
+                            <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{(c.totalRmbEstimated ?? 0).toLocaleString()}</td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2311,7 +3248,7 @@ _${companyInfo.name}_`;
                       {lang === 'bn' ? 'চীন শাখা হতে প্রাপ্ত RMB রেমিট্যান্স হিস্ট্রি প্রিভিউ' : 'China Branch RMB Remittances Preview'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      {lang === 'bn' ? 'মোট প্রাপ্ত RMB: ¥' + (metrics.totalRmbReceived ?? 0).toLocaleString() : 'Total RMB Received'}
+                      {statementBranchFilter === 'all' ? 'সকল শাখা অফিস' : `শাখা: ${statementBranchFilter}`} • মোট প্রাপ্ত RMB: ¥{statementRemittanceMetrics.totalRmb.toLocaleString()}
                     </p>
                   </div>
                 </div>
@@ -2327,14 +3264,22 @@ _${companyInfo.name}_`;
                       </tr>
                     </thead>
                     <tbody className="divide-y text-[11px]">
-                      {remittances.slice(0, 8).map((r) => (
-                        <tr key={r.id}>
-                          <td className="p-2 font-mono font-bold">{r.referenceNo}<div className="text-[10px] text-slate-400 font-normal">{r.date}</div></td>
-                          <td className="p-2">{r.branchName}</td>
-                          <td className="p-2">{r.receivedVia}</td>
-                          <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{(r.rmbAmount || 0).toLocaleString()}</td>
+                      {statementRemittances.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="p-6 text-center text-slate-400">
+                            কোনো RMB রেকর্ড পাওয়া যায়নি।
+                          </td>
                         </tr>
-                      ))}
+                      ) : (
+                        statementRemittances.slice(0, 15).map((r) => (
+                          <tr key={r.id}>
+                            <td className="p-2 font-mono font-bold">{r.referenceNo}<div className="text-[10px] text-slate-400 font-normal">{r.date}</div></td>
+                            <td className="p-2">{r.branchName}</td>
+                            <td className="p-2">{r.receivedVia}</td>
+                            <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{(r.rmbAmount || 0).toLocaleString()}</td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2430,32 +3375,38 @@ _${companyInfo.name}_`;
                       ? 'rsr-china-remittances-statement'
                       : 'rsr-branch-office-statement'
                   }
-                  fileName={`rsr-${statementType}-statement.png`}
+                  fileName={`rsr-${statementType}-${statementType === 'third_party' ? (statementPartyFilter !== 'all' ? statementPartyFilter.replace(/[\s/]/g, '_') : 'all_parties') : (statementBranchFilter !== 'all' ? statementBranchFilter.replace(/[\s/]/g, '_') : 'all_branches')}.png`}
                   getText={() => {
                     if (statementType === 'third_party') {
-                      return `*${companyInfo.name} - ৩য়-পক্ষ RMB টু BDT হিসাব*
+                      const partyLabel = statementPartyFilter !== 'all' ? statementPartyFilter : 'সকল ৩য়-পক্ষ এক্সচেঞ্জার';
+                      return `*${companyInfo.name} - ৩য়-পক্ষ RMB হিসাব*
+👤 এক্সচেঞ্জার: *${partyLabel}*
 📅 তারিখ: ${new Date().toISOString().split('T')[0]}
 ━━━━━━━━━━━━━━━━━━━━
-🔄 কনভার্ট কৃত RMB: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}
-💵 প্রাপ্ত মোট টাকা: ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}
-⚠️ ৩য়-পক্ষের কাছে বকেয়া বাকি: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}
+🔄 কনভার্ট কৃত RMB: ¥${statementPartyMetrics.totalRmb.toLocaleString()}
+💵 প্রাপ্ত মোট টাকা: ৳${statementPartyMetrics.totalReceived.toLocaleString()}
+⚠️ বকেয়া বাকি (Due): ৳${statementPartyMetrics.totalDue.toLocaleString()}
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
                     }
                     if (statementType === 'consignments') {
-                      return `*${companyInfo.name} - চীন শাখা অফিসে প্রেরিত চালান বিবরণী*
+                      const branchLabel = statementBranchFilter !== 'all' ? statementBranchFilter : 'সকল শাখা অফিস';
+                      return `*${companyInfo.name} - চীন শাখা চালান বিবরণী*
+🏢 শাখা অফিস: *${branchLabel}*
 📅 তারিখ: ${new Date().toISOString().split('T')[0]}
 ━━━━━━━━━━━━━━━━━━━━
-📦 মোট চালান সংখ্যা: ${consignments.length} টি
-💰 মোট প্রেরিত স্টক মূল্য: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} (≈ ¥${(metrics.totalRmbEstSent ?? 0).toLocaleString()})
+📦 চালান সংখ্যা: ${statementConsignments.length} টি
+💰 মোট প্রেরিত স্টক: ৳${statementConsignmentMetrics.totalBdt.toLocaleString()} (≈ ¥${statementConsignmentMetrics.totalRmb.toLocaleString()})
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
                     }
                     if (statementType === 'remittances') {
-                      return `*${companyInfo.name} - চীন শাখা অফিস RMB প্রাপ্তি বিবরণী*
+                      const branchLabel = statementBranchFilter !== 'all' ? statementBranchFilter : 'সকল শাখা অফিস';
+                      return `*${companyInfo.name} - চীন শাখা RMB প্রাপ্তি*
+🏢 শাখা অফিস: *${branchLabel}*
 📅 তারিখ: ${new Date().toISOString().split('T')[0]}
 ━━━━━━━━━━━━━━━━━━━━
-🪙 শাখা হতে প্রাপ্ত মোট RMB: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}
+🪙 প্রাপ্ত মোট RMB: ¥${statementRemittanceMetrics.totalRmb.toLocaleString()} (${statementRemittances.length} টি রেকর্ড)
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
                     }
@@ -2486,9 +3437,15 @@ _${companyInfo.name}_`;
                       ? 'rsr-china-remittances-statement'
                       : 'rsr-branch-office-statement'
                   }
-                  fileName={`rsr-wechat-${statementType}-statement.png`}
+                  fileName={`rsr-wechat-${statementType}-${statementType === 'third_party' ? (statementPartyFilter !== 'all' ? statementPartyFilter.replace(/[\s/]/g, '_') : 'all_parties') : (statementBranchFilter !== 'all' ? statementBranchFilter.replace(/[\s/]/g, '_') : 'all_branches')}.png`}
                   getText={() => {
-                    return `${companyInfo.name} - Branch Office Statement\nType: ${statementType}\nDate: ${new Date().toISOString().split('T')[0]}`;
+                    const extra =
+                      statementType === 'third_party'
+                        ? `Party: ${statementPartyFilter}`
+                        : statementType === 'consignments' || statementType === 'remittances'
+                        ? `Branch: ${statementBranchFilter}`
+                        : 'Combined';
+                    return `${companyInfo.name} - Branch Statement\nType: ${statementType} (${extra})\nDate: ${new Date().toISOString().split('T')[0]}`;
                   }}
                 />
               </div>
@@ -2533,10 +3490,10 @@ _${companyInfo.name}_`;
 
             <div style={{ textAlign: 'right' }}>
               <div style={{ display: 'inline-block', backgroundColor: '#fef3c7', color: '#92400e', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>
-                ৩য়-পক্ষ মানি এক্সচেঞ্জ বিবরণী
+                ৩য়-পক্ষ মানি এক্সচেঞ্জ বিবরণী {statementPartyFilter !== 'all' ? `• ${statementPartyFilter}` : ''}
               </div>
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                ৩য়-পক্ষ RMB কনভার্সন ও জমা-বকেয়া খাতা
+                {statementPartyFilter !== 'all' ? `${statementPartyFilter} - RMB কনভার্সন খাতা` : '৩য়-পক্ষ RMB কনভার্সন ও জমা-বকেয়া খাতা'}
               </h2>
               <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>
                 তারিখ: <strong>{new Date().toISOString().split('T')[0]}</strong>
@@ -2548,17 +3505,17 @@ _${companyInfo.name}_`;
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <div style={{ borderLeft: '3px solid #0891b2', paddingLeft: '8px' }}>
               <div style={{ fontSize: '9px', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>মোট কনভার্টকৃত RMB</div>
-              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>¥{(metrics.totalRmbConverted ?? 0).toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>{conversions.length} টি লেনদেন</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>¥{statementPartyMetrics.totalRmb.toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>{statementConversions.length} টি লেনদেন {statementPartyFilter !== 'all' ? `(${statementPartyFilter})` : ''}</div>
             </div>
             <div style={{ borderLeft: '3px solid #059669', paddingLeft: '8px' }}>
               <div style={{ fontSize: '9px', fontWeight: 700, color: '#059669', textTransform: 'uppercase' }}>মোট জমা প্রাপ্ত টাকা (BDT)</div>
-              <div style={{ fontSize: '14px', fontWeight: 800, color: '#059669' }}>৳{(metrics.totalBdtReceived ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#059669' }}>৳{statementPartyMetrics.totalReceived.toLocaleString()}</div>
               <div style={{ fontSize: '9px', color: '#64748b' }}>পরিশোধিত অংশ</div>
             </div>
             <div style={{ borderLeft: '3px solid #e11d48', paddingLeft: '8px' }}>
-              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>৩য়-পক্ষের কাছে মোট বকেয়া (BDT)</div>
-              <div style={{ fontSize: '14px', fontWeight: 800, color: '#e11d48' }}>৳{(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>বকেয়া বাকি (Due BDT)</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#e11d48' }}>৳{statementPartyMetrics.totalDue.toLocaleString()}</div>
               <div style={{ fontSize: '9px', color: '#e11d48' }}>বর্তমান পাওনা বাকি</div>
             </div>
           </div>
@@ -2566,7 +3523,7 @@ _${companyInfo.name}_`;
           {/* 3rd Party RMB Conversions Table */}
           <div style={{ marginBottom: '20px' }}>
             <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '6px', textTransform: 'uppercase' }}>
-              ৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া হিসাব
+              ৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া হিসাব {statementPartyFilter !== 'all' ? `(${statementPartyFilter})` : ''}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
               <thead>
@@ -2582,26 +3539,34 @@ _${companyInfo.name}_`;
                 </tr>
               </thead>
               <tbody>
-                {conversions.slice(0, 14).map((cv, idx) => (
-                  <tr key={cv.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                    <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
-                    <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{cv.voucherNo}</td>
-                    <td style={{ padding: '5px', fontWeight: 600, border: '1px solid #cbd5e1' }}>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
-                    <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{cv.exchangeRate || 0}</td>
-                    <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '5px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '5px', textAlign: 'right', color: (cv.remainingDueBdt || 0) > 0 ? '#e11d48' : '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                {statementConversions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>
+                      কোনো কনভার্শন রেকর্ড নেই।
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  statementConversions.slice(0, 18).map((cv, idx) => (
+                    <tr key={cv.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                      <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                      <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{cv.voucherNo}</td>
+                      <td style={{ padding: '5px', fontWeight: 600, border: '1px solid #cbd5e1' }}>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
+                      <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{cv.exchangeRate || 0}</td>
+                      <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '5px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '5px', textAlign: 'right', color: (cv.remainingDueBdt || 0) > 0 ? '#e11d48' : '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -2650,9 +3615,11 @@ _${companyInfo.name}_`;
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ display: 'inline-block', backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>
-                চীন শাখা চালান খাতা
+                চীন শাখা চালান খাতা {statementBranchFilter !== 'all' ? `• ${statementBranchFilter}` : ''}
               </div>
-              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>চীন শাখা অফিসে প্রেরিত মালামাল চালান বিবরণী</h2>
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                {statementBranchFilter !== 'all' ? `${statementBranchFilter} - প্রেরিত চালান বিবরণী` : 'চীন শাখা অফিসে প্রেরিত মালামাল চালান বিবরণী'}
+              </h2>
               <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>তারিখ: <strong>{new Date().toISOString().split('T')[0]}</strong></div>
             </div>
           </div>
@@ -2670,17 +3637,25 @@ _${companyInfo.name}_`;
               </tr>
             </thead>
             <tbody>
-              {consignments.slice(0, 14).map((c, idx) => (
-                <tr key={c.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                  <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
-                  <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{c.consignmentNo}</td>
-                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{c.date}</td>
-                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{c.branchName} ({c.shippingMethod})</td>
-                  <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{c.items?.reduce((s, i) => s + (Number(i.quantity) || 0), 0) || 0}</td>
-                  <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>৳{(c.totalBdtValue || 0).toLocaleString()}</td>
-                  <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>¥{(c.totalRmbEstimated ?? 0).toLocaleString()}</td>
+              {statementConsignments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>
+                    কোনো চালান রেকর্ড নেই।
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                statementConsignments.slice(0, 18).map((c, idx) => (
+                  <tr key={c.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                    <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                    <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{c.consignmentNo}</td>
+                    <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{c.date}</td>
+                    <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{c.branchName} ({c.shippingMethod})</td>
+                    <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{c.items?.reduce((s, i) => s + (Number(i.quantity) || 0), 0) || 0}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>৳{(c.totalBdtValue || 0).toLocaleString()}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>¥{(c.totalRmbEstimated ?? 0).toLocaleString()}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -2710,9 +3685,11 @@ _${companyInfo.name}_`;
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ display: 'inline-block', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>
-                চীন শাখা RMB প্রাপ্তি
+                চীন শাখা RMB প্রাপ্তি {statementBranchFilter !== 'all' ? `• ${statementBranchFilter}` : ''}
               </div>
-              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>চীন শাখা অফিস হতে RMB প্রাপ্তি হিস্ট্রি বিবরণী</h2>
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                {statementBranchFilter !== 'all' ? `${statementBranchFilter} - RMB প্রাপ্তি বিবরণী` : 'চীন শাখা অফিস হতে RMB প্রাপ্তি হিস্ট্রি বিবরণী'}
+              </h2>
               <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>তারিখ: <strong>{new Date().toISOString().split('T')[0]}</strong></div>
             </div>
           </div>
@@ -2729,16 +3706,24 @@ _${companyInfo.name}_`;
               </tr>
             </thead>
             <tbody>
-              {remittances.slice(0, 14).map((r, idx) => (
-                <tr key={r.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                  <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
-                  <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{r.referenceNo}</td>
-                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.date}</td>
-                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.branchName}</td>
-                  <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.receivedVia}</td>
-                  <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, color: '#0891b2', border: '1px solid #cbd5e1' }}>¥{(r.rmbAmount || 0).toLocaleString()}</td>
+              {statementRemittances.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>
+                    কোনো RMB রেকর্ড নেই।
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                statementRemittances.slice(0, 18).map((r, idx) => (
+                  <tr key={r.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                    <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                    <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{r.referenceNo}</td>
+                    <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.date}</td>
+                    <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.branchName}</td>
+                    <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}>{r.receivedVia}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, color: '#0891b2', border: '1px solid #cbd5e1' }}>¥{(r.rmbAmount || 0).toLocaleString()}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

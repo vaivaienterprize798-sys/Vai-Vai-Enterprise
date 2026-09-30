@@ -30,6 +30,7 @@ import {
   BranchConsignment,
   BranchRmbRemittance,
   ThirdPartyRmbConversion,
+  ChinaDirectPayment,
 } from '../types';
 import {
   translations,
@@ -58,6 +59,7 @@ interface DashboardProps {
   branchConsignments?: BranchConsignment[];
   branchRemittances?: BranchRmbRemittance[];
   rmbConversions?: ThirdPartyRmbConversion[];
+  chinaDirectPayments?: ChinaDirectPayment[];
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -77,6 +79,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   branchConsignments = [],
   branchRemittances = [],
   rmbConversions = [],
+  chinaDirectPayments = [],
 }) => {
   const t = translations[lang];
   const companyInfo = storageService.getCompanyInfo();
@@ -183,7 +186,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const totalRmbRemitted = (branchRemittances || []).reduce((acc, r) => acc + (Number(r.rmbAmount) || 0), 0);
     const totalConvertedBdt = (rmbConversions || []).reduce((acc, cv) => acc + (Number(cv.receivedBdtAmount) || 0), 0);
     const totalConvertedRmb = (rmbConversions || []).reduce((acc, cv) => acc + (Number(cv.rmbAmountGiven) || 0), 0);
-    const remainingDueBdt = totalSentBdt - totalConvertedBdt;
+    const totalChinaDirectBdt = (chinaDirectPayments || []).reduce((acc, p) => acc + (Number(p.amountBdt) || 0), 0);
+    const remainingDueBdt = Math.max(0, totalSentBdt - (totalConvertedBdt + totalChinaDirectBdt));
     const rmbBalanceInHand = Math.max(0, totalRmbRemitted - totalConvertedRmb);
 
     return {
@@ -192,10 +196,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
       totalRmbRemitted,
       totalConvertedBdt,
       totalConvertedRmb,
+      totalChinaDirectBdt,
       remainingDueBdt,
       rmbBalanceInHand,
     };
-  }, [branchConsignments, branchRemittances, rmbConversions]);
+  }, [branchConsignments, branchRemittances, rmbConversions, chinaDirectPayments]);
 
   return (
     <div className="space-y-6">
@@ -532,7 +537,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {formatDashboardCurrency(chinaMetrics.remainingDueBdt, lang)}
             </div>
             <p className="text-[10px] text-slate-300 font-mono">
-              = {lang === 'bn' ? 'মোট স্টক' : 'Stock'} {formatDashboardCurrency(chinaMetrics.totalSentBdt, lang)} - {lang === 'bn' ? 'RMB প্রাপ্ত' : 'RMB BDT'} {formatDashboardCurrency(chinaMetrics.totalConvertedBdt, lang)}
+              = {lang === 'bn' ? 'স্টক' : 'Stock'} {formatDashboardCurrency(chinaMetrics.totalSentBdt, lang)} - {lang === 'bn' ? 'RMB BDT' : 'RMB'} {formatDashboardCurrency(chinaMetrics.totalConvertedBdt, lang)}
+              {chinaMetrics.totalChinaDirectBdt > 0 && ` - ${lang === 'bn' ? 'সরাসরি BDT' : 'Direct'} ${formatDashboardCurrency(chinaMetrics.totalChinaDirectBdt, lang)}`}
             </p>
           </div>
 

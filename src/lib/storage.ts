@@ -20,6 +20,8 @@ import {
   ThirdPartyRmbConversion,
   PriceList,
   WorkerProductConversion,
+  ThirdParty,
+  ChinaDirectPayment,
 } from '../types';
 import { cloudDbService, auth, db, handleFirestoreError, OperationType } from './firebase';
 import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
@@ -45,6 +47,8 @@ const STORAGE_KEYS = {
   RMB_CONVERSIONS: 'rsr_rmb_conversions_v1',
   PRICE_LISTS: 'rsr_price_lists_v1',
   WORKER_CONVERSIONS: 'rsr_worker_conversions_v1',
+  THIRD_PARTIES: 'rsr_third_parties_v1',
+  CHINA_DIRECT_PAYMENTS: 'rsr_china_direct_payments_v1',
   SETTINGS: 'rsr_settings_v1',
   THEME: 'rsr_theme_v1',
   LANGUAGE: 'rsr_lang_v1',
@@ -67,6 +71,8 @@ export const INITIAL_BRANCH_REMITTANCES: BranchRmbRemittance[] = [];
 export const INITIAL_RMB_CONVERSIONS: ThirdPartyRmbConversion[] = [];
 export const INITIAL_PRICE_LISTS: PriceList[] = [];
 export const INITIAL_WORKER_CONVERSIONS: WorkerProductConversion[] = [];
+export const INITIAL_THIRD_PARTIES: ThirdParty[] = [];
+export const INITIAL_CHINA_DIRECT_PAYMENTS: ChinaDirectPayment[] = [];
 
 // Helper to safely read from localStorage
 export const loadFromStorage = <T>(key: string, defaultValue: T): T => {
@@ -717,10 +723,66 @@ export const storageService = {
     return cloudDbService.deleteDocument('workerConversions', id);
   },
 
+  // 3rd Parties Management
+  getThirdParties: (): ThirdParty[] => {
+    const list = loadFromStorage<ThirdParty[]>(STORAGE_KEYS.THIRD_PARTIES, INITIAL_THIRD_PARTIES);
+    return Array.isArray(list) ? list.filter(Boolean) : INITIAL_THIRD_PARTIES;
+  },
+
+  saveThirdParty: (item: ThirdParty): void => {
+    const list = storageService.getThirdParties();
+    const idx = list.findIndex((p) => p.id === item.id);
+    let updated: ThirdParty[];
+    if (idx >= 0) {
+      updated = [...list];
+      updated[idx] = item;
+    } else {
+      updated = [item, ...list];
+    }
+    saveToStorage(STORAGE_KEYS.THIRD_PARTIES, updated);
+    cloudDbService.saveDocument('thirdParties', item).catch((err) => {
+      console.warn('[Cloud Sync] ThirdParty push error:', err);
+    });
+  },
+
+  deleteThirdParty: async (id: string): Promise<void> => {
+    const list = storageService.getThirdParties();
+    saveToStorage(STORAGE_KEYS.THIRD_PARTIES, list.filter((p) => p.id !== id));
+    return cloudDbService.deleteDocument('thirdParties', id);
+  },
+
+  // China Office Direct BDT Payments
+  getChinaDirectPayments: (): ChinaDirectPayment[] => {
+    const list = loadFromStorage<ChinaDirectPayment[]>(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, INITIAL_CHINA_DIRECT_PAYMENTS);
+    return Array.isArray(list) ? list.filter(Boolean) : INITIAL_CHINA_DIRECT_PAYMENTS;
+  },
+
+  saveChinaDirectPayment: (item: ChinaDirectPayment): void => {
+    const list = storageService.getChinaDirectPayments();
+    const idx = list.findIndex((p) => p.id === item.id);
+    let updated: ChinaDirectPayment[];
+    if (idx >= 0) {
+      updated = [...list];
+      updated[idx] = item;
+    } else {
+      updated = [item, ...list];
+    }
+    saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, updated);
+    cloudDbService.saveDocument('chinaDirectPayments', item).catch((err) => {
+      console.warn('[Cloud Sync] ChinaDirectPayment push error:', err);
+    });
+  },
+
+  deleteChinaDirectPayment: async (id: string): Promise<void> => {
+    const list = storageService.getChinaDirectPayments();
+    saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, list.filter((p) => p.id !== id));
+    return cloudDbService.deleteDocument('chinaDirectPayments', id);
+  },
+
   // Missing Backup/Restore & Reset Methods
   exportFullBackup: (): string => {
     const backup = {
-      version: '2.3.0',
+      version: '2.4.0',
       timestamp: new Date().toISOString(),
       company: storageService.getCompanyInfo(),
       invoices: storageService.getInvoices(),
@@ -738,6 +800,8 @@ export const storageService = {
       rmbConversions: storageService.getRmbConversions(),
       priceLists: storageService.getPriceLists(),
       workerConversions: storageService.getWorkerConversions(),
+      thirdParties: storageService.getThirdParties(),
+      chinaDirectPayments: storageService.getChinaDirectPayments(),
     };
     return JSON.stringify(backup, null, 2);
   },
@@ -774,6 +838,8 @@ export const storageService = {
       if (parsed.rmbConversions) saveToStorage(STORAGE_KEYS.RMB_CONVERSIONS, parsed.rmbConversions);
       if (parsed.priceLists) saveToStorage(STORAGE_KEYS.PRICE_LISTS, parsed.priceLists);
       if (parsed.workerConversions) saveToStorage(STORAGE_KEYS.WORKER_CONVERSIONS, parsed.workerConversions);
+      if (parsed.thirdParties) saveToStorage(STORAGE_KEYS.THIRD_PARTIES, parsed.thirdParties);
+      if (parsed.chinaDirectPayments) saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, parsed.chinaDirectPayments);
       return true;
     } catch (e) {
       return false;
@@ -801,7 +867,7 @@ export const storageService = {
         'pettyCash', 'carExpenses', 'dokanPayments', 'workerTasks', 
         'punchRequests', 'supervisorSamples', 'salaryPayments',
         'branchConsignments', 'branchRemittances', 'rmbConversions',
-        'priceLists', 'workerConversions'
+        'priceLists', 'workerConversions', 'thirdParties', 'chinaDirectPayments'
       ];
       
       for (const colName of collectionsToWipe) {
@@ -857,6 +923,8 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.RMB_CONVERSIONS, []);
     saveToStorage(STORAGE_KEYS.PRICE_LISTS, []);
     saveToStorage(STORAGE_KEYS.WORKER_CONVERSIONS, []);
+    saveToStorage(STORAGE_KEYS.THIRD_PARTIES, []);
+    saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, []);
   },
 
   resetToDefaults: async (): Promise<void> => {
@@ -884,6 +952,8 @@ export const storageService = {
         { key: 'rmbConversions', data: storageService.getRmbConversions() },
         { key: 'priceLists', data: storageService.getPriceLists() },
         { key: 'workerConversions', data: storageService.getWorkerConversions() },
+        { key: 'thirdParties', data: storageService.getThirdParties() },
+        { key: 'chinaDirectPayments', data: storageService.getChinaDirectPayments() },
       ];
       for (const col of collections) {
         if (onProgress) onProgress(`${col.key} সিঙ্ক হচ্ছে...`);
@@ -916,6 +986,8 @@ export const storageService = {
         { col: 'rmbConversions', key: STORAGE_KEYS.RMB_CONVERSIONS },
         { col: 'priceLists', key: STORAGE_KEYS.PRICE_LISTS },
         { col: 'workerConversions', key: STORAGE_KEYS.WORKER_CONVERSIONS },
+        { col: 'thirdParties', key: STORAGE_KEYS.THIRD_PARTIES },
+        { col: 'chinaDirectPayments', key: STORAGE_KEYS.CHINA_DIRECT_PAYMENTS },
       ];
       let total = 0;
       for (const m of mappings) {

@@ -23,6 +23,8 @@ import { CloudSyncModal } from './components/CloudSyncModal';
 import { AuthScreen } from './components/AuthScreen';
 import { auth, cloudDbService } from './lib/firebase';
 import { User } from 'firebase/auth';
+import { RefreshCw, X as CloseIcon } from 'lucide-react';
+import { CURRENT_APP_VERSION, forceUpdateAndReloadApp } from './lib/appUpdate';
 
 import {
   Language,
@@ -46,6 +48,8 @@ import {
   ThirdPartyRmbConversion,
   PriceList,
   WorkerProductConversion,
+  ThirdParty,
+  ChinaDirectPayment,
 } from './types';
 import { storageService } from './lib/storage';
 import { translations } from './lib/translations';
@@ -125,6 +129,8 @@ export default function App() {
   const [rmbConversions, setRmbConversions] = useState<ThirdPartyRmbConversion[]>(() => storageService.getRmbConversions());
   const [priceLists, setPriceLists] = useState<PriceList[]>(() => storageService.getPriceLists());
   const [workerConversions, setWorkerConversions] = useState<WorkerProductConversion[]>(() => storageService.getWorkerConversions());
+  const [thirdParties, setThirdParties] = useState<ThirdParty[]>(() => storageService.getThirdParties());
+  const [chinaDirectPayments, setChinaDirectPayments] = useState<ChinaDirectPayment[]>(() => storageService.getChinaDirectPayments());
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo>(() => storageService.getCompanyInfo());
 
   const refreshAllData = () => {
@@ -143,6 +149,8 @@ export default function App() {
     setRmbConversions(storageService.getRmbConversions());
     setPriceLists(storageService.getPriceLists());
     setWorkerConversions(storageService.getWorkerConversions());
+    setThirdParties(storageService.getThirdParties());
+    setChinaDirectPayments(storageService.getChinaDirectPayments());
     setCompanyInfo(storageService.getCompanyInfo());
   };
 
@@ -158,6 +166,7 @@ export default function App() {
   const [isStatementSelectorOpen, setIsStatementSelectorOpen] = useState(false);
   const [activeStatementType, setActiveStatementType] = useState<StatementType | null>(null);
   const [activeStatementStaffId, setActiveStatementStaffId] = useState<string | null>(null);
+  const [activeStatementPartyId, setActiveStatementPartyId] = useState<string | null>(null);
   const [activeStatementMonth, setActiveStatementMonth] = useState<string | null>(null);
   const [activeStatementFilterMode, setActiveStatementFilterMode] = useState<PeriodFilterMode>('month');
   const [activeStatementSelectedDate, setActiveStatementSelectedDate] = useState<string>(todayStr);
@@ -205,6 +214,11 @@ export default function App() {
   // Cloud Sync Modal
   const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
+  const [showUpdateBanner, setShowUpdateBanner] = useState(() => {
+    // Show update notification if new version or user hasn't seen it yet
+    const seen = localStorage.getItem('rsr_seen_update_banner');
+    return seen !== CURRENT_APP_VERSION;
+  });
 
   // Real-time Firestore synchronization across all devices & laptops
   useEffect(() => {
@@ -362,6 +376,26 @@ export default function App() {
           if (Array.isArray(cloudWC)) {
             setWorkerConversions(cloudWC);
             localStorage.setItem('rsr_worker_conversions_v1', JSON.stringify(cloudWC));
+          }
+        })
+      );
+
+      // 3rd Parties live sync
+      unsubs.push(
+        cloudDbService.subscribeToCollection<ThirdParty>('thirdParties', (cloudTP) => {
+          if (Array.isArray(cloudTP)) {
+            setThirdParties(cloudTP);
+            localStorage.setItem('rsr_third_parties_v1', JSON.stringify(cloudTP));
+          }
+        })
+      );
+
+      // China Direct Payments live sync
+      unsubs.push(
+        cloudDbService.subscribeToCollection<ChinaDirectPayment>('chinaDirectPayments', (cloudCDP) => {
+          if (Array.isArray(cloudCDP)) {
+            setChinaDirectPayments(cloudCDP);
+            localStorage.setItem('rsr_china_direct_payments_v1', JSON.stringify(cloudCDP));
           }
         })
       );
@@ -733,6 +767,42 @@ export default function App() {
     }
   };
 
+  const handleSaveThirdParty = (item: ThirdParty) => {
+    storageService.saveThirdParty(item);
+    refreshAllData();
+    showToast(lang === 'bn' ? '৩য়-পক্ষ সফলভাবে সংরক্ষিত হয়েছে' : 'Third party saved successfully');
+  };
+
+  const handleDeleteThirdParty = async (id: string) => {
+    setThirdParties((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await storageService.deleteThirdParty(id);
+      refreshAllData();
+      showToast(lang === 'bn' ? '৩য়-পক্ষ মুছে ফেলা হয়েছে' : 'Third party removed', 'info');
+    } catch (err) {
+      refreshAllData();
+      showToast(lang === 'bn' ? 'মুছে ফেলতে সমস্যা হয়েছে' : 'Failed to remove third party', 'error');
+    }
+  };
+
+  const handleSaveChinaDirectPayment = (item: ChinaDirectPayment) => {
+    storageService.saveChinaDirectPayment(item);
+    refreshAllData();
+    showToast(lang === 'bn' ? 'চীন সরাসরি পেমেন্ট এন্ট্রি সংরক্ষিত হয়েছে' : 'China direct payment saved');
+  };
+
+  const handleDeleteChinaDirectPayment = async (id: string) => {
+    setChinaDirectPayments((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await storageService.deleteChinaDirectPayment(id);
+      refreshAllData();
+      showToast(lang === 'bn' ? 'পেমেন্ট এন্ট্রি মুছে ফেলা হয়েছে' : 'Direct payment removed', 'info');
+    } catch (err) {
+      refreshAllData();
+      showToast(lang === 'bn' ? 'মুছে ফেলতে সমস্যা হয়েছে' : 'Failed to remove direct payment', 'error');
+    }
+  };
+
   // Price List Handlers (দর তালিকা তৈরি)
   const handleSavePriceList = (list: PriceList) => {
     storageService.savePriceList(list);
@@ -891,6 +961,41 @@ export default function App() {
         onLogout={handleLogout}
       />
 
+      {/* App Update Notification Bar */}
+      {showUpdateBanner && (
+        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-emerald-700 text-white px-3 sm:px-6 py-2 text-xs font-semibold flex items-center justify-between shadow-md z-30">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300"></span>
+            </span>
+            <span>
+              {lang === 'bn'
+                ? `সফটওয়্যারের নতুন সংস্করণ (${CURRENT_APP_VERSION}) সক্রিয় হয়েছে! শাখা অফিস ৩য়-পক্ষ এক্সচেঞ্জার, চীন সরাসরি BDT পেমেন্ট ও নতুন রিপোর্ট যুক্ত হয়েছে।`
+                : `A newer version (${CURRENT_APP_VERSION}) of the software is active with latest updates and features!`}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => forceUpdateAndReloadApp()}
+              className="px-3 py-1 bg-white text-slate-950 hover:bg-slate-100 rounded-lg font-bold text-[11px] shadow-sm cursor-pointer transition-transform active:scale-95 flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+              <span>{lang === 'bn' ? 'রিফ্রেশ ও সিঙ্ক করুন' : 'Refresh Now'}</span>
+            </button>
+            <button
+              onClick={() => {
+                setShowUpdateBanner(false);
+                localStorage.setItem('rsr_seen_update_banner', CURRENT_APP_VERSION);
+              }}
+              className="p-1 text-white/80 hover:text-white cursor-pointer"
+            >
+              <CloseIcon className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main App Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6">
         {/* Render Single Dedicated 1-Page Printable Views if active */}
@@ -911,6 +1016,7 @@ export default function App() {
             attendance={attendance}
             expenses={allExpensesCombined}
             initialStaffId={activeStatementStaffId}
+            initialPartyId={activeStatementPartyId}
             initialMonth={activeStatementMonth}
             filterMode={activeStatementFilterMode}
             selectedDate={activeStatementSelectedDate}
@@ -919,6 +1025,7 @@ export default function App() {
             onBack={() => {
               setActiveStatementType(null);
               setActiveStatementStaffId(null);
+              setActiveStatementPartyId(null);
               setActiveStatementMonth(null);
             }}
           />
@@ -937,6 +1044,7 @@ export default function App() {
                 branchConsignments={branchConsignments}
                 branchRemittances={branchRemittances}
                 rmbConversions={rmbConversions}
+                chinaDirectPayments={chinaDirectPayments}
                 onOpenNewInvoice={handleOpenNewInvoice}
                 onOpenStatementsModal={() => setIsStatementSelectorOpen(true)}
                 onSelectTab={(tab) => setCurrentTab(tab)}
@@ -1004,7 +1112,14 @@ export default function App() {
                 invoices={invoices}
                 lang={lang}
                 onSaveParty={handleSaveParty}
-                onPrintPartyStatement={() => setActiveStatementType('party')}
+                onPrintPartyStatement={() => {
+                  setActiveStatementPartyId(null);
+                  setActiveStatementType('party');
+                }}
+                onPrintPartyLedger={(partyId) => {
+                  setActiveStatementPartyId(partyId);
+                  setActiveStatementType('party');
+                }}
                 onViewInvoice={handlePrintInvoice}
                 isSuperAdmin={isSuperAdmin}
               />
@@ -1089,6 +1204,11 @@ export default function App() {
                 attendance={attendance}
                 pettyCashExpenses={pettyCashExpenses}
                 carExpenses={carExpenses}
+                branchConsignments={branchConsignments}
+                branchRemittances={branchRemittances}
+                rmbConversions={rmbConversions}
+                chinaDirectPayments={chinaDirectPayments}
+                parties={parties}
                 onPrintFinancialStatement={(mode, selDate, selMonth, startD, endD) => {
                   setActiveStatementMonth(selMonth || new Date().toISOString().split('T')[0].slice(0, 7));
                   setActiveStatementType('financial');
@@ -1102,6 +1222,8 @@ export default function App() {
                 consignments={branchConsignments}
                 remittances={branchRemittances}
                 conversions={rmbConversions}
+                thirdParties={thirdParties}
+                chinaDirectPayments={chinaDirectPayments}
                 companyInfo={companyInfo}
                 lang={lang}
                 onSaveConsignment={handleSaveBranchConsignment}
@@ -1110,6 +1232,10 @@ export default function App() {
                 onDeleteRemittance={handleDeleteBranchRemittance}
                 onSaveConversion={handleSaveRmbConversion}
                 onDeleteConversion={handleDeleteRmbConversion}
+                onSaveThirdParty={handleSaveThirdParty}
+                onDeleteThirdParty={handleDeleteThirdParty}
+                onSaveChinaDirectPayment={handleSaveChinaDirectPayment}
+                onDeleteChinaDirectPayment={handleDeleteChinaDirectPayment}
                 isSuperAdmin={isSuperAdmin || isHeadSupervisor}
               />
             )}
@@ -1138,6 +1264,8 @@ export default function App() {
                 branchConsignments={branchConsignments}
                 branchRemittances={branchRemittances}
                 rmbConversions={rmbConversions}
+                thirdParties={thirdParties}
+                chinaDirectPayments={chinaDirectPayments}
                 workerTasks={workerTasks}
                 initialType={activeStatementType || 'stock'}
               />

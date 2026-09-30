@@ -39,6 +39,7 @@ interface PartyPanelProps {
   lang: Language;
   onSaveParty: (party: Party) => void;
   onPrintPartyStatement: () => void;
+  onPrintPartyLedger?: (partyId: string) => void;
   onViewInvoice?: (invoice: Invoice) => void;
   isSuperAdmin?: boolean;
 }
@@ -51,6 +52,7 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
   lang,
   onSaveParty,
   onPrintPartyStatement,
+  onPrintPartyLedger,
   onViewInvoice,
   isSuperAdmin = true,
 }) => {
@@ -614,7 +616,22 @@ ${DEFAULT_COMPANY.name}`;
                       className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 font-semibold cursor-pointer text-[11px]"
                     >
                       <Receipt className="w-3.5 h-3.5" />
-                      <span>{lang === 'bn' ? 'লেনদেন দেখুন' : 'Ledger'}</span>
+                      <span>{lang === 'bn' ? 'লেজার' : 'Ledger'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (onPrintPartyLedger) {
+                          onPrintPartyLedger(p.id);
+                        } else {
+                          onPrintPartyStatement();
+                        }
+                      }}
+                      title={lang === 'bn' ? `"${p.name}" এর ১-পেজ স্টেটমেন্ট প্রিন্ট ও হোয়াটসঅ্যাপ` : 'Print 1-Page Party Statement'}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold cursor-pointer text-[11px]"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>{lang === 'bn' ? 'প্রিন্ট' : 'Print'}</span>
                     </button>
 
                     {hasDue && (
@@ -779,6 +796,56 @@ ${DEFAULT_COMPANY.name}`;
                     className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Party Statement Print & WhatsApp Sharing Options */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                {selectedPartyObj ? (
+                  <span>
+                    👤 <strong>{selectedPartyObj.name}</strong> - {lang === 'bn' ? 'এর পৃথক ১-পেজ লেজার ও স্টেটমেন্ট' : 'Individual 1-Page Ledger Statement'}
+                  </span>
+                ) : (
+                  <span>
+                    👥 <strong>{lang === 'bn' ? 'সকল পার্টি' : 'All Parties'}</strong> - {lang === 'bn' ? 'সার্বিক সম্মিলিত লেজার বিবরণী' : 'Consolidated Ledger'}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (onPrintPartyLedger && selectedPartyObj) {
+                      onPrintPartyLedger(selectedPartyObj.id);
+                    } else {
+                      onPrintPartyStatement();
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>
+                    {selectedPartyObj
+                      ? (lang === 'bn' ? `"${selectedPartyObj.name}" প্রিন্ট (A4)` : `Print ${selectedPartyObj.name} (A4)`)
+                      : (lang === 'bn' ? 'পার্টি বিবরণী প্রিন্ট (A4)' : 'Print Party Ledger (A4)')}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (onPrintPartyLedger && selectedPartyObj) {
+                      onPrintPartyLedger(selectedPartyObj.id);
+                    } else {
+                      onPrintPartyStatement();
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+                  title={lang === 'bn' ? 'WhatsApp ইমেজ শেয়ারিং সেন্টারে যান' : 'Share on WhatsApp'}
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>{lang === 'bn' ? 'WhatsApp ইমেজ শেয়ার' : 'WhatsApp Share'}</span>
+                </button>
               </div>
             </div>
           </div>

@@ -6,6 +6,9 @@ import {
   Phone,
   Mail,
   User,
+  Users,
+  Receipt,
+  ShoppingBag,
   CheckCircle2,
   Calendar,
   Clock,
@@ -53,6 +56,7 @@ interface PrintStatementsProps {
   workerTasks?: WorkerTaskRecord[];
   onBack: () => void;
   initialStaffId?: string | null;
+  initialPartyId?: string | null;
   initialMonth?: string | null;
   filterMode?: PeriodFilterMode;
   selectedDate?: string;
@@ -73,6 +77,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
   workerTasks,
   onBack,
   initialStaffId,
+  initialPartyId,
   initialMonth,
   filterMode: propFilterMode,
   selectedDate: propSelectedDate,
@@ -84,6 +89,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
   const todayStr = new Date().toISOString().split('T')[0];
   const currentMonthStr = todayStr.slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState<string>(initialMonth || currentMonthStr);
+  const [selectedPartyId, setSelectedPartyId] = useState<string>(initialPartyId || 'all');
   const [filterMode, setFilterMode] = useState<PeriodFilterMode>(propFilterMode || 'month');
   const [selectedDate, setSelectedDate] = useState<string>(propSelectedDate || todayStr);
   const [startDate, setStartDate] = useState<string>(propStartDate || todayStr);
@@ -94,6 +100,12 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       setSelectedMonth(initialMonth);
     }
   }, [initialMonth]);
+
+  React.useEffect(() => {
+    if (initialPartyId) {
+      setSelectedPartyId(initialPartyId);
+    }
+  }, [initialPartyId]);
 
   React.useEffect(() => {
     if (propFilterMode) setFilterMode(propFilterMode);
@@ -217,12 +229,18 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
   };
 
   const selectedStaffMember = staff.find((s) => s.id === selectedStaffId);
+  const selectedPartyMember = parties.find((p) => p.id === selectedPartyId);
 
   const getTitle = () => {
     switch (type) {
       case 'stock':
         return t.stockStatement1Page;
       case 'party':
+        if (selectedPartyMember) {
+          return lang === 'bn'
+            ? `পার্টি লেজার ও চালান বিবরণী (${selectedPartyMember.name})`
+            : `Party Ledger Statement (${selectedPartyMember.name})`;
+        }
         return t.partyStatement1Page;
       case 'payroll':
         if (selectedStaffMember) {
@@ -253,15 +271,44 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       );
       summaryText += `📦 মোট পণ্য: ${stock.length} টি\n🔢 মোট স্টক পরিমাণ: ${totalQty}\n💰 মোট মজুদ স্টক মূল্য: ৳${totalVal.toLocaleString()}\n`;
     } else if (type === 'party') {
-      const totalDue = parties.reduce((s, p) => s + p.currentDue, 0);
-      const totalAdv = parties.reduce((s, p) => s + p.currentAdvance, 0);
-      summaryText += `👥 মোট পার্টি: ${parties.length} জন\n🔴 মোট পাওনা বকেয়া (Receivable Due): ৳${totalDue.toLocaleString()}\n🟢 মোট অগ্রিম জমা (Party Advance): ৳${totalAdv.toLocaleString()}\n`;
+      if (selectedPartyMember) {
+        const partyInvoices = allInvoices.filter(
+          (inv) =>
+            inv.partyName?.toLowerCase() === selectedPartyMember.name.toLowerCase() ||
+            inv.partyId === selectedPartyMember.id
+        );
+        const totalSales = partyInvoices
+          .filter((inv) => inv.mode === 'sales')
+          .reduce((sum, inv) => sum + (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0), 0);
+        const totalPurchases = partyInvoices
+          .filter((inv) => inv.mode === 'purchase')
+          .reduce((sum, inv) => sum + (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0), 0);
+        const totalPaid = partyInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+        const totalDue = selectedPartyMember.currentDue;
+        const totalAdv = selectedPartyMember.currentAdvance;
+
+        summaryText += `👤 *পার্টি:* ${selectedPartyMember.name} (${selectedPartyMember.type})\n📞 *মোবাইল:* ${selectedPartyMember.phone || '-'}\n📍 *ঠিকানা:* ${selectedPartyMember.address || '-'}\n────────────────────────\n📝 মোট চালান: ${partyInvoices.length} টি\n🛒 ক্রয় (Purchases): ৳${totalPurchases.toLocaleString()}\n🛍️ বিক্রয় (Sales): ৳${totalSales.toLocaleString()}\n💵 মোট পরিশোধ: ৳${totalPaid.toLocaleString()}\n⚠️ বর্তমান পাওনা বাকি (Due): ৳${totalDue.toLocaleString()}\n`;
+        if (totalAdv > 0) {
+          summaryText += `🟢 অগ্রিম জমা (Advance): ৳${totalAdv.toLocaleString()}\n`;
+        }
+      } else {
+        const totalDue = parties.reduce((s, p) => s + p.currentDue, 0);
+        const totalAdv = parties.reduce((s, p) => s + p.currentAdvance, 0);
+        summaryText += `👥 মোট পার্টি: ${parties.length} জন\n🔴 মোট পাওনা বকেয়া (Receivable Due): ৳${totalDue.toLocaleString()}\n🟢 মোট অগ্রিম জমা (Party Advance): ৳${totalAdv.toLocaleString()}\n`;
+      }
     } else if (type === 'financial') {
       const monthLabel = formatMonthDisplay(selectedMonth);
       const periodInvoices = activeInvoices;
-      const totalSales = periodInvoices.filter((inv) => inv.mode === 'sales').reduce((s, i) => s + i.netInvoiceAmount, 0);
-      const totalPurchases = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + i.netInvoiceAmount, 0);
-      const periodExpenses = activeExpenses.reduce((s, e) => s + e.amount, 0);
+      const periodConsignments = activeBranchConsignments;
+      const allChinaDirect = storageService.getChinaDirectPayments() || [];
+      const periodChinaDirect = allChinaDirect.filter((p) => isDateInPeriod(p.date));
+      const totalChinaDirect = periodChinaDirect.reduce((s, p) => s + (Number(p.amountBdt) || 0), 0);
+      const totalChinaExport = periodConsignments.reduce((sum, c) => sum + (Number(c.totalBdtValue) || 0), 0);
+      const domesticSales = periodInvoices.filter((inv) => inv.mode === 'sales' || !inv.mode).reduce((s, i) => s + (i.netInvoiceAmount || i.subtotal || 0), 0);
+      const totalSales = domesticSales + totalChinaExport + totalChinaDirect;
+      const totalPurchases = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + (i.netInvoiceAmount || i.subtotal || 0), 0);
+      const partyPaymentsPaid = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
+      const periodExpenses = activeExpenses.filter((e) => e.type !== 'in').reduce((s, e) => s + e.amount, 0);
       
       let totalPaidSal = 0;
       staff.forEach((stf) => {
@@ -282,11 +329,23 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         }
       });
 
-      const netProf = totalSales - (totalPurchases + periodExpenses + totalPaidSal);
       const totalCostBase = totalPurchases + periodExpenses + totalPaidSal;
+      const netProf = totalSales - totalCostBase;
       const roiPct = totalCostBase > 0 ? (netProf / totalCostBase) * 100 : 0;
 
-      summaryText += `📅 *বেতনের/হিসাবের মাস:* ${monthLabel}\n📈 *মোট বিক্রয় আয় (Revenue):* ৳${totalSales.toLocaleString()}\n📉 *মোট ক্রয় খরচ (Purchases):* ৳${totalPurchases.toLocaleString()}\n💸 *অফিস ও গাড়ি খরচ:* ৳${periodExpenses.toLocaleString()}\n👔 *পরিশোধিত স্টাফ বেতন:* ৳${totalPaidSal.toLocaleString()}\n────────────────────────\n💰 *নিট লাভ / ক্ষতি (Net P&L):* ৳${netProf.toLocaleString()} [${netProf >= 0 ? '🟢 PROFIT' : '🔴 LOSS'}]\n📊 *রিটার্ন অন ইনভেস্টমেন্ট (ROI):* ${roiPct.toFixed(1)}%\n`;
+      summaryText += `📅 *বেতনের/হিসাবের মাস:* ${monthLabel}
+📈 *মোট বিক্রয় ও রপ্তানি আয় (Turnover):* ৳${totalSales.toLocaleString()}
+   • লোকাল বিক্রয়: ৳${domesticSales.toLocaleString()}
+   • চীন শাখা রপ্তানি: ৳${totalChinaExport.toLocaleString()}
+   • চীন সরাসরি BDT: ৳${totalChinaDirect.toLocaleString()}
+📉 *মোট ক্রয় খরচ (Purchases):* ৳${totalPurchases.toLocaleString()} (পরিশোধ: ৳${partyPaymentsPaid.toLocaleString()})
+💸 *অফিস ও পরিচালন খরচ:* ৳${periodExpenses.toLocaleString()}
+👔 *পরিশোধিত স্টাফ বেতন:* ৳${totalPaidSal.toLocaleString()}
+💸 *মোট সার্বিক বিনিয়োগ (Total Outflow):* ৳${totalCostBase.toLocaleString()}
+────────────────────────
+💰 *নিট লাভ / ক্ষতি (Net P&L):* ৳${netProf.toLocaleString()} [${netProf >= 0 ? '🟢 PROFIT' : '🔴 LOSS'}]
+📊 *রিটার্ন অন ইনভেস্টমেন্ট (ROI):* ${roiPct.toFixed(1)}%
+`;
     } else if (type === 'payroll') {
       const monthLabel = formatMonthDisplay(selectedMonth);
       summaryText += `📅 *বেতনের মাস:* ${monthLabel}\n`;
@@ -409,6 +468,29 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                 </select>
               </div>
             )}
+
+            {type === 'party' && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{lang === 'bn' ? 'পার্টি নির্বাচন:' : 'Party:'}</span>
+                </label>
+                <select
+                  value={selectedPartyId}
+                  onChange={(e) => setSelectedPartyId(e.target.value)}
+                  className="px-3 py-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-emerald-500 cursor-pointer"
+                >
+                  <option value="all">
+                    {lang === 'bn' ? '👥 সকল পার্টির তালিকা (একত্রে)' : '👥 All Parties (Global)'}
+                  </option>
+                  {parties.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      👤 {p.name} ({p.type}) - বাকি: ৳{p.currentDue.toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -417,7 +499,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
             getText={getWhatsAppSummaryText}
             lang={lang}
             targetElementId="statement-print-area"
-            fileName={`statement-${type}-${selectedStaffId !== 'all' ? selectedStaffId : 'all'}-${todayStr}.png`}
+            fileName={`statement-${type}-${type === 'party' ? (selectedPartyId !== 'all' ? selectedPartyId : 'all') : (selectedStaffId !== 'all' ? selectedStaffId : 'all')}-${todayStr}.png`}
             buttonLabel={lang === 'bn' ? 'হোয়াটসঅ্যাপে পাঠান (ছবি/টেক্সট)' : 'Share on WhatsApp'}
           />
 
@@ -440,6 +522,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
             <span>
               {isPrinting
                 ? (lang === 'bn' ? 'প্রিন্ট ডায়ালগ খুলছে...' : 'Opening Print...')
+                : selectedPartyMember
+                ? (lang === 'bn' ? 'পার্টি বিবরণী প্রিন্ট (1-Page A4)' : 'Print Party Ledger (1-Page A4)')
                 : selectedStaffMember
                 ? (lang === 'bn' ? 'পে-স্লিপ প্রিন্ট করুন (1-Page A4)' : 'Print Payslip (1-Page A4)')
                 : `${t.printNow} (1-Page A4 Sheet)`}
@@ -621,64 +705,234 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
           </div>
         )}
 
-        {/* 2. PARTY STATEMENT SHEET */}
+        {/* 2. PARTY STATEMENT SHEET / INDIVIDUAL PARTY LEDGER (User Requirement) */}
         {type === 'party' && (
-          <div className="mt-4 space-y-3">
-            <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-              <thead>
-                <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                  <th className="py-1 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
-                  <th className="py-1 px-2 border-r border-slate-300">{t.partyName}</th>
-                  <th className="py-1 px-2 border-r border-slate-300 w-28">{t.partyPhone}</th>
-                  <th className="py-1 px-2 border-r border-slate-300 w-20 text-center">{t.partyType}</th>
-                  <th className="py-1 px-2 border-r border-slate-300 text-right w-28">{t.totalDueReceivable}</th>
-                  <th className="py-1 px-2 border-r border-slate-300 text-right w-28">{t.totalAdvancePayable}</th>
-                  <th className="py-1 px-2 text-center w-20">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parties.map((p, idx) => (
-                  <tr key={p.id} className="border-b border-slate-200">
-                    <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
-                      {formatNumber(idx + 1, lang)}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 font-bold">
-                      {p.name}
-                      {p.address && <span className="block text-[10px] text-slate-500 font-normal">{p.address}</span>}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">
-                      {p.phone || '-'}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 text-center uppercase text-[10px]">
-                      {p.type}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-rose-700">
-                      {p.currentDue > 0 ? formatCurrency(p.currentDue, lang) : '-'}
-                    </td>
-                    <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-blue-700">
-                      {p.currentAdvance > 0 ? formatCurrency(p.currentAdvance, lang) : '-'}
-                    </td>
-                    <td className="py-1 px-2 text-center text-[10px] font-semibold">
-                      {p.currentDue > 0 ? 'বাকি' : p.currentAdvance > 0 ? 'জমা' : 'ক্লিয়ার'}
-                    </td>
+          <div className="mt-4 space-y-4">
+            {selectedPartyMember ? (
+              (() => {
+                const partyInvoices = allInvoices.filter(
+                  (inv) =>
+                    inv.partyName?.toLowerCase() === selectedPartyMember.name.toLowerCase() ||
+                    inv.partyId === selectedPartyMember.id
+                );
+                const totalSales = partyInvoices
+                  .filter((inv) => inv.mode === 'sales')
+                  .reduce((sum, inv) => sum + (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0), 0);
+                const totalPurchases = partyInvoices
+                  .filter((inv) => inv.mode === 'purchase')
+                  .reduce((sum, inv) => sum + (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0), 0);
+                const totalInvoiced = partyInvoices.reduce(
+                  (sum, inv) => sum + (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0),
+                  0
+                );
+                const totalPaid = partyInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+                const currentDue = selectedPartyMember.currentDue;
+                const currentAdvance = selectedPartyMember.currentAdvance;
+
+                return (
+                  <div className="space-y-4">
+                    {/* Party Profile Header Box */}
+                    <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border border-slate-700">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-black uppercase tracking-wider text-emerald-400 text-sm sm:text-base">
+                            {selectedPartyMember.name}
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 uppercase">
+                            {selectedPartyMember.type === 'supplier'
+                              ? 'সাপ্লায়ার (Supplier)'
+                              : selectedPartyMember.type === 'buyer'
+                              ? 'ক্রেতা (Buyer)'
+                              : 'উভয় (Both)'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 mt-1">
+                          📞 মোবা: <strong className="text-white font-mono">{selectedPartyMember.phone || '-'}</strong>
+                          {selectedPartyMember.address ? ` • 📍 ঠিকানা: ${selectedPartyMember.address}` : ''}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">বর্তমান পাওনা বাকি</span>
+                          <span className="text-lg font-black font-mono text-rose-400">
+                            {formatCurrency(currentDue, lang)}
+                          </span>
+                        </div>
+                        {currentAdvance > 0 && (
+                          <div className="text-right pl-3 border-l border-white/20">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">অগ্রিম জমা</span>
+                            <span className="text-lg font-black font-mono text-cyan-300">
+                              {formatCurrency(currentAdvance, lang)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Summary Ribbon */}
+                    <div className="grid grid-cols-4 gap-2 text-xs font-mono">
+                      <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-800">
+                        <span className="text-[9px] uppercase font-bold text-slate-500 block font-sans">মোট ক্রয় (Purchase)</span>
+                        <strong className="text-emerald-700">{formatCurrency(totalPurchases, lang)}</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-800">
+                        <span className="text-[9px] uppercase font-bold text-slate-500 block font-sans">মোট বিক্রয় (Sales)</span>
+                        <strong className="text-blue-700">{formatCurrency(totalSales, lang)}</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-800">
+                        <span className="text-[9px] uppercase font-bold text-slate-500 block font-sans">মোট পরিশোধিত (Paid)</span>
+                        <strong className="text-purple-700">{formatCurrency(totalPaid, lang)}</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl border border-rose-300 bg-rose-50 text-rose-800">
+                        <span className="text-[9px] uppercase font-bold text-rose-600 block font-sans">বর্তমান নিট বাকি (Due)</span>
+                        <strong className="text-rose-700">{formatCurrency(currentDue, lang)}</strong>
+                      </div>
+                    </div>
+
+                    {/* Itemized Invoices / Transaction Table */}
+                    <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
+                          <th className="py-1 px-2 border-r border-slate-300 text-center w-8">#</th>
+                          <th className="py-1 px-2 border-r border-slate-300 w-24">তারিখ</th>
+                          <th className="py-1 px-2 border-r border-slate-300 w-28">চালান নং</th>
+                          <th className="py-1 px-2 border-r border-slate-300 text-center w-20">ধরন</th>
+                          <th className="py-1 px-2 border-r border-slate-300">মালের বিবরণ ও পরিমাণ</th>
+                          <th className="py-1 px-2 border-r border-slate-300 text-right w-24">মোট বিল (৳)</th>
+                          <th className="py-1 px-2 border-r border-slate-300 text-right w-24">পরিশোধ (৳)</th>
+                          <th className="py-1 px-2 text-right w-24">অবশিষ্ট বাকি</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {partyInvoices.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-slate-400">
+                              নির্বাচিত সময়ে এই পার্টির কোনো লেনদেন বা চালান পাওয়া যায়নি।
+                            </td>
+                          </tr>
+                        ) : (
+                          partyInvoices.map((inv, idx) => {
+                            const isPur = inv.mode === 'purchase';
+                            const billAmt = Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0;
+                            const paidAmt = Number(inv.paidAmount) || 0;
+                            const dueAmt = Number(inv.remainingDue) || 0;
+
+                            return (
+                              <tr key={inv.id || idx} className="border-b border-slate-200">
+                                <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">{idx + 1}</td>
+                                <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">{inv.date}</td>
+                                <td className="py-1 px-2 border-r border-slate-200 font-mono font-bold">{inv.invoiceNo}</td>
+                                <td className="py-1 px-2 border-r border-slate-200 text-center text-[10px] font-bold uppercase">
+                                  <span className={isPur ? 'text-emerald-700' : 'text-blue-700'}>
+                                    {isPur ? 'ক্রয়' : 'বিক্রয়'}
+                                  </span>
+                                </td>
+                                <td className="py-1 px-2 border-r border-slate-200 text-[11px]">
+                                  {inv.items?.map((it) => `${it.name} (${it.quantity}${it.unit || ''})`).join(', ') || '-'}
+                                </td>
+                                <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold">
+                                  {formatCurrency(billAmt, lang)}
+                                </td>
+                                <td className="py-1 px-2 border-r border-slate-200 text-right font-mono text-emerald-700">
+                                  {formatCurrency(paidAmt, lang)}
+                                </td>
+                                <td className="py-1 px-2 text-right font-mono font-bold text-rose-700">
+                                  {dueAmt > 0 ? formatCurrency(dueAmt, lang) : '-'}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
+                          <td colSpan={5} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                            মোট চালান যোগফল:
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono border-r border-slate-300">
+                            {formatCurrency(totalInvoiced, lang)}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-emerald-800 border-r border-slate-300">
+                            {formatCurrency(totalPaid, lang)}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-rose-800">
+                            {formatCurrency(currentDue, lang)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+
+                    {/* Signatures */}
+                    <div className="flex justify-between items-end pt-12 text-xs">
+                      <div className="border-t border-slate-400 pt-1 text-center w-40 font-bold">
+                        গ্রাহক / পার্টির স্বাক্ষর
+                      </div>
+                      <div className="border-t border-slate-400 pt-1 text-center w-48 font-bold">
+                        কর্তৃপক্ষের স্বাক্ষর ও সিলমোহর
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              /* Global All Parties Summary Table */
+              <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
+                    <th className="py-1 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
+                    <th className="py-1 px-2 border-r border-slate-300">{t.partyName}</th>
+                    <th className="py-1 px-2 border-r border-slate-300 w-28">{t.partyPhone}</th>
+                    <th className="py-1 px-2 border-r border-slate-300 w-20 text-center">{t.partyType}</th>
+                    <th className="py-1 px-2 border-r border-slate-300 text-right w-28">{t.totalDueReceivable}</th>
+                    <th className="py-1 px-2 border-r border-slate-300 text-right w-28">{t.totalAdvancePayable}</th>
+                    <th className="py-1 px-2 text-center w-20">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                  <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
-                    {lang === 'bn' ? 'মোট হিসাব সমষ্টী:' : 'Total Summary:'}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono text-rose-800 border-r border-slate-300">
-                    {formatCurrency(parties.reduce((s, p) => s + p.currentDue, 0), lang)}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono text-blue-800 border-r border-slate-300">
-                    {formatCurrency(parties.reduce((s, p) => s + p.currentAdvance, 0), lang)}
-                  </td>
-                  <td></td>
-                </tr>
-              </tfoot>
-            </table>
+                </thead>
+                <tbody>
+                  {parties.map((p, idx) => (
+                    <tr key={p.id} className="border-b border-slate-200">
+                      <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
+                        {formatNumber(idx + 1, lang)}
+                      </td>
+                      <td className="py-1 px-2 border-r border-slate-200 font-bold">
+                        {p.name}
+                        {p.address && <span className="block text-[10px] text-slate-500 font-normal">{p.address}</span>}
+                      </td>
+                      <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">
+                        {p.phone || '-'}
+                      </td>
+                      <td className="py-1 px-2 border-r border-slate-200 text-center uppercase text-[10px]">
+                        {p.type}
+                      </td>
+                      <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-rose-700">
+                        {p.currentDue > 0 ? formatCurrency(p.currentDue, lang) : '-'}
+                      </td>
+                      <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-blue-700">
+                        {p.currentAdvance > 0 ? formatCurrency(p.currentAdvance, lang) : '-'}
+                      </td>
+                      <td className="py-1 px-2 text-center text-[10px] font-semibold">
+                        {p.currentDue > 0 ? 'বাকি' : p.currentAdvance > 0 ? 'জমা' : 'ক্লিয়ার'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
+                    <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                      {lang === 'bn' ? 'মোট হিসাব সমষ্টী:' : 'Total Summary:'}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono text-rose-800 border-r border-slate-300">
+                      {formatCurrency(parties.reduce((s, p) => s + p.currentDue, 0), lang)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono text-blue-800 border-r border-slate-300">
+                      {formatCurrency(parties.reduce((s, p) => s + p.currentAdvance, 0), lang)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
           </div>
         )}
 
@@ -1314,12 +1568,25 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
             {(() => {
               const periodInvoices = activeInvoices;
               const periodConsignments = activeBranchConsignments;
+              const allChinaDirect = storageService.getChinaDirectPayments() || [];
+              const periodChinaDirect = allChinaDirect.filter((p) => isDateInPeriod(p.date));
+              const totalChinaDirect = periodChinaDirect.reduce((s, p) => s + (Number(p.amountBdt) || 0), 0);
               const totalChinaExportRevenue = periodConsignments.reduce((sum, c) => sum + (Number(c.totalBdtValue) || 0), 0);
               const domesticSales = periodInvoices.filter((inv) => inv.mode === 'sales' || !inv.mode).reduce((s, i) => s + (i.netInvoiceAmount || i.subtotal || 0), 0);
-              const totalSales = domesticSales + totalChinaExportRevenue;
+              const totalSales = domesticSales + totalChinaExportRevenue + totalChinaDirect;
               const totalPurchases = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + (i.netInvoiceAmount || i.subtotal || 0), 0);
+              const partyPaymentsPaid = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
+              const partyDuePayable = periodInvoices.filter((inv) => inv.mode === 'purchase').reduce((s, i) => s + (Number(i.remainingDue) || 0), 0);
               const grossMargin = totalSales - totalPurchases;
               
+              // All time China remaining balance (b/l receivables)
+              const allConsignments = storageService.getBranchConsignments() || [];
+              const allConversions = storageService.getRmbConversions() || [];
+              const chinaTotalSent = allConsignments.reduce((s, c) => s + (Number(c.totalBdtValue) || 0), 0);
+              const chinaTotalConverted = allConversions.reduce((s, cv) => s + (Number(cv.expectedBdtAmount || cv.receivedBdtAmount) || 0), 0);
+              const chinaTotalDirectAll = allChinaDirect.reduce((s, p) => s + (Number(p.amountBdt) || 0), 0);
+              const chinaRemainingBal = Math.max(0, chinaTotalSent - (chinaTotalConverted + chinaTotalDirectAll));
+
               const periodPettyCash = activeExpenses.filter((e) => e.type !== 'in').reduce((s, e) => s + e.amount, 0);
               
               let totalPaidSal = 0;
@@ -1335,9 +1602,9 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                 }
               });
 
-              const netProf = totalSales - (totalPurchases + periodPettyCash + totalPaidSal);
-              const isProf = netProf >= 0;
               const totalInvestmentOutflow = totalPurchases + periodPettyCash + totalPaidSal;
+              const netProf = totalSales - totalInvestmentOutflow;
+              const isProf = netProf >= 0;
               const roiPct = totalInvestmentOutflow > 0 ? (netProf / totalInvestmentOutflow) * 100 : 0;
               const profitMarginPct = totalSales > 0 ? (netProf / totalSales) * 100 : 0;
               const stockValuation = stock.reduce((s, st) => s + st.quantity * (st.purchaseRate || st.purchaseAvgRate || 0), 0);
@@ -1417,14 +1684,19 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                       <tbody>
                         <tr className="border-b border-slate-200">
                           <td className="py-1.5 px-2 border-r border-slate-200 font-bold text-emerald-800">
-                            (+) {lang === 'bn' ? 'মোট বিক্রয় ও এক্সপোর্ট আয় (Sales & China Export Turnover)' : 'Total Sales & China Export Turnover'}
-                            {totalChinaExportRevenue > 0 && (
-                              <span className="block text-[10px] text-emerald-700 font-normal">
-                                {lang === 'bn'
-                                  ? `(লোকাল বিক্রয়: ${formatCurrency(domesticSales, lang)} + চায়না ব্রাঞ্চ এক্সপোর্ট: ${formatCurrency(totalChinaExportRevenue, lang)})`
-                                  : `(Domestic: ${formatCurrency(domesticSales, lang)} + China Branch Export: ${formatCurrency(totalChinaExportRevenue, lang)})`}
-                              </span>
-                            )}
+                            (+) {lang === 'bn' ? 'মোট বিক্রয়, চীন শাখা রপ্তানি ও প্রাপ্তি আয়' : 'Total Sales & China Export Turnover'}
+                            <div className="text-[10px] text-emerald-700 font-normal space-y-0.5 mt-0.5">
+                              <div>• {lang === 'bn' ? 'লোকাল ইনভয়েস বিক্রয়:' : 'Local Invoices:'} {formatCurrency(domesticSales, lang)}</div>
+                              {totalChinaExportRevenue > 0 && (
+                                <div>• {lang === 'bn' ? 'চীন শাখা রপ্তানি চালান:' : 'China Export:'} {formatCurrency(totalChinaExportRevenue, lang)}</div>
+                              )}
+                              {totalChinaDirect > 0 && (
+                                <div>• {lang === 'bn' ? 'চীন অফিস সরাসরি BDT পেমেন্ট:' : 'China Direct BDT:'} {formatCurrency(totalChinaDirect, lang)}</div>
+                              )}
+                              {chinaRemainingBal > 0 && (
+                                <div className="font-semibold text-indigo-700">• {lang === 'bn' ? 'চীন অফিস অবশিষ্ট পাওনা (B/L):' : 'China Office Balance (B/L):'} {formatCurrency(chinaRemainingBal, lang)}</div>
+                              )}
+                            </div>
                           </td>
                           <td className="py-1.5 px-2 border-r border-slate-200 text-center text-emerald-700 font-semibold text-[10px]">
                             {lang === 'bn' ? 'আয় (Revenue)' : 'Revenue'}
@@ -1437,9 +1709,15 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                         <tr className="border-b border-slate-200">
                           <td className="py-1.5 px-2 border-r border-slate-200 font-bold text-blue-800">
                             (-) {lang === 'bn' ? 'মোট সার্কিট ও মাদারবোর্ড ক্রয় খরচ (Cost of Goods Purchased)' : 'Total Cost of Goods Purchased'}
+                            <div className="text-[10px] text-blue-700 font-normal space-y-0.5 mt-0.5">
+                              <div>• {lang === 'bn' ? 'পার্টি পরিশোধিত বিল (Paid):' : 'Party Bills Paid:'} {formatCurrency(partyPaymentsPaid, lang)}</div>
+                              {partyDuePayable > 0 && (
+                                <div>• {lang === 'bn' ? 'বকেয়া বিল পাওনা (Due):' : 'Pending Due Payables:'} {formatCurrency(partyDuePayable, lang)}</div>
+                              )}
+                            </div>
                           </td>
                           <td className="py-1.5 px-2 border-r border-slate-200 text-center text-rose-700 font-semibold text-[10px]">
-                            {lang === 'bn' ? 'খরচ (Purchase Cost)' : 'Purchase Cost'}
+                            {lang === 'bn' ? 'ক্রয় খরচ' : 'Purchase Cost'}
                           </td>
                           <td className="py-1.5 px-2 text-right font-mono font-bold text-rose-700">
                             -{formatCurrency(totalPurchases, lang)}

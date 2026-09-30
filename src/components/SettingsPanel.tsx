@@ -22,10 +22,12 @@ import {
   Eye,
   EyeOff,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 import { CompanyInfo, Language } from '../types';
 import { storageService } from '../lib/storage';
 import { CompanyLogo } from './CompanyLogo';
+import { CURRENT_APP_VERSION, forceUpdateAndReloadApp, BUILD_TIMESTAMP } from '../lib/appUpdate';
 
 interface SettingsPanelProps {
   lang: Language;
@@ -525,6 +527,37 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               সকল হিসাব আপনার কম্পিউটারে সুরক্ষিত থাকবে। নিয়মিত ব্যাকআপ রাখুন।
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* App Version & Auto-Update Control */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl border border-indigo-500/30 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-cyan-400" />
+              <h3 className="text-sm font-bold text-white">
+                {lang === 'bn' ? 'সফটওয়্যার আপডেট ও ক্যাশ সিঙ্ক্রোনাইজেশন' : 'Software Updates & Cache Sync'}
+              </h3>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {CURRENT_APP_VERSION}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-1">
+              {lang === 'bn'
+                ? 'ব্রাউজার বা ডেস্কটপ PWA অ্যাপে পুরোনো ক্যাশ ফাইল জমে থাকলে নতুন ফিচার দৃশ্যমান নাও হতে পারে। নিচের বাটনে ক্লিক করলে সমস্ত পুরোনো ক্যাশ পরিষ্কার হয়ে অ্যাপের সম্পূর্ণ নতুন সংস্করণ ও ফিচার ইনস্ট্যান্ট লোড হবে।'
+                : 'If your browser or installed PWA app holds cached files, click below to force-clean cache and immediately load all the latest updates.'}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => forceUpdateAndReloadApp()}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer shrink-0"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>{lang === 'bn' ? 'সম্পূর্ণ অ্যাপ এখনই আপডেট ও রিফ্রেশ করুন' : 'Force Update & Reload App'}</span>
+          </button>
         </div>
       </div>
 

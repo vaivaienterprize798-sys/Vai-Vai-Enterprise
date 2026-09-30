@@ -27,6 +27,7 @@ import {
   UserCheck,
   Globe,
   Tag,
+  RefreshCw,
 } from 'lucide-react';
 import { Language, ThemeMode, StockItem, Staff, AttendanceRecord, Invoice, UserSession, CompanyInfo } from '../types';
 import { translations } from '../lib/translations';
@@ -34,6 +35,7 @@ import { storageService } from '../lib/storage';
 import { CompanyLogo } from './CompanyLogo';
 import { DesktopInstallButton } from './DesktopInstallButton';
 import { NotificationCenter } from './NotificationCenter';
+import { CURRENT_APP_VERSION, forceUpdateAndReloadApp } from '../lib/appUpdate';
 
 interface NavbarProps {
   currentTab: string;
@@ -80,7 +82,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const t = translations[lang];
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleForceUpdate = async () => {
+    setIsUpdating(true);
+    await forceUpdateAndReloadApp();
+  };
 
   // Close menu on click outside
   useEffect(() => {
@@ -486,7 +494,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 px-3 py-1 flex items-center justify-between text-[10px] text-slate-400">
                   <span>{companyInfo.name}</span>
-                  <span className="font-mono">v3.5 PWA</span>
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <span className="text-emerald-500 font-bold">{CURRENT_APP_VERSION}</span>
+                    <button
+                      onClick={handleForceUpdate}
+                      disabled={isUpdating}
+                      className="text-cyan-500 hover:text-cyan-400 underline cursor-pointer"
+                    >
+                      {isUpdating ? 'Updating...' : 'Reload'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -500,8 +517,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
           </div>
 
-          {/* Right Action Controls: Desktop Install, +Invoice, Lang, Theme */}
+          {/* Right Action Controls: Update App, Desktop Install, +Invoice, Lang, Theme */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Quick 1-Click App Update & Cache Purge Button */}
+            <button
+              onClick={handleForceUpdate}
+              disabled={isUpdating}
+              title={lang === 'bn' ? 'সফটওয়্যারের সর্বশেষ আপডেট ও ফিচার রিফ্রেশ করুন' : 'Refresh and apply latest software updates'}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-cyan-600/15 hover:bg-cyan-600/25 text-cyan-700 dark:text-cyan-300 border border-cyan-400/40 transition-all cursor-pointer shadow-2xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isUpdating ? 'animate-spin text-cyan-500' : ''}`} />
+              <span className="hidden sm:inline">
+                {isUpdating ? (lang === 'bn' ? 'আপডেট হচ্ছে...' : 'Updating...') : (lang === 'bn' ? 'অ্যাপ আপডেট' : 'Update App')}
+              </span>
+              <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 font-bold">
+                {CURRENT_APP_VERSION}
+              </span>
+            </button>
+
             {/* Desktop Install Button */}
             <DesktopInstallButton lang={lang} variant="nav" />
 

@@ -527,3 +527,24 @@ export interface WorkerProductConversion {
   updatedAt: string;
 }
 
+export interface ThirdParty {
+  id: string;
+  name: string;
+  phone: string;
+  address?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ChinaDirectPayment {
+  id: string;
+  date: string;
+  referenceNo: string;
+  branchName: string; // e.g. "চীন/গুয়াংজু শাখা অফিস"
+  amountBdt: number;
+  paymentMethod: 'bank' | 'cash' | 'bKash' | 'nagad';
+  accountDetails?: string;
+  notes?: string;
+  createdAt: string;
+}
+

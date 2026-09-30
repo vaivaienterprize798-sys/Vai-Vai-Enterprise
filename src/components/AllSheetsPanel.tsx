@@ -28,6 +28,8 @@ import {
   BranchRmbRemittance,
   ThirdPartyRmbConversion,
   WorkerTaskRecord,
+  ThirdParty,
+  ChinaDirectPayment,
 } from '../types';
 import { translations, formatNumber, formatDate, formatCurrency } from '../lib/translations';
 import { PrintStatements } from './PrintStatements';
@@ -45,6 +47,8 @@ export interface AllSheetsPanelProps {
   branchConsignments?: BranchConsignment[];
   branchRemittances?: BranchRmbRemittance[];
   rmbConversions?: ThirdPartyRmbConversion[];
+  thirdParties?: ThirdParty[];
+  chinaDirectPayments?: ChinaDirectPayment[];
   workerTasks?: WorkerTaskRecord[];
   initialType?: StatementType;
 }

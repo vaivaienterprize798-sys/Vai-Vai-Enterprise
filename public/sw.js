@@ -4,7 +4,7 @@
  * Ensures instant startup, zero white screens, and smooth offline performance.
  */
 
-const CACHE_NAME = 'rsr-vaivai-v2';
+const CACHE_NAME = 'rsr-vaivai-v4.3';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -18,14 +18,20 @@ const PRECACHE_ASSETS = [
   '/pwa-maskable-512x512.png'
 ];
 
-// Install Event - Pre-cache core shell
+// Message listener for immediate skipWaiting from client
+self.addEventListener('message', (event) => {
+  if (event.data && (event.data.type === 'SKIP_WAITING' || event.data === 'skipWaiting')) {
+    console.log('[SW] skipWaiting requested from client');
+    self.skipWaiting();
+  }
+});
+
+// Install Event - Pre-cache core shell & immediately skip waiting
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => {
-        return cache.addAll(PRECACHE_ASSETS);
-      })
+      .then((cache) => cache.addAll(PRECACHE_ASSETS))
       .then(() => self.skipWaiting())
   );
 });
@@ -49,9 +55,8 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event - Safe Network-First with Cache Fallback
+// Fetch Event - Network-First for dynamic updates with offline cache fallback
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
@@ -86,13 +91,34 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // For HTML navigation or root index.html: ALWAYS fetch from network first so app updates are immediate!
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            }).catch(() => {});
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cachedResponse = await caches.match(event.request);
+          if (cachedResponse) return cachedResponse;
+          const fallbackIndex = await caches.match('/index.html');
+          if (fallbackIndex) return fallbackIndex;
+          return fetch(event.request);
+        })
+    );
+    return;
+  }
+
+  // For other static assets (images, icons, fonts, CSS, JS chunks): Network-First with Cache fallback
   event.respondWith(
-    Promise.race([
-      fetch(event.request),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2500))
-    ])
+    fetch(event.request)
       .then((networkResponse) => {
-        // Cache successful basic responses for static assets
         if (
           networkResponse &&
           networkResponse.status === 200 &&
@@ -106,19 +132,10 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(async () => {
-        // Try cache fallback
         const cachedResponse = await caches.match(event.request);
         if (cachedResponse) {
           return cachedResponse;
         }
-
-        // SPA Navigation Fallback
-        if (event.request.mode === 'navigate') {
-          const fallbackIndex = await caches.match('/index.html');
-          if (fallbackIndex) return fallbackIndex;
-        }
-
-        // Let the browser handle genuine network errors naturally
         return fetch(event.request);
       })
   );

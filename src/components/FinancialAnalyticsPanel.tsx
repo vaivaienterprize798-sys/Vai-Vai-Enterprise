@@ -34,6 +34,10 @@ import {
   PettyCashExpense,
   CarExpense,
   BranchConsignment,
+  BranchRmbRemittance,
+  ThirdPartyRmbConversion,
+  ChinaDirectPayment,
+  Party,
 } from '../types';
 import {
   translations,
@@ -55,6 +59,10 @@ interface FinancialAnalyticsPanelProps {
   pettyCashExpenses: PettyCashExpense[];
   carExpenses: CarExpense[];
   branchConsignments?: BranchConsignment[];
+  branchRemittances?: BranchRmbRemittance[];
+  rmbConversions?: ThirdPartyRmbConversion[];
+  chinaDirectPayments?: ChinaDirectPayment[];
+  parties?: Party[];
   onPrintFinancialStatement: (
     mode: DateFilterMode,
     selectedDate: string,
@@ -73,6 +81,10 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
   pettyCashExpenses,
   carExpenses,
   branchConsignments,
+  branchRemittances,
+  rmbConversions,
+  chinaDirectPayments,
+  parties = [],
   onPrintFinancialStatement,
 }) => {
   const t = translations[lang];
@@ -169,19 +181,94 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
     return filteredConsignments.reduce((sum, c) => sum + (Number(c.totalBdtValue) || 0), 0);
   }, [filteredConsignments]);
 
+  const filteredChinaDirectPayments = useMemo(() => {
+    const list = chinaDirectPayments && chinaDirectPayments.length > 0
+      ? chinaDirectPayments
+      : storageService.getChinaDirectPayments();
+    return (list || []).filter((p) => isDateInPeriod(p.date));
+  }, [chinaDirectPayments, filterMode, selectedDate, selectedMonth, startDate, endDate]);
+
+  const totalChinaDirectPayments = useMemo(() => {
+    return filteredChinaDirectPayments.reduce((sum, p) => sum + (Number(p.amountBdt) || 0), 0);
+  }, [filteredChinaDirectPayments]);
+
   const totalDomesticSalesRevenue = useMemo(() => {
     return filteredInvoices
       .filter((inv) => inv.mode === 'sales' || !inv.mode)
       .reduce((sum, inv) => sum + getInvoiceAmount(inv), 0);
   }, [filteredInvoices]);
 
-  // Combined Total Sales Turnover = Invoiced Sales + China Branch Export Consignments
-  const totalSalesRevenue = totalDomesticSalesRevenue + totalChinaExportRevenue;
+  // Combined Total Sales Turnover = Invoiced Sales + China Export Consignments + China Direct BDT Payments
+  const totalSalesRevenue = totalDomesticSalesRevenue + totalChinaExportRevenue + totalChinaDirectPayments;
+
+  // China Office All-Time / Active Receivables Balance (b/l)
+  const allConsignments = useMemo(() => {
+    return branchConsignments && branchConsignments.length > 0
+      ? branchConsignments
+      : storageService.getBranchConsignments();
+  }, [branchConsignments]);
+
+  const allConversions = useMemo(() => {
+    return rmbConversions && rmbConversions.length > 0
+      ? rmbConversions
+      : storageService.getRmbConversions();
+  }, [rmbConversions]);
+
+  const allChinaDirect = useMemo(() => {
+    return chinaDirectPayments && chinaDirectPayments.length > 0
+      ? chinaDirectPayments
+      : storageService.getChinaDirectPayments();
+  }, [chinaDirectPayments]);
+
+  const chinaTotalSentBdt = useMemo(() => {
+    return allConsignments.reduce((s, c) => s + (Number(c.totalBdtValue) || 0), 0);
+  }, [allConsignments]);
+
+  const chinaTotalRmbConvertedBdt = useMemo(() => {
+    return allConversions.reduce((s, cv) => s + (Number(cv.expectedBdtAmount || cv.receivedBdtAmount) || 0), 0);
+  }, [allConversions]);
+
+  const chinaTotalDirectBdt = useMemo(() => {
+    return allChinaDirect.reduce((s, p) => s + (Number(p.amountBdt) || 0), 0);
+  }, [allChinaDirect]);
+
+  const chinaRemainingBalanceBdt = Math.max(0, chinaTotalSentBdt - (chinaTotalRmbConvertedBdt + chinaTotalDirectBdt));
 
   const totalPurchaseCost = useMemo(() => {
     return filteredInvoices
       .filter((inv) => inv.mode === 'purchase')
       .reduce((sum, inv) => sum + getInvoiceAmount(inv), 0);
+  }, [filteredInvoices]);
+
+  // Party-wise Procurement Payments and Outstanding Bill Dues
+  const totalPartyBillPayments = useMemo(() => {
+    return filteredInvoices
+      .filter((inv) => inv.mode === 'purchase')
+      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+  }, [filteredInvoices]);
+
+  const totalPartyPurchaseDue = useMemo(() => {
+    return filteredInvoices
+      .filter((inv) => inv.mode === 'purchase')
+      .reduce((sum, inv) => sum + (Number(inv.remainingDue) || 0), 0);
+  }, [filteredInvoices]);
+
+  // Individual Party Procurement & Bill Payment Breakdown
+  const partyProcurementBreakdown = useMemo(() => {
+    const map: { [partyName: string]: { partyName: string; count: number; totalBill: number; paidAmount: number; remainingDue: number } } = {};
+    filteredInvoices
+      .filter((inv) => inv.mode === 'purchase')
+      .forEach((inv) => {
+        const pName = (inv.partyName || 'Unknown Supplier').trim();
+        if (!map[pName]) {
+          map[pName] = { partyName: pName, count: 0, totalBill: 0, paidAmount: 0, remainingDue: 0 };
+        }
+        map[pName].count += 1;
+        map[pName].totalBill += getInvoiceAmount(inv);
+        map[pName].paidAmount += Number(inv.paidAmount) || 0;
+        map[pName].remainingDue += Number(inv.remainingDue) || 0;
+      });
+    return Object.values(map).sort((a, b) => b.totalBill - a.totalBill);
   }, [filteredInvoices]);
 
   const grossSalesBalance = totalSalesRevenue - totalPurchaseCost;
@@ -305,8 +392,18 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
       };
     }
 
+    if (totalChinaDirectPayments > 0) {
+      cats['china_direct'] = {
+        code: 'china_direct',
+        labelBn: 'চীন অফিস সরাসরি BDT পেমেন্ট',
+        labelEn: 'China Office Direct BDT Inflow',
+        sales: totalChinaDirectPayments,
+        purchase: 0,
+      };
+    }
+
     return Object.values(cats);
-  }, [filteredInvoices, totalChinaExportRevenue]);
+  }, [filteredInvoices, totalChinaExportRevenue, totalChinaDirectPayments]);
 
   return (
     <div className="space-y-6">
@@ -503,7 +600,7 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
           <div className="text-2xl font-black font-mono text-emerald-900 dark:text-emerald-300">
             {formatCurrency(totalSalesRevenue, lang)}
           </div>
-          <div className="text-[11px] text-emerald-700 dark:text-emerald-400 space-y-0.5 pt-1 border-t border-emerald-200/60 dark:border-emerald-800/40 font-mono">
+          <div className="text-[11px] text-emerald-700 dark:text-emerald-400 space-y-1 pt-1 border-t border-emerald-200/60 dark:border-emerald-800/40 font-mono">
             <div className="flex justify-between">
               <span>{lang === 'bn' ? 'লোকাল ইনভয়েস বিক্রয়:' : 'Local Invoices:'}</span>
               <strong className="text-slate-900 dark:text-white">{formatCurrency(totalDomesticSalesRevenue, lang)}</strong>
@@ -512,6 +609,18 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
               <div className="flex justify-between text-cyan-800 dark:text-cyan-300">
                 <span>{lang === 'bn' ? 'চীন শাখা রপ্তানি চালান:' : 'China Export Consignments:'}</span>
                 <strong>{formatCurrency(totalChinaExportRevenue, lang)} ({filteredConsignments.length})</strong>
+              </div>
+            )}
+            {totalChinaDirectPayments > 0 && (
+              <div className="flex justify-between text-teal-800 dark:text-teal-300">
+                <span>{lang === 'bn' ? 'চীন অফিস সরাসরি BDT পেমেন্ট:' : 'China Office Direct BDT:'}</span>
+                <strong>{formatCurrency(totalChinaDirectPayments, lang)} ({filteredChinaDirectPayments.length})</strong>
+              </div>
+            )}
+            {chinaRemainingBalanceBdt > 0 && (
+              <div className="flex justify-between text-indigo-800 dark:text-indigo-300 font-semibold bg-indigo-50/80 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                <span>{lang === 'bn' ? 'চীন অফিস অবশিষ্ট পাওনা (B/L):' : 'China Office Balance (B/L):'}</span>
+                <strong>{formatCurrency(chinaRemainingBalanceBdt, lang)}</strong>
               </div>
             )}
           </div>
@@ -530,9 +639,21 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
           <div className="text-2xl font-black font-mono text-blue-900 dark:text-blue-300">
             {formatCurrency(totalPurchaseCost, lang)}
           </div>
-          <p className="text-[11px] text-blue-700 dark:text-blue-400">
-            {lang === 'bn' ? 'মহাজন ও লোকাল বাজার থেকে কেনা মালের ক্রয়মূল্য' : 'Cost of goods & inventory purchased'}
-          </p>
+          <div className="text-[11px] text-blue-700 dark:text-blue-400 space-y-1 pt-1 border-t border-blue-200/60 dark:border-blue-800/40 font-mono">
+            <div className="flex justify-between">
+              <span>{lang === 'bn' ? 'পার্টি বিল পরিশোধ (Paid):' : 'Party Bills Paid:'}</span>
+              <strong className="text-emerald-700 dark:text-emerald-300">{formatCurrency(totalPartyBillPayments, lang)}</strong>
+            </div>
+            {totalPartyPurchaseDue > 0 && (
+              <div className="flex justify-between text-rose-700 dark:text-rose-400">
+                <span>{lang === 'bn' ? 'ক্রয় বাবদ বকেয়া বাকি (Due):' : 'Purchase Bill Due:'}</span>
+                <strong>{formatCurrency(totalPartyPurchaseDue, lang)}</strong>
+              </div>
+            )}
+            <div className="text-[10px] text-slate-500 font-sans">
+              {lang === 'bn' ? 'মহাজন ও পার্টির ক্রয় খরচ ও বিল পরিশোধ' : 'Procurement bills & party payments'}
+            </div>
+          </div>
         </div>
 
         {/* Gross Sales Balance */}
@@ -642,7 +763,7 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
               <div className="flex items-center justify-between font-bold">
                 <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
                   <ArrowUpRight className="w-4 h-4" />
-                  <span>(+) {lang === 'bn' ? 'মোট বিক্রয় ও চীন শাখা রপ্তানি আয়' : 'Total Sales & China Export Turnover'}</span>
+                  <span>(+) {lang === 'bn' ? 'মোট বিক্রয়, চীন শাখা রপ্তানি ও প্রাপ্তি আয়' : 'Total Sales & China Export Turnover'}</span>
                 </span>
                 <span className="font-mono text-emerald-800 dark:text-emerald-300 font-black">
                   {formatCurrency(totalSalesRevenue, lang)}
@@ -659,18 +780,44 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
                     <span>{formatCurrency(totalChinaExportRevenue, lang)} ({filteredConsignments.length} {lang === 'bn' ? 'টি চালান' : 'challans'})</span>
                   </div>
                 )}
+                {totalChinaDirectPayments > 0 && (
+                  <div className="flex justify-between text-teal-700 dark:text-teal-300 font-semibold">
+                    <span>• {lang === 'bn' ? 'চীন অফিস সরাসরি BDT পেমেন্ট' : 'China Office Direct BDT Payments'}:</span>
+                    <span>{formatCurrency(totalChinaDirectPayments, lang)} ({filteredChinaDirectPayments.length} {lang === 'bn' ? 'টি' : 'records'})</span>
+                  </div>
+                )}
+                {chinaRemainingBalanceBdt > 0 && (
+                  <div className="flex justify-between text-indigo-700 dark:text-indigo-300 font-bold bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                    <span>• {lang === 'bn' ? 'চীন অফিস অবশিষ্ট পাওনা ব্যালেন্স (B/L Receivables)' : 'China Office Balance (B/L Receivables)'}:</span>
+                    <span>{formatCurrency(chinaRemainingBalanceBdt, lang)}</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Purchases */}
-            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 font-semibold">
-              <span className="text-blue-700 dark:text-blue-400 flex items-center gap-2">
-                <ArrowDownLeft className="w-4 h-4" />
-                <span>(-) {t.totalPurchaseCost}</span>
-              </span>
-              <span className="font-mono text-rose-600 dark:text-rose-400">
-                -{formatCurrency(totalPurchaseCost, lang)}
-              </span>
+            {/* Purchases & Party Bill Payments */}
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+              <div className="flex items-center justify-between font-semibold">
+                <span className="text-blue-700 dark:text-blue-400 flex items-center gap-2">
+                  <ArrowDownLeft className="w-4 h-4" />
+                  <span>(-) {t.totalPurchaseCost}</span>
+                </span>
+                <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">
+                  -{formatCurrency(totalPurchaseCost, lang)}
+                </span>
+              </div>
+              <div className="pl-6 text-[11px] text-slate-500 font-mono space-y-0.5">
+                <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                  <span>• {lang === 'bn' ? 'পার্টি বিল পরিশোধকৃত অংশ (Paid)' : 'Party Bills Paid'}:</span>
+                  <span>{formatCurrency(totalPartyBillPayments, lang)}</span>
+                </div>
+                {totalPartyPurchaseDue > 0 && (
+                  <div className="flex justify-between text-rose-600 dark:text-rose-400">
+                    <span>• {lang === 'bn' ? 'ক্রয় বিল বকেয়া বাকি (Due Payables)' : 'Purchase Bill Due Payables'}:</span>
+                    <span>{formatCurrency(totalPartyPurchaseDue, lang)}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Gross Balance */}
@@ -868,6 +1015,81 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
                   );
                 })}
               </tbody>
+            </table>
+          </div>
+        </div>
+        {/* Party-wise Procurement & Bill Payment Breakdown */}
+        <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <Users className="w-4 h-4 text-blue-600" />
+              <span>{lang === 'bn' ? 'পার্টি-ভিত্তিক ক্রয় খরচ ও বিল পরিশোধ তালিকা' : 'Party-wise Procurement & Bill Payment Breakdown'}</span>
+            </h4>
+            <span className="text-[11px] font-mono text-slate-500">
+              {partyProcurementBreakdown.length} {lang === 'bn' ? 'টি মহাজন/পার্টি' : 'parties'}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
+                  <th className="py-2.5 px-3">#</th>
+                  <th className="py-2.5 px-3">{lang === 'bn' ? 'পার্টি / মহাজনের নাম' : 'Party / Supplier Name'}</th>
+                  <th className="py-2.5 px-3 text-center">{lang === 'bn' ? 'চালান সংখ্যা' : 'Invoices'}</th>
+                  <th className="py-2.5 px-3 text-right">{lang === 'bn' ? 'মোট ক্রয় বিল (Procurement)' : 'Total Bill'}</th>
+                  <th className="py-2.5 px-3 text-right text-emerald-600">{lang === 'bn' ? 'পরিশোধিত (Paid)' : 'Paid Amount'}</th>
+                  <th className="py-2.5 px-3 text-right text-rose-600">{lang === 'bn' ? 'বকেয়া বাকি (Due)' : 'Due Balance'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {partyProcurementBreakdown.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-slate-400">
+                      {lang === 'bn' ? 'নির্বাচিত সময়ে কোনো পার্টি ক্রয় চালান নেই।' : 'No procurement invoices in this period.'}
+                    </td>
+                  </tr>
+                ) : (
+                  partyProcurementBreakdown.map((p, idx) => (
+                    <tr key={p.partyName} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="py-2.5 px-3 font-mono text-slate-400">{idx + 1}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-white">
+                        {p.partyName}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-slate-600 dark:text-slate-400">
+                        {p.count}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
+                        {formatCurrency(p.totalBill, lang)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(p.paidAmount, lang)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-black text-rose-600 dark:text-rose-400">
+                        {p.remainingDue > 0 ? formatCurrency(p.remainingDue, lang) : '০'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              {partyProcurementBreakdown.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-100 dark:bg-slate-800/80 font-bold border-t border-slate-300 dark:border-slate-700">
+                    <td colSpan={3} className="py-2 px-3 text-right uppercase">
+                      {lang === 'bn' ? 'সর্বমোট ক্রয় ও পার্টি পরিশোধ:' : 'Total Procurement & Paid:'}
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono text-blue-700 dark:text-blue-300">
+                      {formatCurrency(totalPurchaseCost, lang)}
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono text-emerald-700 dark:text-emerald-300">
+                      {formatCurrency(totalPartyBillPayments, lang)}
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono text-rose-700 dark:text-rose-300">
+                      {formatCurrency(totalPartyPurchaseDue, lang)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

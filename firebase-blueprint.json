@@ -361,6 +361,37 @@
         "outputQty": { "type": "number" }
       },
       "required": ["id", "workerId", "inputProduct", "inputQty", "outputProduct", "outputQty"]
+    },
+    "ThirdParty": {
+      "title": "ThirdParty",
+      "description": "3rd party money changers and agents profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "address": { "type": "string", "maxLength": 300 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "name", "phone"]
+    },
+    "ChinaDirectPayment": {
+      "title": "ChinaDirectPayment",
+      "description": "China office direct BDT payments record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 50 },
+        "referenceNo": { "type": "string", "maxLength": 100 },
+        "branchName": { "type": "string", "maxLength": 200 },
+        "amountBdt": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["bank", "cash", "bKash", "nagad"] },
+        "accountDetails": { "type": "string", "maxLength": 300 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "date", "referenceNo", "branchName", "amountBdt", "paymentMethod"]
     }
   },
   "firestore": {
@@ -431,6 +462,14 @@
     "/workerConversions/{conversionId}": {
       "schema": { "$ref": "#/entities/WorkerProductConversion" },
       "description": "Worker output conversion and extraction records"
+    },
+    "/thirdParties/{thirdPartyId}": {
+      "schema": { "$ref": "#/entities/ThirdParty" },
+      "description": "3rd party agents and money changers profile"
+    },
+    "/chinaDirectPayments/{paymentId}": {
+      "schema": { "$ref": "#/entities/ChinaDirectPayment" },
+      "description": "China office direct BDT payments record"
     },
     "/test/{testId}": {
       "schema": { "$ref": "#/entities/TestConnection" },
