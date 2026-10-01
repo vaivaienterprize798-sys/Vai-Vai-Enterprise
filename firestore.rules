@@ -192,7 +192,7 @@ service cloud.firestore {
         && data.referenceNo is string && data.referenceNo.size() <= 100
         && data.branchName is string && data.branchName.size() <= 200
         && data.amountBdt is number && data.amountBdt >= 0
-        && data.paymentMethod in ['bank', 'cash', 'bKash', 'nagad'];
+        && data.paymentMethod in ['bank', 'bank_transfer', 'cash', 'bKash', 'nagad', 'other'];
     }
 
     // Connection Test Document for app boot verification

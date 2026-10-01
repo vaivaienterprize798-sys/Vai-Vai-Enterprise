@@ -1112,6 +1112,7 @@ export default function App() {
                 invoices={invoices}
                 lang={lang}
                 onSaveParty={handleSaveParty}
+                onSaveInvoice={handleSaveInvoice}
                 onPrintPartyStatement={() => {
                   setActiveStatementPartyId(null);
                   setActiveStatementType('party');

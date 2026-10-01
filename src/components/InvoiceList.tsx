@@ -282,7 +282,7 @@ Status: ${(inv.paymentStatus || 'unpaid').toUpperCase()}`;
                 <th className="py-3 px-3">{t.invoiceType}</th>
                 <th className="py-3 px-3">{t.partyName}</th>
                 <th className="py-3 px-3 text-center">{lang === 'bn' ? 'আইটেম' : 'Items'}</th>
-                <th className="py-3 px-3 text-right">{t.grandTotal}</th>
+                <th className="py-3 px-3 text-right">{lang === 'bn' ? 'নেট বিল' : 'Net Amount'}</th>
                 <th className="py-3 px-3 text-right">{t.paidAmount}</th>
                 <th className="py-3 px-3 text-right">{t.remainingDue}</th>
                 <th className="py-3 px-3 text-center">{t.paymentStatus}</th>
@@ -342,7 +342,7 @@ Status: ${(inv.paymentStatus || 'unpaid').toUpperCase()}`;
                         {formatNumber(inv.items.length, lang)}
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                        {formatCurrency(inv.grandTotal, lang)}
+                        {formatCurrency(inv.netInvoiceAmount, lang)}
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                         {formatCurrency(inv.paidAmount ?? 0, lang)}

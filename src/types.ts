@@ -530,10 +530,15 @@ export interface WorkerProductConversion {
 export interface ThirdParty {
   id: string;
   name: string;
+  contactPerson?: string;
   phone: string;
+  email?: string;
+  city?: string;
   address?: string;
   notes?: string;
+  status?: 'active' | 'inactive';
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ChinaDirectPayment {
@@ -542,9 +547,11 @@ export interface ChinaDirectPayment {
   referenceNo: string;
   branchName: string; // e.g. "চীন/গুয়াংজু শাখা অফিস"
   amountBdt: number;
-  paymentMethod: 'bank' | 'cash' | 'bKash' | 'nagad';
+  paymentMethod: 'bank' | 'bank_transfer' | 'cash' | 'bKash' | 'nagad' | 'other';
   accountDetails?: string;
+  bankAccountDetails?: string;
   notes?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 

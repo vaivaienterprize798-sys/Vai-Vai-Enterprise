@@ -638,6 +638,8 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
       
       // Office staff: strictly NO late count and NO OT
       const lateDays = isOffice ? 0 : records.filter((a) => a.status === 'late').length;
+      const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
+      const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
       const totalOtHours = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
       const totalOtAmount = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
       const totalAdvance = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
@@ -645,7 +647,7 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
 
       const absentDeduction = absentDays * dailyRate;
       const earnedBase = Math.max(0, stf.baseSalary - absentDeduction);
-      const netSalary = Math.max(0, earnedBase + totalOtAmount - totalAdvance - damageDeduction);
+      const netSalary = Math.max(0, earnedBase + totalOtAmount - totalAdvance - damageDeduction - lateDeduction);
 
       const paymentKey = `${selectedMonth}_${stf.id}`;
       const paymentStatus: StaffPaymentStatus = (salaryPayments[paymentKey] as StaffPaymentStatus) || 'Unpaid';
@@ -657,6 +659,8 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
         leaveDays,
         absentDays,
         lateDays,
+        totalLateMinutes,
+        lateDeduction,
         totalOtHours,
         totalOtAmount,
         totalAdvance,
@@ -1012,6 +1016,7 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
                 <th className="py-2.5 px-3 text-center">{t.otHours}</th>
                 <th className="py-2.5 px-3 text-right">{lang === 'bn' ? 'ওটি টাকা (৬০x)' : 'OT Amount (60x)'}</th>
                 <th className="py-2.5 px-3 text-right">{t.advanceTaken}</th>
+                <th className="py-2.5 px-3 text-right text-amber-600 dark:text-amber-400">{lang === 'bn' ? 'লেট কর্তন' : 'Late Deduction'}</th>
                 <th className="py-2.5 px-3 text-right text-rose-600 dark:text-rose-400">{lang === 'bn' ? 'ড্যামেজ কর্তন' : 'Damage Penalty'}</th>
                 <th className="py-2.5 px-3 text-right">{t.netSalary}</th>
                 <th className="py-2.5 px-3 text-center">{lang === 'bn' ? 'পেমেন্ট স্ট্যাটাস' : 'Payment Status'}</th>
@@ -1074,6 +1079,15 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
                   </td>
                   <td className="py-3 px-3 text-right font-mono text-rose-600 dark:text-rose-400">
                     {stf.totalAdvance > 0 ? `-${formatCurrency(stf.totalAdvance, lang)}` : '-'}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono text-amber-600 dark:text-amber-400">
+                    {stf.lateDeduction > 0 ? (
+                      <span title={`${stf.totalLateMinutes} মিনিট লেট`}>
+                        -{formatCurrency(stf.lateDeduction, lang)}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
                   </td>
                   <td className="py-3 px-3 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
                     {stf.damageDeduction > 0 ? `-${formatCurrency(stf.damageDeduction, lang)}` : '-'}

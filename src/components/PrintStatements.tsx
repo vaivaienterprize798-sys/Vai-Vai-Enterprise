@@ -140,11 +140,20 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
     return { start: '', end: '' };
   };
 
-  const activeInvoices = invoices !== undefined ? invoices : (storageService.getInvoices() || []).filter(inv => isDateInPeriod(inv.date));
-  const activeExpenses = expenses !== undefined ? expenses : (storageService.getExpenses() || []).filter(e => isDateInPeriod(e.date));
-  const activeAttendance = attendance !== undefined ? attendance : (storageService.getAttendance() || []).filter(a => isDateInPeriod(a.date));
-  const activeBranchConsignments = branchConsignments !== undefined ? branchConsignments : (storageService.getBranchConsignments() || []).filter(c => isDateInPeriod(c.date));
-  const activeWorkerTasks = workerTasks !== undefined ? workerTasks : (storageService.getWorkerTasks() || []).filter(t => isDateInPeriod(t.date));
+  const baseInvoices = invoices !== undefined ? invoices : (storageService.getInvoices() || []);
+  const activeInvoices = baseInvoices.filter((inv) => isDateInPeriod(inv.date));
+
+  const baseExpenses = expenses !== undefined ? expenses : (storageService.getExpenses() || []);
+  const activeExpenses = baseExpenses.filter((e) => isDateInPeriod(e.date));
+
+  const baseAttendance = attendance !== undefined ? attendance : (storageService.getAttendance() || []);
+  const activeAttendance = baseAttendance.filter((a) => isDateInPeriod(a.date));
+
+  const baseBranchConsignments = branchConsignments !== undefined ? branchConsignments : (storageService.getBranchConsignments() || []);
+  const activeBranchConsignments = baseBranchConsignments.filter((c) => isDateInPeriod(c.date));
+
+  const baseWorkerTasks = workerTasks !== undefined ? workerTasks : (storageService.getWorkerTasks() || []);
+  const activeWorkerTasks = baseWorkerTasks.filter((t) => isDateInPeriod(t.date));
 
   const allInvoices = activeInvoices;
 
@@ -356,17 +365,19 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         const totalOt = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
         const otMoney = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
         const totalAdv = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
+        const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
         const damageDeduction = storageService.getWorkerDamagePenaltyForMonth(selectedStaffMember.id, selectedMonth);
         const presentDays = records.filter((a) => a.status === 'present' || a.status === 'late').length;
         const leaveDays = records.filter((a) => a.status === 'full_day_leave' || a.status === 'half_day_leave' || a.status === 'leave' || a.status === 'holiday').length;
         const daysBase = isOffice ? 30 : 26;
         const absentDays = records.length === 0 ? 0 : Math.max(0, daysBase - (presentDays + leaveDays));
         const dailyRate = Math.round(Number(selectedStaffMember.baseSalary || 0) / daysBase);
+        const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
         const absentDeduction = absentDays * dailyRate;
-        const net = Math.max(0, selectedStaffMember.baseSalary - absentDeduction + otMoney - totalAdv - damageDeduction);
+        const net = Math.max(0, selectedStaffMember.baseSalary - absentDeduction + otMoney - totalAdv - damageDeduction - lateDeduction);
         const paymentStatus = storageService.getStaffPaymentStatus(selectedMonth, selectedStaffMember.id);
 
-        summaryText += `👤 স্টাফ: ${selectedStaffMember.name} (${selectedStaffMember.designation})\n📞 ফোন: ${selectedStaffMember.phone}\n📂 ক্যাটাগরি: ${isOffice ? 'Office (৩০ দিন বেসিস, নো ওটি/লেট)' : 'Processing (২৬ দিন বেসিস, শুক্রবার ওটি)'}\n💵 মূল বেতন: ৳${selectedStaffMember.baseSalary.toLocaleString()} (দৈনিক: ৳${dailyRate}/${isOffice ? '৩০' : '২৬'} দিন)\n📅 মোট উপস্থিত: ${presentDays} দিন\n⏱️ ওভারটাইম: ${isOffice ? 'প্রযোজ্য নয় (০)' : `${totalOt} ঘণ্টা (৳${otMoney.toLocaleString()})`}\n🔻 অগ্রিম কর্তন: ৳${totalAdv.toLocaleString()}\n💰 প্রদেয় নেট বেতন: ৳${net.toLocaleString()}\n📌 পেমেন্ট স্ট্যাটাস: ${paymentStatus === 'Paid' ? '✅ পরিশোধিত (Paid)' : '⏳ বকেয়া (Unpaid)'}\n`;
+        summaryText += `👤 স্টাফ: ${selectedStaffMember.name} (${selectedStaffMember.designation})\n📞 ফোন: ${selectedStaffMember.phone}\n📂 ক্যাটাগরি: ${isOffice ? 'Office (৩০ দিন বেসিস, নো ওটি/লেট)' : 'Processing (২৬ দিন বেসিস, শুক্রবার ওটি)'}\n💵 মূল বেতন: ৳${selectedStaffMember.baseSalary.toLocaleString()} (দৈনিক: ৳${dailyRate}/${isOffice ? '৩০' : '২৬'} দিন)\n📅 মোট উপস্থিত: ${presentDays} দিন\n⏱️ ওভারটাইম: ${isOffice ? 'প্রযোজ্য নয় (০)' : `${totalOt} ঘণ্টা (৳${otMoney.toLocaleString()})`}\n🔻 অগ্রিম কর্তন: ৳${totalAdv.toLocaleString()}${lateDeduction > 0 ? `\n⚠️ লেট কর্তন: ৳${lateDeduction.toLocaleString()} (${totalLateMinutes} মিনিট)` : ''}\n💰 প্রদেয় নেট বেতন: ৳${net.toLocaleString()}\n📌 পেমেন্ট স্ট্যাটাস: ${paymentStatus === 'Paid' ? '✅ পরিশোধিত (Paid)' : '⏳ বকেয়া (Unpaid)'}\n`;
       } else {
         const staffComputed = staff.map((st) => {
           const isOffice = st.category === 'office';
@@ -374,14 +385,16 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
           const totalOt = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
           const otMoney = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
           const totalAdv = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
+          const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
           const damageDeduction = storageService.getWorkerDamagePenaltyForMonth(st.id, selectedMonth);
           const presentDays = records.filter((a) => a.status === 'present' || a.status === 'late').length;
           const leaveDays = records.filter((a) => a.status === 'full_day_leave' || a.status === 'half_day_leave' || a.status === 'leave' || a.status === 'holiday').length;
           const daysBase = isOffice ? 30 : 26;
           const absentDays = records.length === 0 ? 0 : Math.max(0, daysBase - (presentDays + leaveDays));
           const dailyRate = Math.round(Number(st.baseSalary || 0) / daysBase);
+          const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
           const absentDeduction = absentDays * dailyRate;
-          const net = Math.max(0, st.baseSalary - absentDeduction + otMoney - totalAdv - damageDeduction);
+          const net = Math.max(0, st.baseSalary - absentDeduction + otMoney - totalAdv - damageDeduction - lateDeduction);
           const paymentStatus = storageService.getStaffPaymentStatus(selectedMonth, st.id);
           return { ...st, net, paymentStatus };
         });
@@ -620,88 +633,90 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
               </div>
             </div>
 
-            <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-              <thead>
-                <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                  <th className="py-1 px-1.5 border-r border-slate-300 text-center w-7">{t.sl}</th>
-                  <th className="py-1 px-1.5 border-r border-slate-300 w-20">{t.itemCode}</th>
-                  <th className="py-1 px-1.5 border-r border-slate-300">{t.itemDescription}</th>
-                  <th className="py-1 px-1.5 border-r border-slate-300 w-16 text-center">{t.category}</th>
-                  <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 bg-emerald-50 text-emerald-900 font-bold">
-                    {t.todayPurchase}
-                  </th>
-                  <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 bg-blue-50 text-blue-900 font-bold">
-                    {t.todaySale}
-                  </th>
-                  <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 font-bold">{t.inStock}</th>
-                  <th className="py-1 px-1.5 border-r border-slate-300 text-right w-20">{t.purchaseRate}</th>
-                  <th className="py-1 px-1.5 text-right w-24">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Total'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stock.map((it, idx) => {
-                  const effectiveRate = it.purchaseRate || it.purchaseAvgRate || 0;
-                  const { todayIn, todayOut } = getTodayItemStats(it.code, it.nameBn, it.nameEn);
-                  return (
-                    <tr key={it.id} className="border-b border-slate-200">
-                      <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono text-[11px]">
-                        {formatNumber(idx + 1, lang)}
-                      </td>
-                      <td className="py-1 px-1.5 border-r border-slate-200 font-mono font-bold text-[11px]">
-                        {it.code}
-                      </td>
-                      <td className="py-1 px-1.5 border-r border-slate-200 font-medium">
-                        {lang === 'bn' ? it.nameBn : it.nameEn}
-                      </td>
-                      <td className="py-1 px-1.5 border-r border-slate-200 text-center capitalize text-[10px]">
-                        {it.category}
-                      </td>
-                      <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold text-emerald-800 bg-emerald-50/40">
-                        {todayIn > 0 ? `+${formatNumber(todayIn, lang)} ${it.unit}` : '-'}
-                      </td>
-                      <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold text-blue-800 bg-blue-50/40">
-                        {todayOut > 0 ? `-${formatNumber(todayOut, lang)} ${it.unit}` : '-'}
-                      </td>
-                      <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold">
-                        {formatNumber(it.quantity, lang)} {it.unit}
-                      </td>
-                      <td className="py-1 px-1.5 border-r border-slate-200 text-right font-mono">
-                        {formatCurrency(effectiveRate, lang)}
-                      </td>
-                      <td className="py-1 px-1.5 text-right font-mono font-bold">
-                        {formatCurrency(it.quantity * effectiveRate, lang)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                  <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
-                    {lang === 'bn' ? 'সর্বমোট স্টক ও ক্রয়-বিক্রয়:' : 'Total Stock & Today In/Out:'}
-                  </td>
-                  <td className="py-1.5 px-1.5 text-center font-mono text-emerald-900 border-r border-slate-300">
-                    {todayTotalIn > 0 ? `+${formatNumber(todayTotalIn, lang)}` : '-'}
-                  </td>
-                  <td className="py-1.5 px-1.5 text-center font-mono text-blue-900 border-r border-slate-300">
-                    {todayTotalOut > 0 ? `-${formatNumber(todayTotalOut, lang)}` : '-'}
-                  </td>
-                  <td className="py-1.5 px-1.5 text-center font-mono border-r border-slate-300">
-                    {formatNumber(stock.reduce((s, it) => s + it.quantity, 0), lang)}
-                  </td>
-                  <td className="border-r border-slate-300"></td>
-                  <td className="py-1.5 px-1.5 text-right font-mono text-emerald-800">
-                    {formatCurrency(
-                      stock.reduce(
-                        (s, it) => s + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
-                        0
-                      ),
-                      lang
-                    )}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+            <div className="sheet-freeze-wrapper">
+              <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
+                  <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
+                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-7 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
+                    <th className="py-1 px-1.5 border-r border-slate-300 w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.itemCode}</th>
+                    <th className="py-1 px-1.5 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.itemDescription}</th>
+                    <th className="py-1 px-1.5 border-r border-slate-300 w-16 text-center sticky top-0 bg-slate-100 dark:bg-slate-800">{t.category}</th>
+                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 bg-emerald-100 text-emerald-900 font-bold sticky top-0">
+                      {t.todayPurchase}
+                    </th>
+                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 bg-blue-100 text-blue-900 font-bold sticky top-0">
+                      {t.todaySale}
+                    </th>
+                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 font-bold sticky top-0 bg-slate-100 dark:bg-slate-800">{t.inStock}</th>
+                    <th className="py-1 px-1.5 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.purchaseRate}</th>
+                    <th className="py-1 px-1.5 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Total'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stock.map((it, idx) => {
+                    const effectiveRate = it.purchaseRate || it.purchaseAvgRate || 0;
+                    const { todayIn, todayOut } = getTodayItemStats(it.code, it.nameBn, it.nameEn);
+                    return (
+                      <tr key={it.id} className="border-b border-slate-200">
+                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono text-[11px]">
+                          {formatNumber(idx + 1, lang)}
+                        </td>
+                        <td className="py-1 px-1.5 border-r border-slate-200 font-mono font-bold text-[11px]">
+                          {it.code}
+                        </td>
+                        <td className="py-1 px-1.5 border-r border-slate-200 font-medium">
+                          {lang === 'bn' ? it.nameBn : it.nameEn}
+                        </td>
+                        <td className="py-1 px-1.5 border-r border-slate-200 text-center capitalize text-[10px]">
+                          {it.category}
+                        </td>
+                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold text-emerald-800 bg-emerald-50/40">
+                          {todayIn > 0 ? `+${formatNumber(todayIn, lang)} ${it.unit}` : '-'}
+                        </td>
+                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold text-blue-800 bg-blue-50/40">
+                          {todayOut > 0 ? `-${formatNumber(todayOut, lang)} ${it.unit}` : '-'}
+                        </td>
+                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold">
+                          {formatNumber(it.quantity, lang)} {it.unit}
+                        </td>
+                        <td className="py-1 px-1.5 border-r border-slate-200 text-right font-mono">
+                          {formatCurrency(effectiveRate, lang)}
+                        </td>
+                        <td className="py-1 px-1.5 text-right font-mono font-bold">
+                          {formatCurrency(it.quantity * effectiveRate, lang)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
+                    <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                      {lang === 'bn' ? 'সর্বমোট স্টক ও ক্রয়-বিক্রয়:' : 'Total Stock & Today In/Out:'}
+                    </td>
+                    <td className="py-1.5 px-1.5 text-center font-mono text-emerald-900 border-r border-slate-300">
+                      {todayTotalIn > 0 ? `+${formatNumber(todayTotalIn, lang)}` : '-'}
+                    </td>
+                    <td className="py-1.5 px-1.5 text-center font-mono text-blue-900 border-r border-slate-300">
+                      {todayTotalOut > 0 ? `-${formatNumber(todayTotalOut, lang)}` : '-'}
+                    </td>
+                    <td className="py-1.5 px-1.5 text-center font-mono border-r border-slate-300">
+                      {formatNumber(stock.reduce((s, it) => s + it.quantity, 0), lang)}
+                    </td>
+                    <td className="border-r border-slate-300"></td>
+                    <td className="py-1.5 px-1.5 text-right font-mono text-emerald-800">
+                      {formatCurrency(
+                        stock.reduce(
+                          (s, it) => s + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
+                          0
+                        ),
+                        lang
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
         )}
 
@@ -791,77 +806,88 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     </div>
 
                     {/* Itemized Invoices / Transaction Table */}
-                    <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                          <th className="py-1 px-2 border-r border-slate-300 text-center w-8">#</th>
-                          <th className="py-1 px-2 border-r border-slate-300 w-24">তারিখ</th>
-                          <th className="py-1 px-2 border-r border-slate-300 w-28">চালান নং</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-center w-20">ধরন</th>
-                          <th className="py-1 px-2 border-r border-slate-300">মালের বিবরণ ও পরিমাণ</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-right w-24">মোট বিল (৳)</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-right w-24">পরিশোধ (৳)</th>
-                          <th className="py-1 px-2 text-right w-24">অবশিষ্ট বাকি</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {partyInvoices.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="py-8 text-center text-slate-400">
-                              নির্বাচিত সময়ে এই পার্টির কোনো লেনদেন বা চালান পাওয়া যায়নি।
+                    <div className="sheet-freeze-wrapper">
+                      <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                        <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
+                          <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
+                            <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">#</th>
+                            <th className="py-1 px-2 border-r border-slate-300 w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">তারিখ</th>
+                            <th className="py-1 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">চালান নং</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-center w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">ধরন</th>
+                            <th className="py-1 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">মালের বিবরণ ও পরিমাণ</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">মোট বিল (৳)</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">পরিশোধ (৳)</th>
+                            <th className="py-1 px-2 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">অবশিষ্ট বাকি</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {partyInvoices.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="py-8 text-center text-slate-400">
+                                নির্বাচিত সময়ে এই পার্টির কোনো লেনদেন বা চালান পাওয়া যায়নি।
+                              </td>
+                            </tr>
+                          ) : (
+                            partyInvoices.map((inv, idx) => {
+                              const isPur = inv.mode === 'purchase';
+                              const isPaymentOnly = (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0) === 0 && (Number(inv.paidAmount) || 0) > 0;
+                              const billAmt = Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0;
+                              const paidAmt = Number(inv.paidAmount) || 0;
+                              const dueAmt = Number(inv.remainingDue) || 0;
+
+                              return (
+                                <tr key={inv.id || idx} className={`border-b border-slate-200 ${isPaymentOnly ? 'bg-purple-50/40' : ''}`}>
+                                  <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">{idx + 1}</td>
+                                  <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">{inv.date}</td>
+                                  <td className="py-1 px-2 border-r border-slate-200 font-mono font-bold">{inv.invoiceNo}</td>
+                                  <td className="py-1 px-2 border-r border-slate-200 text-center text-[10px] font-bold uppercase">
+                                    {isPaymentOnly ? (
+                                      <span className="text-purple-700 font-black">
+                                        {inv.mode === 'sales' ? (lang === 'bn' ? 'টাকা গ্রহণ' : 'Received') : (lang === 'bn' ? 'টাকা পরিশোধ' : 'Payment')}
+                                      </span>
+                                    ) : (
+                                      <span className={isPur ? 'text-emerald-700' : 'text-blue-700'}>
+                                        {isPur ? (lang === 'bn' ? 'ক্রয়' : 'Pur') : (lang === 'bn' ? 'বিক্রয়' : 'Sale')}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-1 px-2 border-r border-slate-200 text-[11px]">
+                                    {isPaymentOnly
+                                      ? (inv.notes || (inv.mode === 'sales' ? (lang === 'bn' ? 'নগদ/ব্যাংক টাকা গ্রহণ (পেমেন্ট)' : 'Payment Received') : (lang === 'bn' ? 'পার্টি বিল পরিশোধ (টাকা প্রদান)' : 'Payment Given')))
+                                      : (inv.items?.map((it) => `${it.name} (${it.quantity}${it.unit || ''})`).join(', ') || '-')}
+                                  </td>
+                                  <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold">
+                                    {isPaymentOnly ? '-' : formatCurrency(billAmt, lang)}
+                                  </td>
+                                  <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-emerald-700">
+                                    {formatCurrency(paidAmt, lang)}
+                                  </td>
+                                  <td className="py-1 px-2 text-right font-mono font-bold text-rose-700">
+                                    {dueAmt > 0 ? formatCurrency(dueAmt, lang) : (inv.remainingDue === 0 ? (lang === 'bn' ? '০ (পরিশোধিত)' : '0') : '-')}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
+                            <td colSpan={5} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                              মোট চালান যোগফল:
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono border-r border-slate-300">
+                              {formatCurrency(totalInvoiced, lang)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-emerald-800 border-r border-slate-300">
+                              {formatCurrency(totalPaid, lang)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono text-rose-800">
+                              {formatCurrency(currentDue, lang)}
                             </td>
                           </tr>
-                        ) : (
-                          partyInvoices.map((inv, idx) => {
-                            const isPur = inv.mode === 'purchase';
-                            const billAmt = Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0;
-                            const paidAmt = Number(inv.paidAmount) || 0;
-                            const dueAmt = Number(inv.remainingDue) || 0;
-
-                            return (
-                              <tr key={inv.id || idx} className="border-b border-slate-200">
-                                <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">{idx + 1}</td>
-                                <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">{inv.date}</td>
-                                <td className="py-1 px-2 border-r border-slate-200 font-mono font-bold">{inv.invoiceNo}</td>
-                                <td className="py-1 px-2 border-r border-slate-200 text-center text-[10px] font-bold uppercase">
-                                  <span className={isPur ? 'text-emerald-700' : 'text-blue-700'}>
-                                    {isPur ? 'ক্রয়' : 'বিক্রয়'}
-                                  </span>
-                                </td>
-                                <td className="py-1 px-2 border-r border-slate-200 text-[11px]">
-                                  {inv.items?.map((it) => `${it.name} (${it.quantity}${it.unit || ''})`).join(', ') || '-'}
-                                </td>
-                                <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold">
-                                  {formatCurrency(billAmt, lang)}
-                                </td>
-                                <td className="py-1 px-2 border-r border-slate-200 text-right font-mono text-emerald-700">
-                                  {formatCurrency(paidAmt, lang)}
-                                </td>
-                                <td className="py-1 px-2 text-right font-mono font-bold text-rose-700">
-                                  {dueAmt > 0 ? formatCurrency(dueAmt, lang) : '-'}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                          <td colSpan={5} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
-                            মোট চালান যোগফল:
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono border-r border-slate-300">
-                            {formatCurrency(totalInvoiced, lang)}
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono text-emerald-800 border-r border-slate-300">
-                            {formatCurrency(totalPaid, lang)}
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono text-rose-800">
-                            {formatCurrency(currentDue, lang)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                        </tfoot>
+                      </table>
+                    </div>
 
                     {/* Signatures */}
                     <div className="flex justify-between items-end pt-12 text-xs">
@@ -877,61 +903,63 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
               })()
             ) : (
               /* Global All Parties Summary Table */
-              <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                    <th className="py-1 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
-                    <th className="py-1 px-2 border-r border-slate-300">{t.partyName}</th>
-                    <th className="py-1 px-2 border-r border-slate-300 w-28">{t.partyPhone}</th>
-                    <th className="py-1 px-2 border-r border-slate-300 w-20 text-center">{t.partyType}</th>
-                    <th className="py-1 px-2 border-r border-slate-300 text-right w-28">{t.totalDueReceivable}</th>
-                    <th className="py-1 px-2 border-r border-slate-300 text-right w-28">{t.totalAdvancePayable}</th>
-                    <th className="py-1 px-2 text-center w-20">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parties.map((p, idx) => (
-                    <tr key={p.id} className="border-b border-slate-200">
-                      <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
-                        {formatNumber(idx + 1, lang)}
-                      </td>
-                      <td className="py-1 px-2 border-r border-slate-200 font-bold">
-                        {p.name}
-                        {p.address && <span className="block text-[10px] text-slate-500 font-normal">{p.address}</span>}
-                      </td>
-                      <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">
-                        {p.phone || '-'}
-                      </td>
-                      <td className="py-1 px-2 border-r border-slate-200 text-center uppercase text-[10px]">
-                        {p.type}
-                      </td>
-                      <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-rose-700">
-                        {p.currentDue > 0 ? formatCurrency(p.currentDue, lang) : '-'}
-                      </td>
-                      <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-blue-700">
-                        {p.currentAdvance > 0 ? formatCurrency(p.currentAdvance, lang) : '-'}
-                      </td>
-                      <td className="py-1 px-2 text-center text-[10px] font-semibold">
-                        {p.currentDue > 0 ? 'বাকি' : p.currentAdvance > 0 ? 'জমা' : 'ক্লিয়ার'}
-                      </td>
+              <div className="sheet-freeze-wrapper">
+                <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                  <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
+                    <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
+                      <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
+                      <th className="py-1 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.partyName}</th>
+                      <th className="py-1 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.partyPhone}</th>
+                      <th className="py-1 px-2 border-r border-slate-300 w-20 text-center sticky top-0 bg-slate-100 dark:bg-slate-800">{t.partyType}</th>
+                      <th className="py-1 px-2 border-r border-slate-300 text-right w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.totalDueReceivable}</th>
+                      <th className="py-1 px-2 border-r border-slate-300 text-right w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.totalAdvancePayable}</th>
+                      <th className="py-1 px-2 text-center w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                    <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
-                      {lang === 'bn' ? 'মোট হিসাব সমষ্টী:' : 'Total Summary:'}
-                    </td>
-                    <td className="py-1.5 px-2 text-right font-mono text-rose-800 border-r border-slate-300">
-                      {formatCurrency(parties.reduce((s, p) => s + p.currentDue, 0), lang)}
-                    </td>
-                    <td className="py-1.5 px-2 text-right font-mono text-blue-800 border-r border-slate-300">
-                      {formatCurrency(parties.reduce((s, p) => s + p.currentAdvance, 0), lang)}
-                    </td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {parties.map((p, idx) => (
+                      <tr key={p.id} className="border-b border-slate-200">
+                        <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
+                          {formatNumber(idx + 1, lang)}
+                        </td>
+                        <td className="py-1 px-2 border-r border-slate-200 font-bold">
+                          {p.name}
+                          {p.address && <span className="block text-[10px] text-slate-500 font-normal">{p.address}</span>}
+                        </td>
+                        <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">
+                          {p.phone || '-'}
+                        </td>
+                        <td className="py-1 px-2 border-r border-slate-200 text-center uppercase text-[10px]">
+                          {p.type}
+                        </td>
+                        <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-rose-700">
+                          {p.currentDue > 0 ? formatCurrency(p.currentDue, lang) : '-'}
+                        </td>
+                        <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-blue-700">
+                          {p.currentAdvance > 0 ? formatCurrency(p.currentAdvance, lang) : '-'}
+                        </td>
+                        <td className="py-1 px-2 text-center text-[10px] font-semibold">
+                          {p.currentDue > 0 ? 'বাকি' : p.currentAdvance > 0 ? 'জমা' : 'ক্লিয়ার'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
+                      <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                        {lang === 'bn' ? 'মোট হিসাব সমষ্টী:' : 'Total Summary:'}
+                      </td>
+                      <td className="py-1.5 px-2 text-right font-mono text-rose-800 border-r border-slate-300">
+                        {formatCurrency(parties.reduce((s, p) => s + p.currentDue, 0), lang)}
+                      </td>
+                      <td className="py-1.5 px-2 text-right font-mono text-blue-800 border-r border-slate-300">
+                        {formatCurrency(parties.reduce((s, p) => s + p.currentAdvance, 0), lang)}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
           </div>
         )}
@@ -954,11 +982,13 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                 const presentDays = records.filter((a) => a.status === 'present' || a.status === 'late').length;
                 const leaveDays = records.filter((a) => a.status === 'full_day_leave' || a.status === 'half_day_leave' || a.status === 'leave' || a.status === 'holiday').length;
                 const lateDays = isOffice ? 0 : records.filter((a) => a.status === 'late').length;
+                const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
                 const absentDays = records.length === 0 ? 0 : Math.max(0, (isOffice ? 30 : 26) - (presentDays + leaveDays));
                 const daysBase = isOffice ? 30 : 26;
                 const dailyRate = Math.round(Number(stf.baseSalary || 0) / daysBase);
+                const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
                 const absentDeduction = absentDays * dailyRate;
-                const netPayable = Math.max(0, stf.baseSalary - absentDeduction + totalOtMoney - totalAdv - damageDeduction);
+                const netPayable = Math.max(0, stf.baseSalary - absentDeduction + totalOtMoney - totalAdv - damageDeduction - lateDeduction);
                 const paymentStatus = storageService.getStaffPaymentStatus(selectedMonth, stf.id);
 
                 return (
@@ -1047,13 +1077,17 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
                       <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50">
                         <span className="text-[10px] text-rose-800 block">
-                          {lang === 'bn' ? 'অগ্রিম কর্তন (Deduction)' : 'Advance Deductions'}
+                          {lang === 'bn' ? 'অগ্রিম ও লেট কর্তন' : 'Advance & Late Deductions'}
                         </span>
                         <div className="text-base font-black font-mono text-rose-700 mt-0.5">
-                          -{formatCurrency(totalAdv, lang)}
+                          -{formatCurrency(totalAdv + lateDeduction, lang)}
                         </div>
                         <span className="text-[9px] text-rose-600 block">
-                          {totalAdv > 0 ? (lang === 'bn' ? 'কর্তনযোগ্য' : 'Deducted') : (lang === 'bn' ? 'কোনো বকেয়া নেই' : 'No dues')}
+                          {lateDeduction > 0
+                            ? (lang === 'bn' ? `অগ্রিম: ৳${totalAdv}, লেট: ৳${lateDeduction}` : `Adv: ৳${totalAdv}, Late: ৳${lateDeduction}`)
+                            : totalAdv > 0
+                            ? (lang === 'bn' ? 'অগ্রিম কর্তন' : 'Advance deducted')
+                            : (lang === 'bn' ? 'কোনো কর্তন নেই' : 'No dues')}
                         </span>
                       </div>
 
@@ -1085,21 +1119,22 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                         </span>
                       </div>
 
-                      <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                        <thead>
-                          <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 w-24">{t.invoiceDate}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-24">{t.attendanceStatus}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-16">{t.inTime}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-16">{t.outTime}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-16">{t.lateMinutes}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-14">{t.otHours}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-20">{lang === 'bn' ? 'ওটি টাকা (৬০x)' : 'OT Amount'}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-20">{lang === 'bn' ? 'অগ্রিম' : 'Advance'}</th>
-                            <th className="py-1 px-2">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
-                          </tr>
-                        </thead>
+                      <div className="sheet-freeze-wrapper">
+                        <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                          <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
+                            <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
+                              <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.invoiceDate}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 text-center w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.attendanceStatus}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 text-center w-16 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.inTime}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 text-center w-16 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.outTime}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 text-center w-16 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.lateMinutes}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 text-center w-14 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.otHours}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'ওটি টাকা (৬০x)' : 'OT Amount'}</th>
+                              <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'অগ্রিম' : 'Advance'}</th>
+                              <th className="py-1 px-2 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
+                            </tr>
+                          </thead>
                         <tbody>
                           {records.length > 0 ? (
                             records.map((rec, rIdx) => {
@@ -1188,6 +1223,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                       </table>
                     </div>
                   </div>
+                </div>
                 );
               })()
             ) : (
@@ -1201,14 +1237,16 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                   const totalOt = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
                   const otMoney = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
                   const totalAdv = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
+                  const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
                   const damageDeduction = storageService.getWorkerDamagePenaltyForMonth(stf.id, selectedMonth);
                   const presentDays = records.filter((a) => a.status === 'present' || a.status === 'late').length;
                   const leaveDays = records.filter((a) => a.status === 'full_day_leave' || a.status === 'half_day_leave' || a.status === 'leave' || a.status === 'holiday').length;
                   const absentDays = records.length === 0 ? 0 : Math.max(0, (isOffice ? 30 : 26) - (presentDays + leaveDays));
                   const daysBase = isOffice ? 30 : 26;
                   const dailyRate = Math.round(Number(stf.baseSalary || 0) / daysBase);
+                  const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
                   const absentDeduction = absentDays * dailyRate;
-                  const net = Math.max(0, stf.baseSalary - absentDeduction + otMoney - totalAdv - damageDeduction);
+                  const net = Math.max(0, stf.baseSalary - absentDeduction + otMoney - totalAdv - damageDeduction - lateDeduction);
                   const paymentStatus = storageService.getStaffPaymentStatus(selectedMonth, stf.id);
 
                   return {
@@ -1217,6 +1255,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     totalOt,
                     otMoney,
                     totalAdv,
+                    totalLateMinutes,
+                    lateDeduction,
                     damageDeduction,
                     absentDays,
                     absentDeduction,
@@ -1280,20 +1320,21 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                       </div>
                     </div>
 
-                    <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                          <th className="py-1 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
-                          <th className="py-1 px-2 border-r border-slate-300">{t.staffName}</th>
-                          <th className="py-1 px-2 border-r border-slate-300 w-20">{t.category}</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-right w-20">{t.baseSalary}</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-center w-14">{t.otHours}</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-right w-20">{lang === 'bn' ? 'ওটি টাকা' : 'OT (60x)'}</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-right w-20">{t.advanceTaken}</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-right w-24">{t.netSalary}</th>
-                          <th className="py-1 px-2 text-center w-24">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
-                        </tr>
-                      </thead>
+                    <div className="sheet-freeze-wrapper">
+                      <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                        <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
+                          <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
+                            <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
+                            <th className="py-1 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.staffName}</th>
+                            <th className="py-1 px-2 border-r border-slate-300 w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.category}</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.baseSalary}</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-center w-14 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.otHours}</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'ওটি টাকা' : 'OT (60x)'}</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'অগ্রিম/লেট কর্তন' : 'Adv / Late'}</th>
+                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.netSalary}</th>
+                            <th className="py-1 px-2 text-center w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
+                          </tr>
+                        </thead>
                       <tbody>
                         {staffComputedList.map((stf, idx) => {
                           const isOffice = stf.category === 'office';
@@ -1322,7 +1363,9 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                                 {stf.otMoney > 0 ? formatCurrency(stf.otMoney, lang) : '-'}
                               </td>
                               <td className="py-1 px-2 border-r border-slate-200 text-right font-mono text-rose-700">
-                                {stf.totalAdv > 0 ? `-${formatCurrency(stf.totalAdv, lang)}` : '-'}
+                                {(stf.totalAdv > 0 || stf.lateDeduction > 0)
+                                  ? `-${formatCurrency(stf.totalAdv + stf.lateDeduction, lang)}`
+                                  : '-'}
                               </td>
                               <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-black text-slate-900">
                                 {formatCurrency(stf.net, lang)}
@@ -1362,6 +1405,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                         </tr>
                       </tfoot>
                     </table>
+                  </div>
                   </>
                 );
               })()
@@ -1461,18 +1505,19 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                   </div>
 
                   {/* Expense Ledger Table */}
-                  <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                        <th className="py-1.5 px-2 border-r border-slate-300 text-center w-8">{t.sl}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 w-24">{t.invoiceDate}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 text-center w-20">{lang === 'bn' ? 'ধরন' : 'Type'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 w-28">{t.category}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300">{lang === 'bn' ? 'খরচ / জমার বিবরণ' : 'Description / Title'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 w-28">{lang === 'bn' ? 'গ্রহীতা / পেয়ি' : 'Paid To'}</th>
-                        <th className="py-1.5 px-2 text-right w-32">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
-                      </tr>
-                    </thead>
+                  <div className="sheet-freeze-wrapper">
+                    <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                      <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
+                        <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
+                          <th className="py-1.5 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
+                          <th className="py-1.5 px-2 border-r border-slate-300 w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.invoiceDate}</th>
+                          <th className="py-1.5 px-2 border-r border-slate-300 text-center w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'ধরন' : 'Type'}</th>
+                          <th className="py-1.5 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.category}</th>
+                          <th className="py-1.5 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'খরচ / জমার বিবরণ' : 'Description / Title'}</th>
+                          <th className="py-1.5 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'গ্রহীতা / পেয়ি' : 'Paid To'}</th>
+                          <th className="py-1.5 px-2 text-right w-32 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
+                        </tr>
+                      </thead>
                     <tbody>
                       {monthExpenses.length === 0 ? (
                         <tr>
@@ -1556,6 +1601,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                       </tr>
                     </tfoot>
                   </table>
+                </div>
                 </div>
               );
             })()}

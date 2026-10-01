@@ -550,9 +550,6 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                 <th className="py-3 px-3 w-28">{t.itemCode}</th>
                 <th className="py-3 px-3">{t.itemDescription}</th>
                 <th className="py-3 px-3 w-28">{t.category}</th>
-                <th className="py-3 px-3 text-center w-24 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
-                  {lang === 'bn' ? 'প্রারম্ভিক মজুদ' : 'Opening Qty'}
-                </th>
                 <th className="py-3 px-3 text-center w-24 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-bold">
                   {t.todayPurchase}
                 </th>
@@ -613,10 +610,6 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                           ? t.kgItem
                           : t.pcsBlankItem}
                       </span>
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-800/30">
-                      {formatSheetNumber(it.openingQty ?? 0, lang)}{' '}
-                      <span className="text-[10px] text-slate-400 font-normal">{it.unit}</span>
                     </td>
                     <td className="py-3 px-3 text-center bg-emerald-50/30 dark:bg-emerald-950/20 font-mono font-bold text-emerald-700 dark:text-emerald-400">
                       {stockIn > 0 ? (
@@ -856,24 +849,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    {lang === 'bn' ? 'প্রারম্ভিক মজুদ (Opening Qty)' : 'Opening Qty'}
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={formOpeningQty || ''}
-                    onChange={(e) => setFormOpeningQty(parseFloat(e.target.value) || 0)}
-                    placeholder="0"
-                    className="w-full px-3 py-1.5 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/20 font-mono font-bold text-xs text-emerald-800 dark:text-emerald-300"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {lang === 'bn' ? 'শুরুর প্রারম্ভিক স্টক' : 'Initial starting qty'}
-                  </p>
-                </div>
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
                     {lang === 'bn' ? 'বর্তমান মজুদ (Current Stock)' : t.inStock}

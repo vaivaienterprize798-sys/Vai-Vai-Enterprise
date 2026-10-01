@@ -133,7 +133,7 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   const [cdpRefNo, setCdpRefNo] = useState(() => `CDP-${Date.now().toString().slice(-4)}`);
   const [cdpBranchName, setCdpBranchName] = useState('চীন/গুয়াংজু শাখা অফিস');
   const [cdpAmountBdt, setCdpAmountBdt] = useState<number>(0);
-  const [cdpPaymentMethod, setCdpPaymentMethod] = useState<'bank_transfer' | 'cash' | 'bKash' | 'nagad' | 'other'>('bank_transfer');
+  const [cdpPaymentMethod, setCdpPaymentMethod] = useState<'bank' | 'bank_transfer' | 'cash' | 'bKash' | 'nagad' | 'other'>('bank_transfer');
   const [cdpBankDetails, setCdpBankDetails] = useState('');
   const [cdpNotes, setCdpNotes] = useState('');
 

@@ -91,6 +91,47 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const todayStr = new Date().toISOString().split('T')[0];
 
   // Filtered Invoices
+  const [salaryMonth, setSalaryMonth] = useState<string>(() => todayStr.slice(0, 7));
+
+  // Staff Payroll & Advance Metrics for Dashboard
+  const { totalStaffMonthlySalary, totalStaffAdvance, allTimeStaffAdvance } = useMemo(() => {
+    const monthRecords = attendance.filter((a) => a.date && a.date.startsWith(salaryMonth));
+    const staffSalarySum = staff.reduce((total, stf) => {
+      const isOffice = stf.category === 'office';
+      const records = monthRecords.filter((a) => a.staffId === stf.id);
+      const presentDays = records.filter((a) => a.status === 'present' || a.status === 'late').length;
+      const leaveDays = records.filter(
+        (a) =>
+          a.status === 'full_day_leave' ||
+          a.status === 'half_day_leave' ||
+          a.status === 'leave' ||
+          a.status === 'holiday'
+      ).length;
+      const daysBase = isOffice ? 30 : 26;
+      const dailyRate = Math.round(Number(stf.baseSalary || 0) / daysBase);
+      const absentDays = records.length === 0 ? 0 : Math.max(0, daysBase - (presentDays + leaveDays));
+      const absentDeduction = absentDays * dailyRate;
+      const totalOtMoney = isOffice
+        ? 0
+        : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
+      const totalAdv = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
+      const damageDeduction = storageService.getWorkerDamagePenaltyForMonth(stf.id, salaryMonth);
+      const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
+      const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
+      const netSalary = Math.max(0, stf.baseSalary - absentDeduction + totalOtMoney - totalAdv - damageDeduction - lateDeduction);
+      return total + netSalary;
+    }, 0);
+
+    const monthAdv = monthRecords.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
+    const allAdv = attendance.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
+
+    return {
+      totalStaffMonthlySalary: staffSalarySum,
+      totalStaffAdvance: monthAdv,
+      allTimeStaffAdvance: allAdv,
+    };
+  }, [staff, attendance, salaryMonth]);
+
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
       if (dateFilter === 'today' && inv.date !== todayStr) return false;
@@ -472,27 +513,146 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* 7. Staff Attendance & OT Summary */}
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border-l-4 border-l-teal-600 border border-slate-200 dark:border-slate-800 shadow-xs">
+        {/* 7. Staff Total Advance Card (Requirement 4) */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border-l-4 border-l-rose-500 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex justify-between items-start">
             <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              {t.staffAttendanceToday}
+              {lang === 'bn' ? 'স্টাফ মোট অগ্রিম (Advance)' : 'Staff Total Advance'}
             </span>
-            <span className="p-1.5 rounded-lg bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400">
-              <Clock className="w-4 h-4" />
+            <span className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+              <Wallet className="w-4 h-4" />
             </span>
           </div>
-          <div className="mt-2 text-xl font-bold font-mono text-teal-600 dark:text-teal-400 tracking-tight">
-            {formatNumber(todayAttendanceStats.present, lang)} / {formatNumber(staff.length || 4, lang)}
+          <div className="mt-2 text-xl font-bold font-mono text-rose-600 dark:text-rose-400 tracking-tight">
+            {formatDashboardCurrency(totalStaffAdvance, lang)}
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-            <span>
-              {lang === 'bn' ? 'ওভারটাইম: ' : 'OT: '}
-              <strong className="text-slate-800 dark:text-slate-200">
-                {formatNumber(Math.round(todayAttendanceStats.otHours), lang)}h
-              </strong>{' '}
-              ({formatDashboardCurrency(todayAttendanceStats.otAmount, lang)})
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <span>{lang === 'bn' ? 'চলতি মাসের কর্তন' : 'Monthly Advance'}</span>
+            <button
+              onClick={() => onSelectTab('payroll')}
+              className="text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
+            >
+              {lang === 'bn' ? 'স্টাফ খাতা' : 'Payroll'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 👥 STAFF TOTAL SALARY & HR OVERVIEW (Requirement 5) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Total Staff Salary Card with Clean Monthly Selector */}
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {lang === 'bn' ? 'মোট স্টাফ মাসিক বেতন (Total Staff Salary)' : 'Total Staff Monthly Salary'}
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {lang === 'bn' ? 'মাস ভিত্তিক ফিল্টার করে মোট বেতন হিসাব দেখুন' : 'Filtered monthly payroll total'}
+                </p>
+              </div>
+            </div>
+
+            {/* Clean Monthly Selector Link/Control */}
+            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m] = salaryMonth.split('-').map(Number);
+                  const prev = new Date(y, m - 2, 1);
+                  setSalaryMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+                }}
+                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer"
+                title={lang === 'bn' ? 'পূর্ববর্তী মাস' : 'Previous Month'}
+              >
+                &larr;
+              </button>
+              <input
+                type="month"
+                value={salaryMonth}
+                onChange={(e) => {
+                  if (e.target.value) setSalaryMonth(e.target.value);
+                }}
+                className="bg-transparent text-xs font-bold font-mono text-slate-800 dark:text-slate-200 focus:outline-hidden cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m] = salaryMonth.split('-').map(Number);
+                  const next = new Date(y, m, 1);
+                  setSalaryMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+                }}
+                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer"
+                title={lang === 'bn' ? 'পরবর্তী মাস' : 'Next Month'}
+              >
+                &rarr;
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-baseline justify-between pt-1">
+            <div>
+              <span className="text-[11px] text-slate-500 font-semibold block">
+                {lang === 'bn' ? 'নির্বাচিত মাসের নিট পে-রোল বিল:' : 'Net Payable Payroll:'}
+              </span>
+              <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+                {formatDashboardCurrency(totalStaffMonthlySalary, lang)}
+              </div>
+            </div>
+
+            <button
+              onClick={() => onSelectTab('payroll')}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+            >
+              {lang === 'bn' ? 'পে-রোল প্যানেল ➔' : 'Payroll Panel ➔'}
+            </button>
+          </div>
+        </div>
+
+        {/* Staff Attendance & Advance Combined Overview */}
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400">
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {lang === 'bn' ? 'স্টাফ অগ্রিম ও হাজিরা পরিস্থিতি' : 'Staff Advances & Attendance'}
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {lang === 'bn' ? 'মাসিক ও সার্বিক অগ্রিম এবং আজকের উপস্থিতি' : 'Monthly/total advance & today presence'}
+                </p>
+              </div>
+            </div>
+
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300">
+              {formatNumber(todayAttendanceStats.present, lang)} / {formatNumber(staff.length || 4, lang)} {lang === 'bn' ? 'উপস্থিত' : 'Present'}
             </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="p-2.5 rounded-xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40">
+              <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 block uppercase">
+                {lang === 'bn' ? 'মাসের মোট অগ্রিম' : 'Monthly Advance'}
+              </span>
+              <div className="text-lg font-bold font-mono text-rose-700 dark:text-rose-300">
+                {formatDashboardCurrency(totalStaffAdvance, lang)}
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+              <span className="text-[10px] font-semibold text-slate-500 block uppercase">
+                {lang === 'bn' ? 'সার্বিক মোট অগ্রিম' : 'All-Time Advance'}
+              </span>
+              <div className="text-lg font-bold font-mono text-slate-800 dark:text-slate-200">
+                {formatDashboardCurrency(allTimeStaffAdvance, lang)}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -677,7 +837,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <th className="py-2.5 px-3">{t.invoiceNo}</th>
                   <th className="py-2.5 px-3">{t.invoiceType}</th>
                   <th className="py-2.5 px-3">{t.partyName}</th>
-                  <th className="py-2.5 px-3 text-right">{t.grandTotal}</th>
+                  <th className="py-2.5 px-3 text-right">{lang === 'bn' ? 'নেট বিল' : 'Net Amount'}</th>
                   <th className="py-2.5 px-3 text-right">{t.action}</th>
                 </tr>
               </thead>
@@ -716,7 +876,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                        {formatDashboardCurrency(inv.grandTotal, lang)}
+                        {formatDashboardCurrency(inv.netInvoiceAmount, lang)}
                       </td>
                       <td className="py-3 px-3 text-right whitespace-nowrap">
                         <button

@@ -323,24 +323,25 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
               </div>
             )}
 
-            <div className="flex justify-between py-0.5 border-b border-slate-200 font-bold">
-              <span>{t.netBill}:</span>
-              <span className="font-mono">{formatCurrency(invoice.netInvoiceAmount, lang)}</span>
+            <div className="flex justify-between py-1.5 border-y-2 border-slate-800 text-sm font-black bg-slate-50 px-1">
+              <span>{lang === 'bn' ? 'নেট ইনভয়েস বিল (Net Invoice Amount):' : 'Net Invoice Amount:'}</span>
+              <span className="font-mono text-emerald-800">{formatCurrency(invoice.netInvoiceAmount, lang)}</span>
             </div>
 
             {invoice.previousBalance !== 0 && invoice.type !== 'processing' && (
-              <div className="flex justify-between py-0.5 border-b border-slate-200 text-slate-700">
-                <span>{invoice.previousBalance > 0 ? t.previousDue : t.previousAdvance}:</span>
-                <span className="font-mono font-semibold">
-                  {formatCurrency(invoice.previousBalance, lang)}
-                </span>
-              </div>
+              <>
+                <div className="flex justify-between py-0.5 pt-1 text-slate-600 text-[10.5px]">
+                  <span>{invoice.previousBalance > 0 ? t.previousDue : t.previousAdvance}:</span>
+                  <span className="font-mono font-semibold">
+                    {formatCurrency(invoice.previousBalance, lang)}
+                  </span>
+                </div>
+                <div className="flex justify-between py-0.5 text-slate-700 text-[11px] font-bold border-t border-dashed border-slate-300">
+                  <span>{lang === 'bn' ? 'সর্বমোট জের (Closing Ledger Balance):' : 'Closing Ledger Balance:'}</span>
+                  <span className="font-mono">{formatCurrency(invoice.grandTotal, lang)}</span>
+                </div>
+              </>
             )}
-
-            <div className="flex justify-between py-1 border-y-2 border-slate-800 text-sm font-black">
-              <span>{t.grandTotal}:</span>
-              <span className="font-mono text-emerald-800">{formatCurrency(invoice.grandTotal, lang)}</span>
-            </div>
           </div>
         </div>
 

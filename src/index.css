@@ -59,26 +59,42 @@
   }
 
   .one-page-sheet {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
     width: 100% !important;
     max-width: 210mm !important;
     margin: 0 auto !important;
     box-shadow: none !important;
     border-radius: 0 !important;
-    border: 1px solid #94a3b8 !important;
-    padding: 12px !important;
+    border: none !important;
+    padding: 8px !important;
     overflow: visible !important;
+  }
+
+  .sheet-freeze-wrapper {
+    overflow: visible !important;
+    max-height: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .sheet-freeze-wrapper table thead,
+  .sheet-freeze-wrapper table thead th {
+    position: static !important;
+    box-shadow: none !important;
   }
 
   table {
     width: 100% !important;
-    page-break-inside: avoid !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
     border-collapse: collapse !important;
   }
 
   tr {
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
     page-break-after: auto !important;
   }
 
@@ -100,5 +116,38 @@
 @media screen {
   .print-only {
     display: none !important;
+  }
+
+  /* Sheet Panes Freeze Heading (Excel/Google Sheet style) */
+  .sheet-freeze-wrapper {
+    overflow-y: auto;
+    overflow-x: auto;
+    max-height: 72vh;
+    position: relative;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.75rem;
+    scrollbar-width: thin;
+  }
+
+  .sheet-freeze-wrapper table thead {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+  }
+
+  .sheet-freeze-wrapper table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    background-color: #f8fafc !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .dark .sheet-freeze-wrapper {
+    border-color: #334155;
+  }
+
+  .dark .sheet-freeze-wrapper table thead th {
+    background-color: #1e293b !important;
   }
 }

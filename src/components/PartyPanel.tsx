@@ -24,13 +24,14 @@ import {
   Eye,
   Filter,
 } from 'lucide-react';
-import { Party, PartyType, Language, DEFAULT_COMPANY, Invoice } from '../types';
+import { Party, PartyType, Language, DEFAULT_COMPANY, Invoice, PaymentMethod } from '../types';
 import {
   translations,
   formatCurrency,
   formatNumber,
   formatDate,
 } from '../lib/translations';
+import { storageService } from '../lib/storage';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
 interface PartyPanelProps {
@@ -38,6 +39,7 @@ interface PartyPanelProps {
   invoices?: Invoice[];
   lang: Language;
   onSaveParty: (party: Party) => void;
+  onSaveInvoice?: (invoice: Invoice) => void;
   onPrintPartyStatement: () => void;
   onPrintPartyLedger?: (partyId: string) => void;
   onViewInvoice?: (invoice: Invoice) => void;
@@ -51,6 +53,7 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
   invoices = [],
   lang,
   onSaveParty,
+  onSaveInvoice,
   onPrintPartyStatement,
   onPrintPartyLedger,
   onViewInvoice,
@@ -81,6 +84,9 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
   const [payModalParty, setPayModalParty] = useState<Party | null>(null);
   const [adjustAmount, setAdjustAmount] = useState<number>(0);
   const [adjustType, setAdjustType] = useState<'receive' | 'pay'>('receive');
+  const [adjustDate, setAdjustDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [adjustMethod, setAdjustMethod] = useState<PaymentMethod>('cash');
+  const [adjustNotes, setAdjustNotes] = useState<string>('');
 
   // Transaction Ledger Filters
   const todayStr = new Date().toISOString().split('T')[0];
@@ -161,8 +167,12 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
         updatedAdvance += excess;
       }
     } else {
-      if (updatedDue > 0) {
-        updatedDue = Math.max(0, updatedDue - adjustAmount);
+      if (updatedDue >= adjustAmount) {
+        updatedDue -= adjustAmount;
+      } else if (updatedDue > 0) {
+        const excess = adjustAmount - updatedDue;
+        updatedDue = 0;
+        updatedAdvance += excess;
       } else {
         updatedAdvance += adjustAmount;
       }
@@ -176,8 +186,61 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
     };
 
     onSaveParty(updated);
+
+    // Create a real payment transaction record in invoices so it appears in ledger and print statements
+    const now = new Date().toISOString();
+    const payDate = adjustDate || todayStr;
+    const isReceive = adjustType === 'receive';
+    const invoicePrefix = isReceive ? 'REC' : 'PAY';
+    const paymentInvoice: Invoice = {
+      id: `pay-${Date.now()}`,
+      invoiceNo: `${invoicePrefix}-${Date.now().toString().slice(-6)}`,
+      type: 'general',
+      mode: isReceive ? 'sales' : 'purchase',
+      partyId: payModalParty.id,
+      partyName: payModalParty.name,
+      partyPhone: payModalParty.phone,
+      partyAddress: payModalParty.address,
+      date: payDate,
+      items: [
+        {
+          id: `it-pay-${Date.now()}`,
+          category: 'code',
+          name: isReceive
+            ? (lang === 'bn' ? 'নগদ/ব্যাংক টাকা গ্রহণ (পেমেন্ট জমা)' : 'Payment Received (Credit)')
+            : (lang === 'bn' ? 'পার্টি বিল পরিশোধ (টাকা প্রদান)' : 'Payment Given (Debit)'),
+          code: isReceive ? 'PAY-IN' : 'PAY-OUT',
+          quantity: 1,
+          unit: 'pcs',
+          unitPrice: 0,
+          total: 0,
+        },
+      ],
+      subtotal: 0,
+      courierDeduction: 0,
+      discount: 0,
+      netInvoiceAmount: 0,
+      previousBalance: payModalParty.currentDue,
+      grandTotal: 0,
+      paidAmount: adjustAmount,
+      remainingDue: updatedDue,
+      paymentStatus: 'paid',
+      paymentMethod: adjustMethod,
+      notes: adjustNotes.trim() || (isReceive ? (lang === 'bn' ? 'পার্টি থেকে টাকা গ্রহণ' : 'Payment Received') : (lang === 'bn' ? 'পার্টি বিল পরিশোধ' : 'Payment Given')),
+      createdAt: now,
+    };
+
+    if (onSaveInvoice) {
+      onSaveInvoice(paymentInvoice);
+    } else {
+      storageService.saveInvoice(paymentInvoice);
+    }
+
     setPayModalParty(null);
     setAdjustAmount(0);
+    setAdjustNotes('');
+    setAdjustMethod('cash');
+    setAdjustDate(todayStr);
   };
 
   // Direct WhatsApp Reminder Link
@@ -1033,8 +1096,9 @@ ${DEFAULT_COMPANY.name}`;
                     )}
                     {filteredTransactions.map((inv) => {
                       const isPurchase = inv.mode === 'purchase';
+                      const isPaymentOnly = (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0) === 0 && (Number(inv.paidAmount) || 0) > 0;
                       return (
-                        <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <tr key={inv.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${isPaymentOnly ? 'bg-purple-50/30 dark:bg-purple-950/20' : ''}`}>
                           <td className="p-3 font-mono">{formatDate(inv.date, lang)}</td>
                           <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
                             {inv.invoiceNo}
@@ -1046,23 +1110,33 @@ ${DEFAULT_COMPANY.name}`;
                             )}
                           </td>
                           <td className="p-3">
-                            <span
-                              className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isPurchase
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                              }`}
-                            >
-                              {isPurchase ? (lang === 'bn' ? 'ক্রয় (Purchase)' : 'Purchase') : (lang === 'bn' ? 'বিক্রয় (Sales)' : 'Sales')}
-                            </span>
+                            {isPaymentOnly ? (
+                              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                                {inv.mode === 'sales'
+                                  ? (lang === 'bn' ? 'টাকা গ্রহণ (পেমেন্ট)' : 'Payment Received')
+                                  : (lang === 'bn' ? 'টাকা পরিশোধ (পেমেন্ট)' : 'Payment Paid')}
+                              </span>
+                            ) : (
+                              <span
+                                className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isPurchase
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                }`}
+                              >
+                                {isPurchase ? (lang === 'bn' ? 'ক্রয় (Purchase)' : 'Purchase') : (lang === 'bn' ? 'বিক্রয় (Sales)' : 'Sales')}
+                              </span>
+                            )}
                           </td>
                           <td className="p-3 max-w-xs truncate text-[11px] text-slate-600 dark:text-slate-400">
-                            {inv.items.map((it) => `${it.name} (${it.quantity}${it.unit})`).join(', ')}
+                            {isPaymentOnly
+                              ? `${inv.items[0]?.name || ''}${inv.notes ? ` (${inv.notes})` : ''}`
+                              : inv.items.map((it) => `${it.name} (${it.quantity}${it.unit})`).join(', ')}
                           </td>
                           <td className="p-3 text-right font-mono font-bold">
-                            {formatCurrency(inv.netInvoiceAmount, lang)}
+                            {isPaymentOnly ? '-' : formatCurrency(inv.netInvoiceAmount, lang)}
                           </td>
-                          <td className="p-3 text-right font-mono text-emerald-600 dark:text-emerald-400">
+                          <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
                             {formatCurrency(inv.paidAmount || 0, lang)}
                           </td>
                           <td className="p-3 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
@@ -1288,6 +1362,36 @@ ${DEFAULT_COMPANY.name}`;
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    তারিখ (Date)
+                  </label>
+                  <input
+                    type="date"
+                    value={adjustDate}
+                    onChange={(e) => setAdjustDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    পেমেন্ট মাধ্যম
+                  </label>
+                  <select
+                    value={adjustMethod}
+                    onChange={(e) => setAdjustMethod(e.target.value as PaymentMethod)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold"
+                  >
+                    <option value="cash">নগদ (Cash)</option>
+                    <option value="bank">ব্যাংক (Bank)</option>
+                    <option value="bKash">বিকাশ (bKash)</option>
+                    <option value="nagad">নগদ (Nagad)</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
                   টাকার পরিমাণ (৳)
@@ -1297,8 +1401,22 @@ ${DEFAULT_COMPANY.name}`;
                   min="1"
                   value={adjustAmount || ''}
                   onChange={(e) => setAdjustAmount(parseFloat(e.target.value) || 0)}
+                  placeholder="0"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-sm text-slate-900 dark:text-white"
                   required
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  নোট / চেক নং / মন্তব্য (ঐচ্ছিক)
+                </label>
+                <input
+                  type="text"
+                  value={adjustNotes}
+                  onChange={(e) => setAdjustNotes(e.target.value)}
+                  placeholder="যেমন: ক্যাশ গ্রহণ, চেক নং, ট্রানজেকশন আইডি..."
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 />
               </div>
 
