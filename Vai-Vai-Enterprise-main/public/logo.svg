@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#005ea6"/>
+      <stop offset="100%" stop-color="#008ce3"/>
+    </linearGradient>
+    <linearGradient id="navyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#071d3a"/>
+      <stop offset="100%" stop-color="#0e3768"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Navy Arc (Left & Lower) -->
+  <path d="M 230 40 
+           A 210 210 0 1 0 460 250
+           A 225 225 0 0 1 200 465
+           A 215 215 0 1 1 230 40 Z"
+        fill="url(#navyGrad)" />
+
+  <!-- Outer Blue Arc (Top & Right) -->
+  <path d="M 200 35 
+           A 215 215 0 0 1 475 230
+           A 230 230 0 0 1 250 472
+           A 215 215 0 0 0 455 240
+           A 200 200 0 0 0 200 35 Z"
+        fill="url(#blueGrad)" />
+
+  <!-- Dynamic Inner Blue Swoosh Accent -->
+  <path d="M 120 180 
+           A 185 185 0 0 1 360 85 
+           A 190 190 0 0 0 145 155 Z" 
+        fill="#0077c8" opacity="0.9" />
+
+  <path d="M 115 330 
+           A 195 195 0 0 0 340 435 
+           A 205 205 0 0 1 140 375 Z" 
+        fill="#0077c8" opacity="0.9" />
+
+  <!-- Central RSR Typography -->
+  <g transform="translate(250, 275)" text-anchor="middle">
+    <!-- Drop Shadow / Depth -->
+    <text font-family="'Times New Roman', 'Playfair Display', Georgia, serif" font-weight="900" font-size="142" letter-spacing="-3">
+      <tspan fill="#0a0f1d" x="-105">R</tspan>
+      <tspan fill="#0073c6" x="2">S</tspan>
+      <tspan fill="#0a0f1d" x="110">R</tspan>
+    </text>
+  </g>
+
+  <!-- Horizontal Divider Line -->
+  <line x1="105" y1="298" x2="395" y2="298" stroke="#0a0f1d" stroke-width="2.5" />
+
+  <!-- Subtitle Text: VAI VAI ENTERPRISE -->
+  <text x="250" y="325" 
+        text-anchor="middle" 
+        font-family="'Times New Roman', 'Playfair Display', Georgia, serif" 
+        font-weight="900" 
+        font-size="25" 
+        letter-spacing="3.5" 
+        fill="#0a0f1d">
+    VAI VAI ENTERPRISE
+  </text>
+
+  <!-- Bottom Underline -->
+  <line x1="108" y1="334" x2="392" y2="334" stroke="#0a0f1d" stroke-width="1.8" />
+</svg>

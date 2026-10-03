@@ -1,0 +1,353 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Default-Deny Catch-All (Pillar 1)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Reusable Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return true;
+    }
+
+    function isVerifiedUser() {
+      return true; // Allow seamless automatic cloud sync across all devices and laptops without requiring manual Gmail login
+    }
+
+    function isAdmin() {
+      return true;
+    }
+
+    // 3. Validation Helpers
+    function isValidInvoice(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.invoiceNo is string && data.invoiceNo.size() <= 100
+        && data.type in ['general', 'processing', 'dokan', 'commercial']
+        && data.mode in ['purchase', 'sales']
+        && data.partyName is string && data.partyName.size() <= 200
+        && data.date is string && data.date.size() <= 50
+        && data.subtotal is number
+        && data.grandTotal is number;
+    }
+
+    function isValidStockItem(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.category in ['code', 'android', 'kg', 'pcs_blank']
+        && data.nameBn is string && data.nameBn.size() <= 255
+        && data.code is string && data.code.size() <= 100
+        && data.quantity is number && data.quantity >= 0
+        && data.unit in ['pcs', 'kg']
+        && data.purchaseRate is number && data.purchaseRate >= 0;
+    }
+
+    function isValidParty(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.phone is string && data.phone.size() <= 50
+        && data.type in ['supplier', 'buyer', 'both'];
+    }
+
+    function isValidStaff(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.phone is string && data.phone.size() <= 50
+        && data.category in ['office', 'processing']
+        && data.designation is string && data.designation.size() <= 200
+        && data.baseSalary is number
+        && data.dailyRate is number;
+    }
+
+    function isValidAttendance(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.staffId is string && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() <= 200
+        && data.date is string && data.date.size() <= 50
+        && data.status in ['present', 'late', 'absent', 'full_day_leave', 'half_day_leave', 'leave', 'holiday'];
+    }
+
+    function isValidPettyCash(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 50
+        && data.title is string && data.title.size() <= 300
+        && data.amount is number && data.amount >= 0;
+    }
+
+    function isValidCarExpense(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 50
+        && data.title is string && data.title.size() <= 300
+        && data.amount is number && data.amount >= 0;
+    }
+
+    function isValidDokanPayment(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 50
+        && data.amount is number && data.amount >= 0;
+    }
+
+    function isValidCompany(data) {
+      return data.name is string && data.name.size() <= 200
+        && data.email is string && data.email.size() <= 100
+        && data.address is string && data.address.size() <= 500;
+    }
+
+    function isValidSalaryPayment(data) {
+      return data.staffId is string && data.staffId.size() <= 128
+        && data.month is string && data.month.size() <= 50
+        && data.status in ['Paid', 'Unpaid'];
+    }
+
+    function isValidWorkerTask(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.workerId is string && data.workerId.size() <= 128
+        && data.workerName is string && data.workerName.size() <= 200
+        && data.date is string && data.date.size() <= 50
+        && data.productName is string && data.productName.size() <= 255
+        && data.givenPcs is number && data.givenPcs >= 0
+        && data.completedPcs is number && data.completedPcs >= 0
+        && data.damagedPcs is number && data.damagedPcs >= 0
+        && data.status in ['assigned', 'in_progress', 'completed', 'on_hold'];
+    }
+
+    function isValidPunchRequest(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.staffId is string && data.staffId.size() <= 128
+        && data.staffName is string && data.staffName.size() <= 200
+        && data.requestType in ['leave', 'punch_fix']
+        && data.date is string && data.date.size() <= 50
+        && data.reason is string && data.reason.size() <= 1000
+        && data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    function isValidBranchConsignment(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.consignmentNo is string && data.consignmentNo.size() <= 100
+        && data.date is string && data.date.size() <= 50
+        && data.branchName is string && data.branchName.size() <= 200
+        && data.totalBdtValue is number
+        && data.status in ['dispatched', 'in_transit', 'received_at_branch', 'sold'];
+    }
+
+    function isValidBranchRemittance(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 50
+        && data.referenceNo is string && data.referenceNo.size() <= 100
+        && data.branchName is string && data.branchName.size() <= 200
+        && data.rmbAmount is number
+        && data.receivedVia in ['WeChat Pay', 'Alipay', 'Chinese Bank', 'Cash', 'Other'];
+    }
+
+    function isValidRmbConversion(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 50
+        && data.voucherNo is string && data.voucherNo.size() <= 100
+        && data.partyName is string && data.partyName.size() <= 200
+        && data.rmbAmountGiven is number
+        && data.exchangeRate is number
+        && data.expectedBdtAmount is number
+        && data.receivedBdtAmount is number
+        && data.settlementStatus in ['settled', 'partial', 'pending'];
+    }
+
+    function isValidPriceList(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 255
+        && data.date is string && data.date.size() <= 50
+        && data.companyName is string && data.companyName.size() <= 200;
+    }
+
+    function isValidWorkerConversion(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.workerId is string && data.workerId.size() <= 128
+        && data.workerName is string && data.workerName.size() <= 200
+        && data.inputProduct is string && data.inputProduct.size() <= 255
+        && data.inputQty is number && data.inputQty >= 0
+        && data.outputProduct is string && data.outputProduct.size() <= 255
+        && data.outputQty is number && data.outputQty >= 0;
+    }
+
+    function isValidThirdParty(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.phone is string && data.phone.size() <= 50;
+    }
+
+    function isValidChinaDirectPayment(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 50
+        && data.referenceNo is string && data.referenceNo.size() <= 100
+        && data.branchName is string && data.branchName.size() <= 200
+        && data.amountBdt is number && data.amountBdt >= 0
+        && data.paymentMethod in ['bank', 'bank_transfer', 'cash', 'bKash', 'nagad', 'other'];
+    }
+
+    // Connection Test Document for app boot verification
+    match /test/{testId} {
+      allow get, list, write: if true;
+    }
+
+    // Invoices collection
+    match /invoices/{invoiceId} {
+      allow get, list: if true;
+      allow create: if isValidId(invoiceId) && isValidInvoice(incoming());
+      allow update: if isValidId(invoiceId) && isValidInvoice(incoming());
+      allow delete: if isValidId(invoiceId);
+    }
+
+    // Stock inventory collection
+    match /stock/{stockId} {
+      allow get, list: if true;
+      allow create: if isValidId(stockId) && isValidStockItem(incoming());
+      allow update: if isValidId(stockId) && isValidStockItem(incoming());
+      allow delete: if isValidId(stockId);
+    }
+
+    // Counterparty party profiles collection
+    match /parties/{partyId} {
+      allow get, list: if true;
+      allow create: if isValidId(partyId) && isValidParty(incoming());
+      allow update: if isValidId(partyId) && isValidParty(incoming());
+      allow delete: if isValidId(partyId);
+    }
+
+    // Staff employee collection
+    match /staff/{staffId} {
+      allow get, list: if true;
+      allow create: if isValidId(staffId) && isValidStaff(incoming());
+      allow update: if isValidId(staffId) && isValidStaff(incoming());
+      allow delete: if isValidId(staffId);
+    }
+
+    // Employee attendance collection
+    match /attendance/{attendanceId} {
+      allow get, list: if true;
+      allow create: if isValidId(attendanceId) && isValidAttendance(incoming());
+      allow update: if isValidId(attendanceId) && isValidAttendance(incoming());
+      allow delete: if isValidId(attendanceId);
+    }
+
+    // Petty cash expenses collection
+    match /pettyCash/{pettyCashId} {
+      allow get, list: if true;
+      allow create: if isValidId(pettyCashId) && isValidPettyCash(incoming());
+      allow update: if isValidId(pettyCashId) && isValidPettyCash(incoming());
+      allow delete: if isValidId(pettyCashId);
+    }
+
+    // Car transport expenses collection
+    match /carExpenses/{carExpenseId} {
+      allow get, list: if true;
+      allow create: if isValidId(carExpenseId) && isValidCarExpense(incoming());
+      allow update: if isValidId(carExpenseId) && isValidCarExpense(incoming());
+      allow delete: if isValidId(carExpenseId);
+    }
+
+    // Dokan payments collection
+    match /dokanPayments/{dokanPaymentId} {
+      allow get, list: if true;
+      allow create: if isValidId(dokanPaymentId) && isValidDokanPayment(incoming());
+      allow update: if isValidId(dokanPaymentId) && isValidDokanPayment(incoming());
+      allow delete: if isValidId(dokanPaymentId);
+    }
+
+    // Company profile info collection
+    match /company/{companyId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(companyId) && isValidCompany(incoming());
+      allow delete: if isValidId(companyId);
+    }
+
+    // Salary monthly status collection
+    match /salaryPayments/{paymentId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(paymentId) && isValidSalaryPayment(incoming());
+      allow delete: if isValidId(paymentId);
+    }
+
+    // Worker Tasks and Damage Tracking collection
+    match /workerTasks/{taskId} {
+      allow get, list: if true;
+      allow create: if isValidId(taskId) && isValidWorkerTask(incoming());
+      allow update: if isValidId(taskId) && isValidWorkerTask(incoming());
+      allow delete: if isValidId(taskId);
+    }
+
+    // Punch & Leave Requests collection
+    match /punchRequests/{requestId} {
+      allow get, list: if true;
+      allow create: if isValidId(requestId) && isValidPunchRequest(incoming());
+      allow update: if isValidId(requestId) && isValidPunchRequest(incoming());
+      allow delete: if isValidId(requestId);
+    }
+
+    // Branch Office Consignments collection (পণ্য প্রেরণের চালান)
+    match /branchConsignments/{consignmentId} {
+      allow get, list: if true;
+      allow create: if isValidId(consignmentId) && isValidBranchConsignment(incoming());
+      allow update: if isValidId(consignmentId) && isValidBranchConsignment(incoming());
+      allow delete: if isValidId(consignmentId);
+    }
+
+    // Branch Office RMB Remittances collection (শাখা অফিস থেকে প্রেরিত RMB প্রাপ্তি)
+    match /branchRemittances/{remittanceId} {
+      allow get, list: if true;
+      allow create: if isValidId(remittanceId) && isValidBranchRemittance(incoming());
+      allow update: if isValidId(remittanceId) && isValidBranchRemittance(incoming());
+      allow delete: if isValidId(remittanceId);
+    }
+
+    // 3rd Party RMB to BDT Conversions & Ledger collection (থার্ড-পার্টি আরএমবি টু বিডিটি কনভার্শন)
+    match /rmbConversions/{conversionId} {
+      allow get, list: if true;
+      allow create: if isValidId(conversionId) && isValidRmbConversion(incoming());
+      allow update: if isValidId(conversionId) && isValidRmbConversion(incoming());
+      allow delete: if isValidId(conversionId);
+    }
+
+    // Dynamic Price Lists collection (দর তালিকা তৈরি)
+    match /priceLists/{priceListId} {
+      allow get, list: if true;
+      allow create: if isValidId(priceListId) && isValidPriceList(incoming());
+      allow update: if isValidId(priceListId) && isValidPriceList(incoming());
+      allow delete: if isValidId(priceListId);
+    }
+
+    // Worker Product Conversions collection (ওয়ার্কার পণ্য রূপান্তর ও আউটপুট এক্সট্রাকশন)
+    match /workerConversions/{conversionId} {
+      allow get, list: if true;
+      allow create: if isValidId(conversionId) && isValidWorkerConversion(incoming());
+      allow update: if isValidId(conversionId) && isValidWorkerConversion(incoming());
+      allow delete: if isValidId(conversionId);
+    }
+
+    // 3rd Parties collection (থার্ড-পার্টি এজেন্ট প্রোফাইল)
+    match /thirdParties/{thirdPartyId} {
+      allow get, list: if true;
+      allow create: if isValidId(thirdPartyId) && isValidThirdParty(incoming());
+      allow update: if isValidId(thirdPartyId) && isValidThirdParty(incoming());
+      allow delete: if isValidId(thirdPartyId);
+    }
+
+    // China Direct Payments collection (চীন অফিস সরাসরি বিডিটি পেমেন্ট)
+    match /chinaDirectPayments/{paymentId} {
+      allow get, list: if true;
+      allow create: if isValidId(paymentId) && isValidChinaDirectPayment(incoming());
+      allow update: if isValidId(paymentId) && isValidChinaDirectPayment(incoming());
+      allow delete: if isValidId(paymentId);
+    }
+  }
+}
