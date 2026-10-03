@@ -1,8 +1,0 @@
-{
-  "name": "RSR Vai Vai Enterprise ERP",
-  "description": "Comprehensive enterprise management software for mobile circuit \u0026 motherboard trading with 4-type invoicing, auto stock, payroll, expense tracking, and 1-page print optimization.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
