@@ -38,12 +38,77 @@ import {
 } from '../lib/translations';
 import { computeStaffPayroll } from '../lib/payrollCalc';
 import { storageService } from '../lib/storage';
-import { computePartyLedger, signedToNatural } from '../lib/ledger';
+import { computePartyLedger, signedToNatural, partyNaturalOpening, balanceBefore } from '../lib/ledger';
 import { executePrint, exportElementToPdf } from '../lib/printUtils';
 import { CompanyLogo } from './CompanyLogo';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
 export type PeriodFilterMode = 'month' | 'date' | 'range' | 'all';
+
+export const sheetThemes: Record<StatementType, {
+  headerBg: string;
+  badgeBg: string;
+  theadBg: string;
+  tfootBg: string;
+  borderColor: string;
+  subBorderColor: string;
+  accentText: string;
+}> = {
+  stock: {
+    headerBg: 'bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 border-emerald-500/60',
+    badgeBg: 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 text-white shadow-emerald-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-emerald-300',
+    subBorderColor: 'border-emerald-200/80',
+    accentText: 'text-emerald-700',
+  },
+  party: {
+    headerBg: 'bg-gradient-to-r from-slate-950 via-indigo-950 to-blue-950 border-indigo-500/60',
+    badgeBg: 'bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-500 text-white shadow-indigo-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-indigo-300',
+    subBorderColor: 'border-indigo-200/80',
+    accentText: 'text-indigo-700',
+  },
+  payroll: {
+    headerBg: 'bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 border-purple-500/60',
+    badgeBg: 'bg-gradient-to-r from-purple-600 via-fuchsia-600 to-indigo-600 text-white shadow-purple-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-purple-300',
+    subBorderColor: 'border-purple-200/80',
+    accentText: 'text-purple-700',
+  },
+  expense: {
+    headerBg: 'bg-gradient-to-r from-amber-950 via-orange-950 to-slate-900 border-amber-500/60',
+    badgeBg: 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white shadow-amber-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-amber-300',
+    subBorderColor: 'border-amber-200/80',
+    accentText: 'text-amber-700',
+  },
+  financial: {
+    headerBg: 'bg-gradient-to-r from-teal-950 via-cyan-950 to-slate-900 border-teal-500/60',
+    badgeBg: 'bg-gradient-to-r from-teal-600 via-cyan-600 to-emerald-600 text-white shadow-teal-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-teal-300',
+    subBorderColor: 'border-teal-200/80',
+    accentText: 'text-teal-700',
+  },
+  worker_tracking: {
+    headerBg: 'bg-gradient-to-r from-rose-950 via-pink-950 to-slate-900 border-rose-500/60',
+    badgeBg: 'bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 text-white shadow-rose-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-rose-300',
+    subBorderColor: 'border-rose-200/80',
+    accentText: 'text-rose-700',
+  },
+};
 
 interface PrintStatementsProps {
   type: StatementType;
@@ -302,6 +367,12 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
             inv.partyName?.toLowerCase() === selectedPartyMember.name.toLowerCase() ||
             inv.partyId === selectedPartyMember.id
         );
+        const partyOpening = partyNaturalOpening(selectedPartyMember);
+        const { start: periodStart } = getPeriodBounds();
+        const periodOpening = filterMode === 'all' || !periodStart
+          ? partyOpening
+          : signedToNatural(selectedPartyMember, balanceBefore(selectedPartyMember, baseInvoices, periodStart));
+
         const totalSales = partyInvoices
           .filter((inv) => inv.mode === 'sales')
           .reduce((sum, inv) => sum + (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0), 0);
@@ -312,10 +383,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         const totalDue = selectedPartyMember.currentDue;
         const totalAdv = selectedPartyMember.currentAdvance;
 
-        summaryText += `👤 *পার্টি:* ${selectedPartyMember.name} (${selectedPartyMember.type})\n📞 *মোবাইল:* ${selectedPartyMember.phone || '-'}\n📍 *ঠিকানা:* ${selectedPartyMember.address || '-'}\n────────────────────────\n📝 মোট চালান: ${partyInvoices.length} টি\n🛒 ক্রয় (Purchases): ৳${totalPurchases.toLocaleString()}\n🛍️ বিক্রয় (Sales): ৳${totalSales.toLocaleString()}\n💵 মোট পরিশোধ: ৳${totalPaid.toLocaleString()}\n⚠️ বর্তমান পাওনা বাকি (Due): ৳${totalDue.toLocaleString()}\n`;
-        if (totalAdv > 0) {
-          summaryText += `🟢 অগ্রিম জমা (Advance): ৳${totalAdv.toLocaleString()}\n`;
-        }
+        summaryText += `👤 *পার্টি:* ${selectedPartyMember.name} (${selectedPartyMember.type})\n📞 *মোবাইল:* ${selectedPartyMember.phone || '-'}\n📍 *ঠিকানা:* ${selectedPartyMember.address || '-'}\n────────────────────────\n🏦 *প্রারম্ভিক জের (Opening B/L):* ৳${periodOpening.toLocaleString()}\n📝 মোট চালান: ${partyInvoices.length} টি\n🛒 ক্রয় (Purchases): ৳${totalPurchases.toLocaleString()}\n🛍️ বিক্রয় (Sales): ৳${totalSales.toLocaleString()}\n💵 মোট পরিশোধ: ৳${totalPaid.toLocaleString()}\n────────────────────────\n${totalDue > 0 ? `🔴 *বর্তমান পাওনা বাকি (Due):* ৳${totalDue.toLocaleString()}` : totalAdv > 0 ? `🟢 *বর্তমান অগ্রিম জমা (Advance):* ৳${totalAdv.toLocaleString()}` : `⚪ *হিসাব সম্পূর্ণ পরিশোধিত (Settled)*`}\n`;
       } else {
         const totalDue = parties.reduce((s, p) => s + p.currentDue, 0);
         const totalAdv = parties.reduce((s, p) => s + p.currentAdvance, 0);
@@ -546,45 +614,57 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       {/* 1-Page Printable Statement Container with Company Logo */}
       <div
         id="statement-print-area"
-        className="one-page-sheet max-w-4xl mx-auto bg-white text-slate-900 p-6 sm:p-8 rounded-2xl border border-slate-300 shadow-lg print:border-none print:shadow-none print:p-0"
+        className="one-page-sheet max-w-4xl mx-auto bg-white text-slate-900 p-5 sm:p-7 rounded-2xl border border-slate-300 shadow-xl print:border-none print:shadow-none print:p-0"
       >
-        {/* Company Header with Logo */}
-        <div className="border-b-2 border-slate-800 pb-3 flex justify-between items-start gap-4">
-          <div className="flex items-start gap-3">
-            <CompanyLogo customLogoUrl={company.logoUrl} className="w-12 h-12 shrink-0" />
-            <div className="space-y-1">
-              <h1 className="text-xl font-black text-slate-900 tracking-tight leading-tight">
+        {/* Centralized Framed Company Header Box */}
+        <div className="mb-4 p-4 sm:p-5 rounded-2xl border-2 border-slate-900 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-950 text-white shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden">
+          {/* Top Decorative Golden Accent Bar */}
+          <div className="w-full h-1 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 rounded-t-full mb-3" />
+
+          {/* Centralized Logo & Company Name */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 z-10">
+            <div className="p-1.5 bg-white rounded-2xl shadow-md border-2 border-amber-400 shrink-0">
+              <CompanyLogo customLogoUrl={company.logoUrl} className="w-12 h-12 sm:w-14 sm:h-14" />
+            </div>
+            <div className="space-y-1 text-center sm:text-left">
+              <h1 className="text-2xl sm:text-3xl font-black text-amber-300 bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent tracking-tight leading-tight uppercase font-sans drop-shadow-md">
                 {company.name}
               </h1>
-              <p className="text-[11px] font-medium text-slate-600">
+              <div className="inline-block px-3 py-0.5 rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white text-[11px] font-extrabold tracking-wide uppercase shadow-xs">
                 {lang === 'bn' ? company.businessTypeBn : company.businessTypeEn}
-              </p>
-              <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-3">
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                  {company.address}
-                </span>
-                <span className="flex items-center gap-1 font-mono">
-                  <Phone className="w-3 h-3 text-slate-400 shrink-0" />
-                  {company.phones.join(', ')}
-                </span>
-                {company.email && (
-                  <span className="flex items-center gap-1 font-mono">
-                    <Mail className="w-3 h-3 text-slate-400 shrink-0" />
-                    {company.email}
-                  </span>
-                )}
               </div>
             </div>
           </div>
 
-          <div className="text-right space-y-1 shrink-0">
-            <div className="inline-block px-2.5 py-1 bg-slate-900 text-white font-bold text-xs rounded-md uppercase tracking-wider">
-              {getTitle()}
+          {/* Centralized Contact Details Ribbon */}
+          <div className="text-[11px] text-slate-200 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 pt-2.5 border-t border-slate-800/80 w-full font-medium z-10">
+            <span className="flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>{company.address}</span>
+            </span>
+            <span className="flex items-center gap-1 font-mono text-cyan-300 font-bold">
+              <Phone className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>{company.phones.join(', ')}</span>
+            </span>
+            {company.email && (
+              <span className="flex items-center gap-1 font-mono text-pink-300 font-bold">
+                <Mail className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                <span>{company.email}</span>
+              </span>
+            )}
+          </div>
+
+          {/* Statement Badge & Date Line */}
+          <div className="mt-2.5 pt-2 w-full flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-800 text-xs font-mono z-10">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-300 font-semibold">{lang === 'bn' ? 'রিপোর্ট বিষয়:' : 'Statement:'}</span>
+              <span className={`inline-block px-3 py-0.5 text-xs font-black rounded-lg uppercase tracking-wider shadow-md ${sheetThemes[type].badgeBg}`}>
+                {getTitle()}
+              </span>
             </div>
-            <div className="text-[11px] text-slate-500 font-mono">
+            <div className="text-[11px] text-slate-300">
               {lang === 'bn' ? 'তারিখ: ' : 'Date: '}
-              <strong className="text-slate-800">{formatDate(todayStr, lang)}</strong>
+              <strong className="text-cyan-300 font-bold">{formatDate(todayStr, lang)}</strong>
             </div>
           </div>
         </div>
@@ -593,39 +673,39 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         {type === 'stock' && (
           <div className="mt-4 space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
-              <div className="p-2 bg-slate-100 rounded border border-slate-200">
-                <span className="block text-[10px] uppercase text-slate-500 font-bold">{t.codeItem}</span>
-                <span className="font-mono font-bold">
+              <div className="p-2 bg-emerald-50/80 rounded-xl border border-emerald-300">
+                <span className="block text-[10px] uppercase text-emerald-800 font-extrabold">{t.codeItem}</span>
+                <span className="font-mono font-black text-emerald-950">
                   {formatNumber(stockView.filter((s) => s.category === 'code').length, lang)} {lang === 'bn' ? 'আইটেম' : 'Items'}
                 </span>
               </div>
-              <div className="p-2 bg-slate-100 rounded border border-slate-200">
-                <span className="block text-[10px] uppercase text-slate-500 font-bold">{t.androidItem}</span>
-                <span className="font-mono font-bold">
+              <div className="p-2 bg-teal-50/80 rounded-xl border border-teal-300">
+                <span className="block text-[10px] uppercase text-teal-800 font-extrabold">{t.androidItem}</span>
+                <span className="font-mono font-black text-teal-950">
                   {formatNumber(stockView.filter((s) => s.category === 'android').length, lang)} {lang === 'bn' ? 'আইটেম' : 'Items'}
                 </span>
               </div>
-              <div className="p-2 bg-slate-100 rounded border border-slate-200">
-                <span className="block text-[10px] uppercase text-slate-500 font-bold">{t.kgItem}</span>
-                <span className="font-mono font-bold">
+              <div className="p-2 bg-cyan-50/80 rounded-xl border border-cyan-300">
+                <span className="block text-[10px] uppercase text-cyan-800 font-extrabold">{t.kgItem}</span>
+                <span className="font-mono font-black text-cyan-950">
                   {formatNumber(stockView.filter((s) => s.category === 'kg').length, lang)} {lang === 'bn' ? 'আইটেম' : 'Items'}
                 </span>
               </div>
-              <div className="p-2 bg-slate-100 rounded border border-slate-200">
-                <span className="block text-[10px] uppercase text-slate-500 font-bold">{t.pcsBlankItem}</span>
-                <span className="font-mono font-bold">
+              <div className="p-2 bg-indigo-50/80 rounded-xl border border-indigo-300">
+                <span className="block text-[10px] uppercase text-indigo-800 font-extrabold">{t.pcsBlankItem}</span>
+                <span className="font-mono font-black text-indigo-950">
                   {formatNumber(stockView.filter((s) => s.category === 'pcs_blank').length, lang)} {lang === 'bn' ? 'আইটেম' : 'Items'}
                 </span>
               </div>
-              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded">
-                <span className="block text-[10px] uppercase text-emerald-800 font-bold">{t.todayStockInTotal}</span>
-                <span className="font-mono font-bold text-emerald-700">
+              <div className="p-2 bg-emerald-100/90 border border-emerald-400 rounded-xl">
+                <span className="block text-[10px] uppercase text-emerald-900 font-black">{t.todayStockInTotal}</span>
+                <span className="font-mono font-black text-emerald-800">
                   +{formatNumber(todayTotalIn, lang)}
                 </span>
               </div>
-              <div className="p-2 bg-blue-50 border border-blue-200 rounded">
-                <span className="block text-[10px] uppercase text-blue-800 font-bold">{t.todayStockOutTotal}</span>
-                <span className="font-mono font-bold text-blue-700">
+              <div className="p-2 bg-blue-100/90 border border-blue-400 rounded-xl">
+                <span className="block text-[10px] uppercase text-blue-900 font-black">{t.todayStockOutTotal}</span>
+                <span className="font-mono font-black text-blue-800">
                   -{formatNumber(todayTotalOut, lang)}
                 </span>
               </div>
@@ -633,21 +713,21 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
             <div className="sheet-freeze-wrapper">
               <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
-                  <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
-                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-7 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
-                    <th className="py-1 px-1.5 border-r border-slate-300 w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.itemCode}</th>
-                    <th className="py-1 px-1.5 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.itemDescription}</th>
-                    <th className="py-1 px-1.5 border-r border-slate-300 w-16 text-center sticky top-0 bg-slate-100 dark:bg-slate-800">{t.category}</th>
-                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 bg-emerald-100 text-emerald-900 font-bold sticky top-0">
+                <thead>
+                  <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                    <th className="py-2 px-1.5 border-r border-slate-700 text-center w-8 text-white font-bold">{t.sl}</th>
+                    <th className="py-2 px-1.5 border-r border-slate-700 w-22 text-white font-bold">{t.itemCode}</th>
+                    <th className="py-2 px-1.5 border-r border-slate-700 text-white font-bold">{t.itemDescription}</th>
+                    <th className="py-2 px-1.5 border-r border-slate-700 w-18 text-center text-white font-bold">{t.category}</th>
+                    <th className="py-2 px-1.5 border-r border-slate-700 text-center w-22 text-white font-bold">
                       {t.todayPurchase}
                     </th>
-                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 bg-blue-100 text-blue-900 font-bold sticky top-0">
+                    <th className="py-2 px-1.5 border-r border-slate-700 text-center w-22 text-white font-bold">
                       {t.todaySale}
                     </th>
-                    <th className="py-1 px-1.5 border-r border-slate-300 text-center w-20 font-bold sticky top-0 bg-slate-100 dark:bg-slate-800">{t.inStock}</th>
-                    <th className="py-1 px-1.5 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.purchaseRate}</th>
-                    <th className="py-1 px-1.5 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Total'}</th>
+                    <th className="py-2 px-1.5 border-r border-slate-700 text-center w-22 text-white font-bold">{t.inStock}</th>
+                    <th className="py-2 px-1.5 border-r border-slate-700 text-right w-22 text-white font-bold">{t.purchaseRate}</th>
+                    <th className="py-2 px-1.5 text-right w-28 text-white font-bold">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Total'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -655,32 +735,32 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     const effectiveRate = it.purchaseRate || it.purchaseAvgRate || 0;
                     const { todayIn, todayOut } = getTodayItemStats(it.code, it.nameBn, it.nameEn);
                     return (
-                      <tr key={it.id} className="border-b border-slate-200">
-                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono text-[11px]">
+                      <tr key={it.id} className="border-b border-emerald-100 hover:bg-emerald-50/40">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 text-center font-mono text-[11px] text-slate-500">
                           {formatNumber(idx + 1, lang)}
                         </td>
-                        <td className="py-1 px-1.5 border-r border-slate-200 font-mono font-bold text-[11px]">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 font-mono font-black text-[11px] text-emerald-950">
                           {it.code}
                         </td>
-                        <td className="py-1 px-1.5 border-r border-slate-200 font-medium">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 font-bold text-slate-900">
                           {lang === 'bn' ? it.nameBn : it.nameEn}
                         </td>
-                        <td className="py-1 px-1.5 border-r border-slate-200 text-center capitalize text-[10px]">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 text-center capitalize text-[10px] font-semibold text-slate-700">
                           {it.category}
                         </td>
-                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold text-emerald-800 bg-emerald-50/40">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 text-center font-mono font-black text-emerald-800 bg-emerald-50/60">
                           {todayIn > 0 ? `+${formatNumber(todayIn, lang)} ${it.unit}` : '-'}
                         </td>
-                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold text-blue-800 bg-blue-50/40">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 text-center font-mono font-black text-blue-800 bg-blue-50/60">
                           {todayOut > 0 ? `-${formatNumber(todayOut, lang)} ${it.unit}` : '-'}
                         </td>
-                        <td className="py-1 px-1.5 border-r border-slate-200 text-center font-mono font-bold">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 text-center font-mono font-black text-slate-950">
                           {formatNumber(it.quantity, lang)} {it.unit}
                         </td>
-                        <td className="py-1 px-1.5 border-r border-slate-200 text-right font-mono">
+                        <td className="py-1 px-1.5 border-r border-emerald-100 text-right font-mono font-bold text-slate-700">
                           {formatCurrency(effectiveRate, lang)}
                         </td>
-                        <td className="py-1 px-1.5 text-right font-mono font-bold">
+                        <td className="py-1 px-1.5 text-right font-mono font-black text-emerald-900">
                           {formatCurrency(it.quantity * effectiveRate, lang)}
                         </td>
                       </tr>
@@ -688,21 +768,21 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                    <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                  <tr className="bg-gradient-to-r from-emerald-100 via-teal-100 to-emerald-200 text-emerald-950 font-black text-xs border-t-2 border-emerald-500">
+                    <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-emerald-300 font-extrabold">
                       {lang === 'bn' ? 'সর্বমোট স্টক ও ক্রয়-বিক্রয়:' : 'Total Stock & Today In/Out:'}
                     </td>
-                    <td className="py-1.5 px-1.5 text-center font-mono text-emerald-900 border-r border-slate-300">
+                    <td className="py-1.5 px-1.5 text-center font-mono text-emerald-900 border-r border-emerald-300 font-bold">
                       {todayTotalIn > 0 ? `+${formatNumber(todayTotalIn, lang)}` : '-'}
                     </td>
-                    <td className="py-1.5 px-1.5 text-center font-mono text-blue-900 border-r border-slate-300">
+                    <td className="py-1.5 px-1.5 text-center font-mono text-blue-900 border-r border-emerald-300 font-bold">
                       {todayTotalOut > 0 ? `-${formatNumber(todayTotalOut, lang)}` : '-'}
                     </td>
-                    <td className="py-1.5 px-1.5 text-center font-mono border-r border-slate-300">
+                    <td className="py-1.5 px-1.5 text-center font-mono border-r border-emerald-300 text-emerald-950 font-black">
                       {formatNumber(stockView.reduce((s, it) => s + it.quantity, 0), lang)}
                     </td>
-                    <td className="border-r border-slate-300"></td>
-                    <td className="py-1.5 px-1.5 text-right font-mono text-emerald-800">
+                    <td className="border-r border-emerald-300"></td>
+                    <td className="py-1.5 px-1.5 text-right font-mono text-emerald-950 text-sm font-black">
                       {formatCurrency(
                         stockView.reduce(
                           (s, it) => s + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
@@ -728,6 +808,13 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     inv.partyName?.toLowerCase() === selectedPartyMember.name.toLowerCase() ||
                     inv.partyId === selectedPartyMember.id
                 ).sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.createdAt || '').localeCompare(b.createdAt || ''));
+
+                const partyOpening = partyNaturalOpening(selectedPartyMember);
+                const { start: periodStart } = getPeriodBounds();
+                const periodOpening = filterMode === 'all' || !periodStart
+                  ? partyOpening
+                  : signedToNatural(selectedPartyMember, balanceBefore(selectedPartyMember, baseInvoices, periodStart));
+
                 // Running balance from opening balance across the party's full history (chronological)
                 const runningMap = new Map<string, number>();
                 computePartyLedger(selectedPartyMember, baseInvoices).rows.forEach((r) =>
@@ -749,38 +836,51 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
                 return (
                   <div className="space-y-4">
-                    {/* Party Profile Header Box */}
-                    <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border border-slate-700">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-black uppercase tracking-wider text-emerald-400 text-sm sm:text-base">
-                            {selectedPartyMember.name}
-                          </span>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 uppercase">
-                            {selectedPartyMember.type === 'supplier'
-                              ? 'সাপ্লায়ার (Supplier)'
-                              : selectedPartyMember.type === 'buyer'
-                              ? 'ক্রেতা (Buyer)'
-                              : 'উভয় (Both)'}
-                          </span>
+                    {/* Party Profile Header Centralized Bordered Card */}
+                    <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-950 via-indigo-950 to-blue-950 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs border-2 border-indigo-400 shadow-xl relative overflow-hidden">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-2xl bg-indigo-600 text-white border border-indigo-400/80 shadow-xs shrink-0">
+                          <Users className="w-5 h-5 text-cyan-300" />
                         </div>
-                        <p className="text-[11px] text-slate-300 mt-1">
-                          📞 মোবা: <strong className="text-white font-mono">{selectedPartyMember.phone || '-'}</strong>
-                          {selectedPartyMember.address ? ` • 📍 ঠিকানা: ${selectedPartyMember.address}` : ''}
-                        </p>
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-black uppercase tracking-tight text-amber-300 text-base sm:text-lg drop-shadow-xs">
+                              {selectedPartyMember.name}
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-emerald-500 to-teal-500 text-white uppercase shadow-xs">
+                              {selectedPartyMember.type === 'supplier'
+                                ? 'সাপ্লায়ার (Supplier)'
+                                : selectedPartyMember.type === 'buyer'
+                                ? 'ক্রেতা (Buyer)'
+                                : 'উভয় (Both)'}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-200 font-bold text-xs pt-0.5">
+                            <span className="flex items-center gap-1 font-mono font-black text-cyan-300">
+                              <Phone className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <span>{selectedPartyMember.phone || '-'}</span>
+                            </span>
+                            {selectedPartyMember.address && (
+                              <span className="flex items-center gap-1 text-slate-200 font-bold">
+                                <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                <span>{selectedPartyMember.address}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800">
                         <div className="text-right">
-                          <span className="text-[10px] uppercase font-bold text-slate-400 block">বর্তমান পাওনা বাকি</span>
-                          <span className="text-lg font-black font-mono text-rose-400">
+                          <span className="text-[10px] uppercase font-bold text-rose-300 block">বর্তমান পাওনা বাকি</span>
+                          <span className="text-xl font-black font-mono text-rose-400 drop-shadow-xs">
                             {formatCurrency(currentDue, lang)}
                           </span>
                         </div>
                         {currentAdvance > 0 && (
                           <div className="text-right pl-3 border-l border-white/20">
-                            <span className="text-[10px] uppercase font-bold text-slate-400 block">অগ্রিম জমা</span>
-                            <span className="text-lg font-black font-mono text-cyan-300">
+                            <span className="text-[10px] uppercase font-bold text-cyan-300 block">অগ্রিম জমা</span>
+                            <span className="text-xl font-black font-mono text-cyan-300 drop-shadow-xs">
                               {formatCurrency(currentAdvance, lang)}
                             </span>
                           </div>
@@ -788,117 +888,146 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                       </div>
                     </div>
 
-                    {/* Summary Ribbon */}
-                    <div className="grid grid-cols-4 gap-2 text-xs font-mono">
-                      <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-800">
-                        <span className="text-[9px] uppercase font-bold text-slate-500 block font-sans">মোট ক্রয় (Purchase)</span>
-                        <strong className="text-emerald-700">{formatCurrency(totalPurchases, lang)}</strong>
+                    {/* Summary Ribbon (5 Columns with Vibrant Borders & Colors) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
+                      <div className="p-2.5 rounded-xl border border-amber-300 bg-amber-50/90 text-amber-950 shadow-2xs">
+                        <span className="text-[9px] uppercase font-extrabold text-amber-800 block font-sans">প্রারম্ভিক জের (Opening)</span>
+                        <strong className="text-amber-900 font-black">{formatCurrency(periodOpening, lang)}</strong>
                       </div>
-                      <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-800">
-                        <span className="text-[9px] uppercase font-bold text-slate-500 block font-sans">মোট বিক্রয় (Sales)</span>
-                        <strong className="text-blue-700">{formatCurrency(totalSales, lang)}</strong>
+                      <div className="p-2.5 rounded-xl border border-emerald-300 bg-emerald-50/90 text-emerald-950 shadow-2xs">
+                        <span className="text-[9px] uppercase font-extrabold text-emerald-800 block font-sans">মোট ক্রয় (Purchase)</span>
+                        <strong className="text-emerald-900 font-black">{formatCurrency(totalPurchases, lang)}</strong>
                       </div>
-                      <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-800">
-                        <span className="text-[9px] uppercase font-bold text-slate-500 block font-sans">মোট পরিশোধিত (Paid)</span>
-                        <strong className="text-purple-700">{formatCurrency(totalPaid, lang)}</strong>
+                      <div className="p-2.5 rounded-xl border border-blue-300 bg-blue-50/90 text-blue-950 shadow-2xs">
+                        <span className="text-[9px] uppercase font-extrabold text-blue-800 block font-sans">মোট বিক্রয় (Sales)</span>
+                        <strong className="text-blue-900 font-black">{formatCurrency(totalSales, lang)}</strong>
                       </div>
-                      <div className="p-2.5 rounded-xl border border-rose-300 bg-rose-50 text-rose-800">
-                        <span className="text-[9px] uppercase font-bold text-rose-600 block font-sans">বর্তমান নিট বাকি (Due)</span>
-                        <strong className="text-rose-700">{formatCurrency(currentDue, lang)}</strong>
+                      <div className="p-2.5 rounded-xl border border-purple-300 bg-purple-50/90 text-purple-950 shadow-2xs">
+                        <span className="text-[9px] uppercase font-extrabold text-purple-800 block font-sans">মোট পরিশোধিত (Paid)</span>
+                        <strong className="text-purple-900 font-black">{formatCurrency(totalPaid, lang)}</strong>
+                      </div>
+                      <div className={`p-2.5 rounded-xl border shadow-2xs ${currentDue > 0 ? 'border-rose-400 bg-rose-50/90 text-rose-950 ring-1 ring-rose-300' : currentAdvance > 0 ? 'border-emerald-400 bg-emerald-50/90 text-emerald-950 ring-1 ring-emerald-300' : 'border-slate-300 bg-slate-50 text-slate-800'}`}>
+                        <span className="text-[9px] uppercase font-extrabold block font-sans">
+                          {currentDue > 0 ? 'বর্তমান নিট বাকি' : currentAdvance > 0 ? 'বর্তমান অগ্রিম জমা' : 'হিসাব স্ট্যাটাস'}
+                        </span>
+                        <strong className={currentDue > 0 ? 'text-rose-700 font-black' : currentAdvance > 0 ? 'text-emerald-700 font-black' : 'text-slate-800 font-black'}>
+                          {currentDue > 0 ? formatCurrency(currentDue, lang) : currentAdvance > 0 ? `${formatCurrency(currentAdvance, lang)} (অগ্রিম)` : '০ (পরিশোধিত)'}
+                        </strong>
                       </div>
                     </div>
 
                     {/* Itemized Invoices / Transaction Table */}
                     <div className="sheet-freeze-wrapper">
                       <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                        <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
-                          <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">#</th>
-                            <th className="py-1 px-2 border-r border-slate-300 w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">তারিখ</th>
-                            <th className="py-1 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">চালান নং</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">ধরন</th>
-                            <th className="py-1 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">মালের বিবরণ ও পরিমাণ</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">মোট বিল (৳)</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">পরিশোধ (৳)</th>
-                            <th className="py-1 px-2 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">অবশিষ্ট বাকি</th>
+                        <thead>
+                          <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                            <th className="py-2 px-2 border-r border-slate-700 text-center w-8 text-white font-bold">#</th>
+                            <th className="py-2 px-2 border-r border-slate-700 w-24 text-white font-bold">তারিখ</th>
+                            <th className="py-2 px-2 border-r border-slate-700 w-28 text-white font-bold">চালান নং</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-center w-20 text-white font-bold">ধরন</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-white font-bold">মালের বিবরণ ও পরিমাণ</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-right w-24 text-white font-bold">মোট বিল (৳)</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-right w-24 text-white font-bold">পরিশোধ (৳)</th>
+                            <th className="py-2 px-2 text-right w-28 text-white font-bold">অবশিষ্ট বাকি / ব্যালেন্স</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {partyInvoices.length === 0 ? (
-                            <tr>
-                              <td colSpan={8} className="py-8 text-center text-slate-400">
-                                নির্বাচিত সময়ে এই পার্টির কোনো লেনদেন বা চালান পাওয়া যায়নি।
-                              </td>
-                            </tr>
-                          ) : (
-                            partyInvoices.map((inv, idx) => {
-                              const isPur = inv.mode === 'purchase';
-                              const isPaymentOnly = (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0) === 0 && (Number(inv.paidAmount) || 0) > 0;
-                              const billAmt = Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0;
-                              const paidAmt = Number(inv.paidAmount) || 0;
-                              const dueAmt = runningMap.has(inv.id) ? runningMap.get(inv.id)! : (Number(inv.remainingDue) || 0);
+                          {/* 1. Prominent Opening Balance Row */}
+                          <tr className="bg-amber-100/80 font-black border-b border-indigo-200 text-amber-950">
+                            <td className="py-1.5 px-2 border-r border-indigo-200 text-center font-mono text-slate-500">—</td>
+                            <td className="py-1.5 px-2 border-r border-indigo-200 font-mono text-[11px] font-bold text-amber-900">{periodStart || '—'}</td>
+                            <td className="py-1.5 px-2 border-r border-indigo-200 font-mono font-black text-amber-900">OPENING</td>
+                            <td className="py-1.5 px-2 border-r border-indigo-200 text-center text-[10px] font-black uppercase text-amber-900">
+                              {lang === 'bn' ? 'প্রারম্ভিক' : 'Opening'}
+                            </td>
+                            <td className="py-1.5 px-2 border-r border-indigo-200 text-[11px] font-black text-amber-950 italic">
+                              {lang === 'bn' ? 'পূর্বের প্রারম্ভিক ব্যালেন্স (Opening Balance B/F)' : 'Opening Balance (brought forward)'}
+                            </td>
+                            <td className="py-1.5 px-2 border-r border-indigo-200 text-right font-mono font-black text-amber-950">
+                              {periodOpening > 0 ? formatCurrency(periodOpening, lang) : '—'}
+                            </td>
+                            <td className="py-1.5 px-2 border-r border-indigo-200 text-right font-mono font-black text-amber-950">
+                              {periodOpening < 0 ? formatCurrency(Math.abs(periodOpening), lang) : '—'}
+                            </td>
+                            <td className="py-1.5 px-2 text-right font-mono font-black text-amber-950 text-[13px]">
+                              {periodOpening > 0 ? formatCurrency(periodOpening, lang) : periodOpening < 0 ? `${formatCurrency(Math.abs(periodOpening), lang)} (অগ্রিম)` : '০'}
+                            </td>
+                          </tr>
 
-                              return (
-                                <tr key={inv.id || idx} className={`border-b border-slate-200 ${isPaymentOnly ? 'bg-purple-50/40' : ''}`}>
-                                  <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">{idx + 1}</td>
-                                  <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">{inv.date}</td>
-                                  <td className="py-1 px-2 border-r border-slate-200 font-mono font-bold">{inv.invoiceNo}</td>
-                                  <td className="py-1 px-2 border-r border-slate-200 text-center text-[10px] font-bold uppercase">
-                                    {isPaymentOnly ? (
-                                      <span className="text-purple-700 font-black">
-                                        {inv.mode === 'sales' ? (lang === 'bn' ? 'টাকা গ্রহণ' : 'Received') : (lang === 'bn' ? 'টাকা পরিশোধ' : 'Payment')}
-                                      </span>
-                                    ) : (
-                                      <span className={isPur ? 'text-emerald-700' : 'text-blue-700'}>
-                                        {isPur ? (lang === 'bn' ? 'ক্রয়' : 'Pur') : (lang === 'bn' ? 'বিক্রয়' : 'Sale')}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="py-1 px-2 border-r border-slate-200 text-[11px]">
-                                    {isPaymentOnly
-                                      ? (inv.notes || (inv.mode === 'sales' ? (lang === 'bn' ? 'নগদ/ব্যাংক টাকা গ্রহণ (পেমেন্ট)' : 'Payment Received') : (lang === 'bn' ? 'পার্টি বিল পরিশোধ (টাকা প্রদান)' : 'Payment Given')))
-                                      : (inv.items?.map((it) => `${it.name} (${it.quantity}${it.unit || ''})`).join(', ') || '-')}
-                                  </td>
-                                  <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold">
-                                    {isPaymentOnly ? '-' : formatCurrency(billAmt, lang)}
-                                  </td>
-                                  <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-emerald-700">
-                                    {formatCurrency(paidAmt, lang)}
-                                  </td>
-                                  <td className="py-1 px-2 text-right font-mono font-bold text-rose-700">
-                                    {dueAmt > 0 ? formatCurrency(dueAmt, lang) : dueAmt < 0 ? `${formatCurrency(Math.abs(dueAmt), lang)} (অগ্রিম)` : (lang === 'bn' ? '০ (পরিশোধিত)' : '0')}
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
+                          {/* 2. Invoices & Payments */}
+                          {partyInvoices.map((inv, idx) => {
+                            const isPur = inv.mode === 'purchase';
+                            const isPaymentOnly = (Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0) === 0 && (Number(inv.paidAmount) || 0) > 0;
+                            const billAmt = Number(inv.netInvoiceAmount) || Number(inv.subtotal) || 0;
+                            const paidAmt = Number(inv.paidAmount) || 0;
+                            const dueAmt = runningMap.has(inv.id) ? runningMap.get(inv.id)! : (Number(inv.remainingDue) || 0);
+
+                            return (
+                              <tr key={inv.id || idx} className={`border-b border-indigo-100 hover:bg-indigo-50/40 ${isPaymentOnly ? 'bg-purple-50/60' : ''}`}>
+                                <td className="py-1.5 px-2 border-r border-indigo-100 text-center font-mono text-slate-500">{idx + 1}</td>
+                                <td className="py-1.5 px-2 border-r border-indigo-100 font-mono text-[11px] font-semibold text-slate-700">{inv.date}</td>
+                                <td className="py-1.5 px-2 border-r border-indigo-100 font-mono font-black text-slate-900">{inv.invoiceNo}</td>
+                                <td className="py-1.5 px-2 border-r border-indigo-100 text-center text-[10px] font-black uppercase">
+                                  {isPaymentOnly ? (
+                                    <span className="text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded font-black">
+                                      {inv.mode === 'sales' ? (lang === 'bn' ? 'টাকা গ্রহণ' : 'Received') : (lang === 'bn' ? 'টাকা পরিশোধ' : 'Payment')}
+                                    </span>
+                                  ) : (
+                                    <span className={`px-1.5 py-0.5 rounded font-black ${isPur ? 'text-emerald-800 bg-emerald-100' : 'text-blue-800 bg-blue-100'}`}>
+                                      {isPur ? (lang === 'bn' ? 'ক্রয়' : 'Pur') : (lang === 'bn' ? 'বিক্রয়' : 'Sale')}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-1.5 px-2 border-r border-indigo-100 text-[11px] font-medium text-slate-900">
+                                  {isPaymentOnly
+                                    ? (inv.notes || (inv.mode === 'sales' ? (lang === 'bn' ? 'নগদ/ব্যাংক টাকা গ্রহণ (পেমেন্ট)' : 'Payment Received') : (lang === 'bn' ? 'পার্টি বিল পরিশোধ (টাকা প্রদান)' : 'Payment Given')))
+                                    : (inv.items?.map((it) => `${it.name} (${it.quantity}${it.unit || ''})`).join(', ') || '-')}
+                                </td>
+                                <td className="py-1.5 px-2 border-r border-indigo-100 text-right font-mono font-black text-slate-900">
+                                  {isPaymentOnly ? '-' : formatCurrency(billAmt, lang)}
+                                </td>
+                                <td className="py-1.5 px-2 border-r border-indigo-100 text-right font-mono font-black text-emerald-800">
+                                  {formatCurrency(paidAmt, lang)}
+                                </td>
+                                <td className="py-1.5 px-2 text-right font-mono font-black text-rose-700 text-[12px]">
+                                  {dueAmt > 0 ? formatCurrency(dueAmt, lang) : dueAmt < 0 ? `${formatCurrency(Math.abs(dueAmt), lang)} (অগ্রিম)` : (lang === 'bn' ? '০ (পরিশোধিত)' : '0')}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot>
-                          <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                            <td colSpan={5} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
-                              মোট চালান যোগফল:
+                          <tr className="bg-gradient-to-r from-sky-100 via-indigo-100 to-sky-200 text-indigo-950 font-black text-xs border-t-2 border-indigo-400">
+                            <td colSpan={5} className="py-1.5 px-2 text-right uppercase border-r border-indigo-300 font-extrabold">
+                              {lang === 'bn' ? 'মোট চালান ও পরিশোধ যোগফল:' : 'Total Invoiced & Paid:'}
                             </td>
-                            <td className="py-1.5 px-2 text-right font-mono border-r border-slate-300">
+                            <td className="py-1.5 px-2 text-right font-mono border-r border-indigo-300 text-indigo-950 font-black">
                               {formatCurrency(totalInvoiced, lang)}
                             </td>
-                            <td className="py-1.5 px-2 text-right font-mono text-emerald-800 border-r border-slate-300">
+                            <td className="py-1.5 px-2 text-right font-mono text-emerald-950 border-r border-indigo-300 font-black">
                               {formatCurrency(totalPaid, lang)}
                             </td>
-                            <td className="py-1.5 px-2 text-right font-mono text-rose-800">
-                              {formatCurrency(currentDue, lang)}
+                            <td className="py-1.5 px-2 text-right font-mono text-rose-700 text-sm font-black">
+                              {currentDue > 0 ? formatCurrency(currentDue, lang) : currentAdvance > 0 ? `${formatCurrency(currentAdvance, lang)} (অগ্রিম)` : '০'}
                             </td>
                           </tr>
                         </tfoot>
                       </table>
                     </div>
 
-                    {/* Signatures */}
-                    <div className="flex justify-between items-end pt-12 text-xs">
-                      <div className="border-t border-slate-400 pt-1 text-center w-40 font-bold">
-                        গ্রাহক / পার্টির স্বাক্ষর
+                    {/* Unique Dynamic Signatures Section */}
+                    <div className="grid grid-cols-2 gap-6 pt-10 text-center text-xs">
+                      <div className="p-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 flex flex-col justify-between h-20">
+                        <div className="w-full border-b border-dashed border-slate-300 pb-3 text-transparent select-none">.</div>
+                        <div className="font-black text-slate-800 text-[11px] flex items-center justify-center gap-1">
+                          <span>✍️ গ্রাহক / পার্টির স্বাক্ষর</span>
+                        </div>
                       </div>
-                      <div className="border-t border-slate-400 pt-1 text-center w-48 font-bold">
-                        কর্তৃপক্ষের স্বাক্ষর ও সিলমোহর
+                      <div className="p-3 rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/40 flex flex-col justify-between h-20">
+                        <div className="w-full border-b border-dashed border-indigo-200 pb-3 text-transparent select-none">.</div>
+                        <div className="font-black text-indigo-900 text-[11px] flex items-center justify-center gap-1">
+                          <span>🏛️ কর্তৃপক্ষের স্বাক্ষর ও সিলমোহর</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -908,54 +1037,58 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
               /* Global All Parties Summary Table */
               <div className="sheet-freeze-wrapper">
                 <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                  <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
-                    <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
-                      <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
-                      <th className="py-1 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.partyName}</th>
-                      <th className="py-1 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.partyPhone}</th>
-                      <th className="py-1 px-2 border-r border-slate-300 w-20 text-center sticky top-0 bg-slate-100 dark:bg-slate-800">{t.partyType}</th>
-                      <th className="py-1 px-2 border-r border-slate-300 text-right w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.totalDueReceivable}</th>
-                      <th className="py-1 px-2 border-r border-slate-300 text-right w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.totalAdvancePayable}</th>
-                      <th className="py-1 px-2 text-center w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
+                  <thead>
+                    <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                      <th className="py-2 px-2 border-r border-slate-700 text-center w-8 text-white font-bold">{t.sl}</th>
+                      <th className="py-2 px-2 border-r border-slate-700 text-white font-bold">{t.partyName}</th>
+                      <th className="py-2 px-2 border-r border-slate-700 w-28 text-white font-bold">{t.partyPhone}</th>
+                      <th className="py-2 px-2 border-r border-slate-700 w-20 text-center text-white font-bold">{t.partyType}</th>
+                      <th className="py-2 px-2 border-r border-slate-700 text-right w-28 text-white font-bold">{t.totalDueReceivable}</th>
+                      <th className="py-2 px-2 border-r border-slate-700 text-right w-28 text-white font-bold">{t.totalAdvancePayable}</th>
+                      <th className="py-2 px-2 text-center w-20 text-white font-bold">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {parties.map((p, idx) => (
-                      <tr key={p.id} className="border-b border-slate-200">
-                        <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
+                      <tr key={p.id} className="border-b border-blue-100 hover:bg-blue-50/40">
+                        <td className="py-1.5 px-2 border-r border-blue-100 text-center font-mono text-slate-500">
                           {formatNumber(idx + 1, lang)}
                         </td>
-                        <td className="py-1 px-2 border-r border-slate-200 font-bold">
+                        <td className="py-1.5 px-2 border-r border-blue-100 font-bold text-slate-900">
                           {p.name}
                           {p.address && <span className="block text-[10px] text-slate-500 font-normal">{p.address}</span>}
                         </td>
-                        <td className="py-1 px-2 border-r border-slate-200 font-mono text-[11px]">
+                        <td className="py-1.5 px-2 border-r border-blue-100 font-mono text-[11px] font-semibold text-slate-700">
                           {p.phone || '-'}
                         </td>
-                        <td className="py-1 px-2 border-r border-slate-200 text-center uppercase text-[10px]">
+                        <td className="py-1.5 px-2 border-r border-blue-100 text-center uppercase text-[10px] font-bold text-slate-700">
                           {p.type}
                         </td>
-                        <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-rose-700">
+                        <td className="py-1.5 px-2 border-r border-blue-100 text-right font-mono font-black text-rose-700">
                           {p.currentDue > 0 ? formatCurrency(p.currentDue, lang) : '-'}
                         </td>
-                        <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-blue-700">
+                        <td className="py-1.5 px-2 border-r border-blue-100 text-right font-mono font-black text-blue-700">
                           {p.currentAdvance > 0 ? formatCurrency(p.currentAdvance, lang) : '-'}
                         </td>
-                        <td className="py-1 px-2 text-center text-[10px] font-semibold">
-                          {p.currentDue > 0 ? 'বাকি' : p.currentAdvance > 0 ? 'জমা' : 'ক্লিয়ার'}
+                        <td className="py-1.5 px-2 text-center text-[10px]">
+                          <span className={`inline-block px-2 py-0.5 rounded font-black ${
+                            p.currentDue > 0 ? 'bg-rose-100 text-rose-800' : p.currentAdvance > 0 ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {p.currentDue > 0 ? 'বাকি' : p.currentAdvance > 0 ? 'জমা' : 'ক্লিয়ার'}
+                          </span>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                      <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                    <tr className="bg-gradient-to-r from-sky-100 via-blue-100 to-sky-200 text-slate-950 font-black text-xs border-t-2 border-blue-400">
+                      <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-blue-300 font-extrabold">
                         {lang === 'bn' ? 'মোট হিসাব সমষ্টী:' : 'Total Summary:'}
                       </td>
-                      <td className="py-1.5 px-2 text-right font-mono text-rose-800 border-r border-slate-300">
+                      <td className="py-1.5 px-2 text-right font-mono text-rose-700 border-r border-blue-300 text-sm font-black">
                         {formatCurrency(parties.reduce((s, p) => s + p.currentDue, 0), lang)}
                       </td>
-                      <td className="py-1.5 px-2 text-right font-mono text-blue-800 border-r border-slate-300">
+                      <td className="py-1.5 px-2 text-right font-mono text-blue-700 border-r border-blue-300 text-sm font-black">
                         {formatCurrency(parties.reduce((s, p) => s + p.currentAdvance, 0), lang)}
                       </td>
                       <td></td>
@@ -980,79 +1113,81 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                 return (
                   <div className="space-y-4">
                     {/* Header Banner */}
-                    <div className="p-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl flex justify-between items-center text-xs">
+                    <div className="p-3.5 bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-950 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs border border-purple-500/60 shadow-lg">
                       <div>
-                        <span className="font-bold uppercase tracking-wider text-emerald-400">
-                          {lang === 'bn' ? 'ব্যক্তিগত স্টাফ পে-স্লিপ ও বেতন রসিদ' : 'Individual Staff Payslip & Salary Voucher'}
-                        </span>
-                        <p className="text-[11px] text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <span className="font-black uppercase tracking-wider text-pink-300 text-sm sm:text-base drop-shadow-xs">
+                            {lang === 'bn' ? 'ব্যক্তিগত স্টাফ পে-স্লিপ ও বেতন রসিদ' : 'Individual Staff Payslip & Salary Voucher'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-purple-200 mt-1">
                           {lang === 'bn' ? `বেতনের মাস: ${formatMonthDisplay(selectedMonth)} (${isOffice ? '৩০ দিন বেসিস, নো ওটি/লেট' : '২৬ দিন বেসিস, শুক্রবার ওটি'})` : `Salary Period: ${formatMonthDisplay(selectedMonth)} (${isOffice ? '30-Day Basis' : '26-Day Basis'})`}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
                         <span
-                          className={`font-bold text-[11px] px-2.5 py-0.5 rounded-full border ${
+                          className={`font-black text-xs px-3 py-1 rounded-xl border shadow-xs ${
                             paymentStatus === 'Paid'
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              ? 'bg-emerald-500/30 text-emerald-300 border-emerald-400'
+                              : 'bg-amber-500/30 text-amber-300 border-amber-400'
                           }`}
                         >
                           {paymentStatus === 'Paid'
-                            ? lang === 'bn' ? '✓ পরিশোধিত (PAID)' : '✓ PAID'
-                            : lang === 'bn' ? '⏳ বকেয়া (UNPAID)' : '⏳ UNPAID'}
+                            ? lang === 'bn' ? '✓ পরিশোধ সম্পন্ন (PAID)' : '✓ PAID'
+                            : lang === 'bn' ? '⏳ বকেয়া বেতন (UNPAID)' : '⏳ UNPAID'}
                         </span>
-                        <span className="font-mono text-xs bg-emerald-700/60 px-2 py-0.5 rounded border border-emerald-500/40">
+                        <span className="font-mono text-xs font-bold bg-purple-700/80 text-white px-2.5 py-1 rounded-xl border border-purple-400 shadow-xs">
                           ID: {stf.loginCode || stf.id}
                         </span>
                       </div>
                     </div>
 
                     {/* Staff Profile Card */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-pink-50 border border-purple-200 rounded-2xl text-xs shadow-2xs">
                       <div>
-                        <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'স্টাফের নাম:' : 'Staff Name:'}</span>
-                        <strong className="text-slate-900 text-sm">{stf.name}</strong>
+                        <span className="text-[10px] text-purple-800 font-bold block">{lang === 'bn' ? 'স্টাফের নাম:' : 'Staff Name:'}</span>
+                        <strong className="text-purple-950 text-sm font-black">{stf.name}</strong>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'পদবী ও শাখা:' : 'Designation & Dept:'}</span>
-                        <strong className="text-slate-800">{stf.designation} ({stf.category === 'office' ? 'Office' : 'Processing'})</strong>
+                        <span className="text-[10px] text-purple-800 font-bold block">{lang === 'bn' ? 'পদবী ও শাখা:' : 'Designation & Dept:'}</span>
+                        <strong className="text-purple-900 font-bold">{stf.designation} ({stf.category === 'office' ? 'Office' : 'Processing'})</strong>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'মোবাইল নম্বর:' : 'Phone:'}</span>
-                        <strong className="text-slate-800 font-mono">{stf.phone}</strong>
+                        <span className="text-[10px] text-purple-800 font-bold block">{lang === 'bn' ? 'মোবাইল নম্বর:' : 'Phone:'}</span>
+                        <strong className="text-purple-900 font-mono font-bold">{stf.phone}</strong>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? `দৈনিক রেট (${isOffice ? '৩০ দিন' : '২৬ দিন'}):` : `Daily Rate (${isOffice ? '30d' : '26d'}):`}</span>
-                        <strong className="text-slate-800 font-mono">৳{dailyRate.toLocaleString()} / দিন</strong>
+                        <span className="text-[10px] text-purple-800 font-bold block">{lang === 'bn' ? `দৈনিক রেট (${isOffice ? '৩০ দিন' : '২৬ দিন'}):` : `Daily Rate (${isOffice ? '30d' : '26d'}):`}</span>
+                        <strong className="text-purple-950 font-mono font-black">৳{dailyRate.toLocaleString()} / দিন</strong>
                       </div>
                     </div>
 
                     {/* Summary Metric Boxes */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="p-3 rounded-xl border border-slate-200 bg-white">
-                        <span className="text-[10px] text-slate-500 block">{t.baseSalary}</span>
-                        <div className="text-base font-black font-mono text-slate-900 mt-0.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 shadow-2xs">
+                        <span className="text-[10px] text-indigo-900 font-extrabold block">{t.baseSalary}</span>
+                        <div className="text-base font-black font-mono text-indigo-950 mt-0.5">
                           {formatCurrency(stf.baseSalary, lang)}
                         </div>
                         {absentDays > 0 ? (
-                          <span className="text-[9px] text-rose-600 block">
+                          <span className="text-[9px] text-rose-700 font-bold block mt-0.5">
                             {lang === 'bn' ? `অনুপস্থিত ${absentDays} দিন (-৳${absentDeduction.toLocaleString()})` : `Absent ${absentDays}d (-৳${absentDeduction})`}
                           </span>
                         ) : (
-                          <span className="text-[9px] text-emerald-600 block">
+                          <span className="text-[9px] text-emerald-700 font-bold block mt-0.5">
                             {lang === 'bn' ? `পূর্ণ বেতন (${isOffice ? '৩০ দিন' : '২৬ দিন'} বেসিস)` : `Full (${isOffice ? '30' : '26'} Days Basis)`}
                           </span>
                         )}
                       </div>
 
-                      <div className="p-3 rounded-xl border border-teal-200 bg-teal-50/50">
-                        <span className="text-[10px] text-teal-800 block">
+                      <div className="p-3 rounded-2xl border border-teal-200 bg-teal-50/80 shadow-2xs">
+                        <span className="text-[10px] text-teal-900 font-extrabold block">
                           {lang === 'bn' ? (isOffice ? 'ওভারটাইম (প্রযোজ্য নয়)' : 'ওভারটাইম আয় (৬০৳/ঘণ্টা)') : (isOffice ? 'OT (N/A)' : 'OT Earnings (60৳/hr)')}
                         </span>
-                        <div className="text-base font-black font-mono text-teal-700 mt-0.5">
+                        <div className="text-base font-black font-mono text-teal-950 mt-0.5">
                           {isOffice ? '-' : totalOtMoney > 0 ? `+${formatCurrency(totalOtMoney, lang)}` : '-'}
                         </div>
-                        <span className="text-[9px] text-teal-600 block">
+                        <span className="text-[9px] text-teal-700 font-bold block mt-0.5">
                           {isOffice
                             ? (lang === 'bn' ? 'অফিস স্টাফে ওটি নেই' : 'No OT for office staff')
                             : totalOtHours > 0
@@ -1061,14 +1196,14 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                         </span>
                       </div>
 
-                      <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50">
-                        <span className="text-[10px] text-rose-800 block">
+                      <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/80 shadow-2xs">
+                        <span className="text-[10px] text-rose-900 font-extrabold block">
                           {lang === 'bn' ? 'অগ্রিম ও লেট কর্তন' : 'Advance & Late Deductions'}
                         </span>
-                        <div className="text-base font-black font-mono text-rose-700 mt-0.5">
+                        <div className="text-base font-black font-mono text-rose-950 mt-0.5">
                           -{formatCurrency(totalAdv + lateDeduction, lang)}
                         </div>
-                        <span className="text-[9px] text-rose-600 block">
+                        <span className="text-[9px] text-rose-700 font-bold block mt-0.5">
                           {lateDeduction > 0
                             ? (lang === 'bn' ? `অগ্রিম: ৳${totalAdv}, লেট: ৳${lateDeduction}` : `Adv: ৳${totalAdv}, Late: ৳${lateDeduction}`)
                             : totalAdv > 0
@@ -1077,14 +1212,14 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                         </span>
                       </div>
 
-                      <div className="p-3 rounded-xl border border-emerald-300 bg-emerald-50">
-                        <span className="text-[10px] text-emerald-900 font-bold block">
+                      <div className="p-3 rounded-2xl border border-emerald-300 bg-emerald-50/90 shadow-2xs ring-1 ring-emerald-300">
+                        <span className="text-[10px] text-emerald-950 font-black block">
                           {lang === 'bn' ? 'প্রদেয় নিট বেতন (Net Payable)' : 'Net Payable Salary'}
                         </span>
-                        <div className="text-lg font-black font-mono text-emerald-800 mt-0.5">
+                        <div className="text-lg font-black font-mono text-emerald-950 mt-0.5">
                           {formatCurrency(netPayable, lang)}
                         </div>
-                        <span className="text-[9px] text-emerald-700 font-semibold block">
+                        <span className="text-[9px] text-emerald-800 font-extrabold block mt-0.5">
                           {paymentStatus === 'Paid'
                             ? lang === 'bn' ? '✅ পরিশোধ সম্পন্ন' : '✅ Paid in Full'
                             : lang === 'bn' ? '⏳ পরিশোধযোগ্য বকেয়া' : '⏳ Pending Payment'}
@@ -1095,10 +1230,10 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     {/* Attendance Logs Table for this specific staff */}
                     <div className="space-y-1.5 pt-2">
                       <div className="flex items-center justify-between text-xs">
-                        <strong className="text-slate-800">
+                        <strong className="text-purple-950 font-black">
                           {lang === 'bn' ? `${formatMonthDisplay(selectedMonth)} বিস্তারিত হাজিরার তালিকা:` : `${formatMonthDisplay(selectedMonth)} Detailed Attendance Log:`}
                         </strong>
-                        <span className="text-[11px] text-slate-600 font-medium">
+                        <span className="text-[11px] text-purple-900 font-bold">
                           {lang === 'bn'
                             ? `উপস্থিত: ${presentDays} দিন | ছুটি (পেইড): ${leaveDays} দিন | অনুপস্থিত: ${absentDays} দিন`
                             : `Present: ${presentDays}d | Leave (Paid): ${leaveDays}d | Absent: ${absentDays}d`}
@@ -1107,18 +1242,18 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
                       <div className="sheet-freeze-wrapper">
                         <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                          <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
-                            <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
-                              <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.invoiceDate}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 text-center w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.attendanceStatus}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 text-center w-16 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.inTime}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 text-center w-16 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.outTime}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 text-center w-16 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.lateMinutes}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 text-center w-14 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.otHours}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'ওটি টাকা (৬০x)' : 'OT Amount'}</th>
-                              <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'অগ্রিম' : 'Advance'}</th>
-                              <th className="py-1 px-2 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
+                          <thead className="sticky top-0 z-20">
+                            <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                              <th className="py-2 px-2 border-r border-slate-700 text-center w-8 sticky top-0 text-white font-bold">{t.sl}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 w-24 sticky top-0 text-white font-bold">{t.invoiceDate}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 text-center w-24 sticky top-0 text-white font-bold">{t.attendanceStatus}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 text-center w-16 sticky top-0 text-white font-bold">{t.inTime}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 text-center w-16 sticky top-0 text-white font-bold">{t.outTime}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 text-center w-16 sticky top-0 text-white font-bold">{t.lateMinutes}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 text-center w-14 sticky top-0 text-white font-bold">{t.otHours}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 text-right w-20 sticky top-0 text-white font-bold">{lang === 'bn' ? 'ওটি টাকা (৬০x)' : 'OT Amount'}</th>
+                              <th className="py-2 px-2 border-r border-slate-700 text-right w-20 sticky top-0 text-white font-bold">{lang === 'bn' ? 'অগ্রিম' : 'Advance'}</th>
+                              <th className="py-2 px-2 sticky top-0 text-white font-bold">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
                             </tr>
                           </thead>
                         <tbody>
@@ -1188,20 +1323,20 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                           )}
                         </tbody>
                         <tfoot>
-                          <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                            <td colSpan={6} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                          <tr className="bg-gradient-to-r from-purple-100 via-pink-100 to-indigo-100 text-purple-950 font-black text-xs border-t-2 border-purple-400">
+                            <td colSpan={6} className="py-1.5 px-2 text-right uppercase border-r border-purple-300 font-extrabold">
                               {lang === 'bn' ? 'মোট উপার্জিত ও কর্তন:' : 'Total OT & Deductions:'}
                             </td>
-                            <td className="py-1.5 px-2 text-center font-mono text-teal-800 border-r border-slate-300">
+                            <td className="py-1.5 px-2 text-center font-mono text-purple-900 border-r border-purple-300 font-bold">
                               {totalOtHours > 0 ? `${formatNumber(totalOtHours, lang)} hrs` : '-'}
                             </td>
-                            <td className="py-1.5 px-2 text-right font-mono text-emerald-800 border-r border-slate-300 font-bold">
+                            <td className="py-1.5 px-2 text-right font-mono text-emerald-800 border-r border-purple-300 font-black">
                               {totalOtMoney > 0 ? formatCurrency(totalOtMoney, lang) : '-'}
                             </td>
-                            <td className="py-1.5 px-2 text-right font-mono text-rose-800 border-r border-slate-300 font-bold">
+                            <td className="py-1.5 px-2 text-right font-mono text-rose-700 border-r border-purple-300 font-black">
                               {totalAdv > 0 ? `-${formatCurrency(totalAdv, lang)}` : '-'}
                             </td>
-                            <td className="py-1.5 px-2 text-emerald-900 font-black font-mono">
+                            <td className="py-1.5 px-2 text-purple-950 font-black font-mono text-sm">
                               = {formatCurrency(netPayable, lang)}
                             </td>
                           </tr>
@@ -1248,43 +1383,43 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                 return (
                   <>
                     {/* Header Banner with Month */}
-                    <div className="p-2.5 bg-slate-900 text-white rounded-lg text-xs flex flex-wrap justify-between items-center gap-2">
+                    <div className="p-3 bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-950 text-white rounded-2xl text-xs flex flex-wrap justify-between items-center gap-2 border border-purple-500/60 shadow-lg">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-emerald-400 font-mono text-sm">
+                        <span className="font-black text-pink-300 font-mono text-sm drop-shadow-xs">
                           {lang === 'bn' ? `বেতনের মাস: ${formatMonthDisplay(selectedMonth)}` : `Salary Month: ${formatMonthDisplay(selectedMonth)}`}
                         </span>
-                        <span className="text-[10px] text-slate-300">
+                        <span className="text-[11px] text-purple-200 bg-white/10 px-2.5 py-0.5 rounded-lg border border-white/20">
                           ({staffComputedList.length} {lang === 'bn' ? 'জন স্টাফ' : 'staff'})
                         </span>
                       </div>
-                      <span className="text-[11px] text-slate-300">
+                      <span className="text-[11px] text-purple-200">
                         {t.otRateNotice} | অফিস: ১০AM-১০PM, প্রসেসিং: ৯AM-৭PM
                       </span>
                     </div>
 
                     {/* Executive Summary Cards on Print Sheet */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="p-2 rounded-lg border border-slate-300 bg-slate-50 text-xs">
-                        <span className="text-[10px] text-slate-600 block">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/80 shadow-2xs">
+                        <span className="text-[10px] text-purple-900 font-extrabold block">
                           {lang === 'bn' ? 'মোট পে-রোল বিল (Net Salary):' : 'Total Net Payroll:'}
                         </span>
-                        <strong className="text-sm font-mono text-slate-900 block">
+                        <strong className="text-base font-black font-mono text-purple-950 block mt-0.5">
                           {formatCurrency(totalPayroll, lang)}
                         </strong>
                       </div>
-                      <div className="p-2 rounded-lg border border-emerald-300 bg-emerald-50 text-xs">
-                        <span className="text-[10px] text-emerald-800 block">
+                      <div className="p-3 rounded-2xl border border-emerald-300 bg-emerald-50/80 shadow-2xs">
+                        <span className="text-[10px] text-emerald-900 font-extrabold block">
                           {lang === 'bn' ? `মোট পরিশোধিত (${paidCount} জন):` : `Total Paid (${paidCount} staff):`}
                         </span>
-                        <strong className="text-sm font-mono text-emerald-800 block">
+                        <strong className="text-base font-black font-mono text-emerald-950 block mt-0.5">
                           {formatCurrency(totalPaid, lang)}
                         </strong>
                       </div>
-                      <div className="p-2 rounded-lg border border-amber-300 bg-amber-50 text-xs">
-                        <span className="text-[10px] text-amber-800 block">
+                      <div className="p-3 rounded-2xl border border-amber-300 bg-amber-50/80 shadow-2xs">
+                        <span className="text-[10px] text-amber-900 font-extrabold block">
                           {lang === 'bn' ? `মোট বকেয়া (${unpaidCount} জন):` : `Total Unpaid (${unpaidCount} staff):`}
                         </span>
-                        <strong className="text-sm font-mono text-amber-800 block">
+                        <strong className="text-base font-black font-mono text-amber-950 block mt-0.5">
                           {formatCurrency(totalUnpaid, lang)}
                         </strong>
                       </div>
@@ -1292,17 +1427,17 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
                     <div className="sheet-freeze-wrapper">
                       <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                        <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
-                          <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.staffName}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.category}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.baseSalary}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-center w-14 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.otHours}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'ওটি টাকা' : 'OT (60x)'}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'অগ্রিম/লেট কর্তন' : 'Adv / Late'}</th>
-                            <th className="py-1 px-2 border-r border-slate-300 text-right w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.netSalary}</th>
-                            <th className="py-1 px-2 text-center w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
+                        <thead className="sticky top-0 z-20">
+                          <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                            <th className="py-2 px-2 border-r border-slate-700 text-center w-8 sticky top-0 text-white font-bold">{t.sl}</th>
+                            <th className="py-2 px-2 border-r border-slate-700 sticky top-0 text-white font-bold">{t.staffName}</th>
+                            <th className="py-2 px-2 border-r border-slate-700 w-20 sticky top-0 text-center text-white font-bold">{t.category}</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-right w-20 sticky top-0 text-white font-bold">{t.baseSalary}</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-center w-14 sticky top-0 text-white font-bold">{t.otHours}</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-right w-20 sticky top-0 text-white font-bold">{lang === 'bn' ? 'ওটি টাকা' : 'OT (60x)'}</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-right w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'অগ্রিম/লেট কর্তন' : 'Adv / Late'}</th>
+                            <th className="py-2 px-2 border-r border-slate-700 text-right w-24 sticky top-0 text-white font-bold">{t.netSalary}</th>
+                            <th className="py-2 px-2 text-center w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
                           </tr>
                         </thead>
                       <tbody>
@@ -1310,39 +1445,39 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                           const isOffice = stf.category === 'office';
 
                           return (
-                            <tr key={stf.id} className="border-b border-slate-200">
-                              <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
+                            <tr key={stf.id} className="border-b border-purple-100 hover:bg-purple-50/40">
+                              <td className="py-1.5 px-2 border-r border-purple-100 text-center font-mono text-slate-500">
                                 {formatNumber(idx + 1, lang)}
                               </td>
-                              <td className="py-1 px-2 border-r border-slate-200 font-bold">
+                              <td className="py-1.5 px-2 border-r border-purple-100 font-bold text-slate-900">
                                 {stf.name}
-                                <span className="block text-[10px] text-slate-500 font-normal">
-                                  {stf.designation} ({stf.phone}) • ID: <strong className="text-slate-700 dark:text-slate-300">{stf.loginCode || stf.id}</strong>
+                                <span className="block text-[10px] text-purple-700 font-normal">
+                                  {stf.designation} ({stf.phone}) • ID: <strong className="text-purple-950">{stf.loginCode || stf.id}</strong>
                                 </span>
                               </td>
-                              <td className="py-1 px-2 border-r border-slate-200 capitalize text-[10px]">
+                              <td className="py-1.5 px-2 border-r border-purple-100 capitalize text-[10px] text-center font-bold text-slate-700">
                                 {stf.category}
                               </td>
-                              <td className="py-1 px-2 border-r border-slate-200 text-right font-mono">
+                              <td className="py-1.5 px-2 border-r border-purple-100 text-right font-mono font-bold text-slate-900">
                                 {formatCurrency(stf.baseSalary, lang)}
                               </td>
-                              <td className="py-1 px-2 border-r border-slate-200 text-center font-mono font-bold text-teal-700">
+                              <td className="py-1.5 px-2 border-r border-purple-100 text-center font-mono font-bold text-teal-700">
                                 {stf.totalOt > 0 ? `${formatNumber(stf.totalOt, lang)} hrs` : '-'}
                               </td>
-                              <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-bold text-emerald-800">
+                              <td className="py-1.5 px-2 border-r border-purple-100 text-right font-mono font-bold text-emerald-800">
                                 {stf.otMoney > 0 ? formatCurrency(stf.otMoney, lang) : '-'}
                               </td>
-                              <td className="py-1 px-2 border-r border-slate-200 text-right font-mono text-rose-700">
+                              <td className="py-1.5 px-2 border-r border-purple-100 text-right font-mono font-bold text-rose-700">
                                 {(stf.totalAdv > 0 || stf.lateDeduction > 0)
                                   ? `-${formatCurrency(stf.totalAdv + stf.lateDeduction, lang)}`
                                   : '-'}
                               </td>
-                              <td className="py-1 px-2 border-r border-slate-200 text-right font-mono font-black text-slate-900">
+                              <td className="py-1.5 px-2 border-r border-purple-100 text-right font-mono font-black text-purple-950 text-[13px]">
                                 {formatCurrency(stf.net, lang)}
                               </td>
-                              <td className="py-1 px-2 text-center">
+                              <td className="py-1.5 px-2 text-center">
                                 <span
-                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  className={`inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-black ${
                                     stf.paymentStatus === 'Paid'
                                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                       : 'bg-amber-100 text-amber-800 border border-amber-300'
@@ -1358,18 +1493,18 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                         })}
                       </tbody>
                       <tfoot>
-                        <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                          <td colSpan={3} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                        <tr className="bg-gradient-to-r from-purple-100 via-pink-100 to-indigo-100 text-purple-950 font-black text-xs border-t-2 border-purple-400">
+                          <td colSpan={3} className="py-1.5 px-2 text-right uppercase border-r border-purple-300 font-extrabold">
                             {lang === 'bn' ? 'মোট পে-রোল বিল:' : 'Total Payroll:'}
                           </td>
-                          <td className="py-1.5 px-2 text-right font-mono border-r border-slate-300">
+                          <td className="py-1.5 px-2 text-right font-mono border-r border-purple-300 text-purple-950 font-bold">
                             {formatCurrency(staffComputedList.reduce((s, st) => s + st.baseSalary, 0), lang)}
                           </td>
-                          <td colSpan={3} className="border-r border-slate-300"></td>
-                          <td className="py-1.5 px-2 text-right font-mono text-emerald-800 font-black border-r border-slate-300">
+                          <td colSpan={3} className="border-r border-purple-300"></td>
+                          <td className="py-1.5 px-2 text-right font-mono text-purple-950 font-black border-r border-purple-300 text-sm">
                             {formatCurrency(totalPayroll, lang)}
                           </td>
-                          <td className="py-1.5 px-2 text-center text-[10px] font-mono text-slate-700">
+                          <td className="py-1.5 px-2 text-center text-[10px] font-mono text-purple-900 font-bold">
                             {paidCount}P / {unpaidCount}U
                           </td>
                         </tr>
@@ -1407,68 +1542,68 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
               return (
                 <div className="space-y-4">
                   {/* Executive Header Banner */}
-                  <div className="p-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl flex justify-between items-center text-xs">
+                  <div className="p-3.5 bg-gradient-to-r from-amber-950 via-orange-950 to-slate-950 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs border border-amber-500/60 shadow-lg">
                     <div>
-                      <span className="font-bold uppercase tracking-wider text-amber-400 text-sm block">
+                      <span className="font-black uppercase tracking-wider text-amber-300 text-sm sm:text-base block drop-shadow-xs">
                         {lang === 'bn' ? 'অফিস পেটি ক্যাশ ও পরিচালন খরচ বিবরণী' : 'Office Petty Cash & Expense Statement'}
                       </span>
-                      <p className="text-[11px] text-slate-300">
+                      <p className="text-[11px] text-amber-200 mt-0.5">
                         {lang === 'bn' ? `হিসাবের মাস/সময়কাল: ${formatMonthDisplay(selectedMonth)}` : `Statement Period: ${formatMonthDisplay(selectedMonth)}`}
                       </p>
                     </div>
                     <div className="text-right">
-                      <span className="font-mono text-xs bg-white/10 px-3 py-1 rounded-lg border border-white/20">
+                      <span className="font-mono text-xs font-bold bg-amber-700/80 text-white px-3 py-1 rounded-xl border border-amber-400 shadow-xs">
                         {lang === 'bn' ? 'মোট এন্ট্রি:' : 'Total Entries:'} {monthExpenses.length}
                       </span>
                     </div>
                   </div>
 
                   {/* 4 Executive Summary KPI Cards (Opening, In, Out, Closing) */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="p-2.5 rounded-xl border border-slate-300 bg-slate-50 text-xs">
-                      <span className="text-[10px] text-slate-700 font-bold block">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-3 rounded-2xl border border-amber-200 bg-amber-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-amber-900 font-extrabold block">
                         {lang === 'bn' ? 'প্রারম্ভিক ব্যালেন্স (Opening O/B)' : 'Opening Balance (O/B)'}
                       </span>
-                      <div className="text-base font-black font-mono text-slate-900 mt-0.5">
+                      <div className="text-base font-black font-mono text-amber-950 mt-0.5">
                         {formatCurrency(openingBalance, lang)}
                       </div>
-                      <span className="text-[9px] text-slate-500">
+                      <span className="text-[9px] text-amber-700 font-bold">
                         {lang === 'bn' ? 'শুরুর স্থিতি' : 'Start of period'}
                       </span>
                     </div>
 
-                    <div className="p-2.5 rounded-xl border border-teal-300 bg-teal-50 text-xs">
-                      <span className="text-[10px] text-teal-800 font-semibold block">
+                    <div className="p-3 rounded-2xl border border-teal-200 bg-teal-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-teal-900 font-extrabold block">
                         {lang === 'bn' ? 'ফান্ড জমা (Cash In)' : 'Cash In (+)'}
                       </span>
-                      <div className="text-base font-black font-mono text-teal-900 mt-0.5">
+                      <div className="text-base font-black font-mono text-teal-950 mt-0.5">
                         +{formatCurrency(totalCashIn, lang)}
                       </div>
-                      <span className="text-[9px] text-teal-700">
+                      <span className="text-[9px] text-teal-700 font-bold">
                         {lang === 'bn' ? 'মেয়াদকালীন জমা' : 'Period refill'}
                       </span>
                     </div>
 
-                    <div className="p-2.5 rounded-xl border border-rose-300 bg-rose-50 text-xs">
-                      <span className="text-[10px] text-rose-800 font-bold block">
+                    <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-rose-900 font-extrabold block">
                         {lang === 'bn' ? 'অফিস খরচ (Cash Out)' : 'Cash Out (-)'}
                       </span>
-                      <div className="text-base font-black font-mono text-rose-900 mt-0.5">
+                      <div className="text-base font-black font-mono text-rose-950 mt-0.5">
                         -{formatCurrency(totalCashOut, lang)}
                       </div>
-                      <span className="text-[9px] text-rose-700">
+                      <span className="text-[9px] text-rose-700 font-bold">
                         {lang === 'bn' ? 'মেয়াদকালীন খরচ' : 'Period expenses'}
                       </span>
                     </div>
 
-                    <div className={`p-2.5 rounded-xl border text-xs ${closingBalance >= 0 ? 'border-emerald-300 bg-emerald-50' : 'border-rose-400 bg-rose-100'}`}>
-                      <span className="text-[10px] font-bold block text-slate-700">
+                    <div className={`p-3 rounded-2xl border text-xs shadow-2xs ${closingBalance >= 0 ? 'border-emerald-300 bg-emerald-50/90 ring-1 ring-emerald-300' : 'border-rose-400 bg-rose-50/90 ring-1 ring-rose-300'}`}>
+                      <span className="text-[10px] font-black block text-slate-800">
                         {lang === 'bn' ? 'সমাপনী ব্যালেন্স (Closing C/B)' : 'Closing Balance (C/B)'}
                       </span>
-                      <div className={`text-base font-black font-mono mt-0.5 ${closingBalance >= 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
+                      <div className={`text-base font-black font-mono mt-0.5 ${closingBalance >= 0 ? 'text-emerald-950' : 'text-rose-950'}`}>
                         {formatCurrency(closingBalance, lang)}
                       </div>
-                      <span className={`text-[9px] ${closingBalance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      <span className={`text-[9px] font-bold ${closingBalance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {closingBalance >= 0 ? (lang === 'bn' ? 'উদ্বৃত্ত ক্যাশ' : 'Net balance') : (lang === 'bn' ? 'ঘাটতি' : 'Deficit')}
                       </span>
                     </div>
@@ -1477,15 +1612,15 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                   {/* Expense Ledger Table */}
                   <div className="sheet-freeze-wrapper">
                     <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
-                      <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800">
-                        <tr className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 uppercase text-[10px] font-bold border-b border-slate-300">
-                          <th className="py-1.5 px-2 border-r border-slate-300 text-center w-8 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.sl}</th>
-                          <th className="py-1.5 px-2 border-r border-slate-300 w-24 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.invoiceDate}</th>
-                          <th className="py-1.5 px-2 border-r border-slate-300 text-center w-20 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'ধরন' : 'Type'}</th>
-                          <th className="py-1.5 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{t.category}</th>
-                          <th className="py-1.5 px-2 border-r border-slate-300 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'খরচ / জমার বিবরণ' : 'Description / Title'}</th>
-                          <th className="py-1.5 px-2 border-r border-slate-300 w-28 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'গ্রহীতা / পেয়ি' : 'Paid To'}</th>
-                          <th className="py-1.5 px-2 text-right w-32 sticky top-0 bg-slate-100 dark:bg-slate-800">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
+                      <thead className="sticky top-0 z-20">
+                        <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-8 sticky top-0 text-white font-bold">{t.sl}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-24 sticky top-0 text-white font-bold">{t.invoiceDate}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-20 sticky top-0 text-white font-bold">{lang === 'bn' ? 'ধরন' : 'Type'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-28 sticky top-0 text-white font-bold">{t.category}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 sticky top-0 text-white font-bold">{lang === 'bn' ? 'খরচ / জমার বিবরণ' : 'Description / Title'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-28 sticky top-0 text-white font-bold">{lang === 'bn' ? 'গ্রহীতা / পেয়ি' : 'Paid To'}</th>
+                          <th className="py-2 px-2 text-right w-32 sticky top-0 text-white font-bold">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
                         </tr>
                       </thead>
                     <tbody>
@@ -1499,21 +1634,21 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                         monthExpenses.map((e, idx) => {
                           const isCashIn = e.type === 'in';
                           return (
-                            <tr key={e.id} className="border-b border-slate-200">
-                              <td className="py-1.5 px-2 border-r border-slate-200 text-center font-mono">
+                            <tr key={e.id} className="border-b border-amber-100 hover:bg-amber-50/40">
+                              <td className="py-1.5 px-2 border-r border-amber-100 text-center font-mono text-slate-500">
                                 {formatNumber(idx + 1, lang)}
                               </td>
-                              <td className="py-1.5 px-2 border-r border-slate-200 font-mono text-[11px]">
+                              <td className="py-1.5 px-2 border-r border-amber-100 font-mono text-[11px] font-semibold text-slate-700">
                                 {formatDate(e.date, lang)}
                               </td>
-                              <td className="py-1.5 px-2 border-r border-slate-200 text-center">
-                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                              <td className="py-1.5 px-2 border-r border-amber-100 text-center">
+                                <span className={`inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-black ${
                                   isCashIn ? 'bg-teal-100 text-teal-800 border border-teal-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                                 }`}>
                                   {isCashIn ? (lang === 'bn' ? 'জমা (+)' : 'IN (+)') : (lang === 'bn' ? 'খরচ (-)' : 'OUT (-)')}
                                 </span>
                               </td>
-                              <td className="py-1.5 px-2 border-r border-slate-200 capitalize text-[10px]">
+                              <td className="py-1.5 px-2 border-r border-amber-100 capitalize text-[10px] font-bold text-slate-700">
                                 {e.category === 'tea_snacks' || e.category === 'food_tea' || e.category === 'tea_food'
                                   ? (lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks')
                                   : e.category === 'courier_bill'
@@ -1536,14 +1671,14 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                                   ? (lang === 'bn' ? 'দোকান/অফিস ভাড়া' : 'Rent')
                                   : (lang === 'bn' ? 'অন্যান্য' : 'Other')}
                               </td>
-                              <td className="py-1.5 px-2 border-r border-slate-200 font-medium">
-                                <div>{e.title}</div>
+                              <td className="py-1.5 px-2 border-r border-amber-100 font-medium text-slate-900">
+                                <div className="font-bold">{e.title}</div>
                                 {e.notes && <div className="text-[10px] text-slate-500 italic">{e.notes}</div>}
                               </td>
-                              <td className="py-1.5 px-2 border-r border-slate-200 text-slate-700">
+                              <td className="py-1.5 px-2 border-r border-amber-100 text-slate-700 font-medium">
                                 {e.paidTo || '-'}
                               </td>
-                              <td className="py-1.5 px-2 text-right font-mono font-bold">
+                              <td className="py-1.5 px-2 text-right font-mono font-black text-[12px]">
                                 <span className={isCashIn ? 'text-teal-700' : 'text-rose-700'}>
                                   {isCashIn ? '+' : '-'}{formatCurrency(e.amount, lang)}
                                 </span>
@@ -1554,17 +1689,17 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                       )}
                     </tbody>
                     <tfoot>
-                      <tr className="bg-slate-100 font-black text-xs border-t-2 border-slate-800">
-                        <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-slate-300">
+                      <tr className="bg-gradient-to-r from-amber-100 via-yellow-100 to-amber-200 text-amber-950 font-black text-xs border-t-2 border-amber-400">
+                        <td colSpan={4} className="py-1.5 px-2 text-right uppercase border-r border-amber-300 font-extrabold">
                           {lang === 'bn' ? 'মোট হিসাব বিবরণী:' : 'Total Statement Summary:'}
                         </td>
-                        <td colSpan={2} className="py-1.5 px-2 border-r border-slate-300 text-slate-700 text-[11px]">
-                          <span>{lang === 'bn' ? 'ফান্ড জমা:' : 'Cash In:'} <strong className="text-teal-700 font-mono">+{formatCurrency(totalCashIn, lang)}</strong></span>
+                        <td colSpan={2} className="py-1.5 px-2 border-r border-amber-300 text-amber-950 text-[11px] font-bold">
+                          <span>{lang === 'bn' ? 'ফান্ড জমা:' : 'Cash In:'} <strong className="text-teal-800 font-mono">+{formatCurrency(totalCashIn, lang)}</strong></span>
                           {' | '}
-                          <span>{lang === 'bn' ? 'প্রকৃত মোট খরচ:' : 'Total Expense:'} <strong className="text-rose-700 font-mono">-{formatCurrency(totalCashOut, lang)}</strong></span>
+                          <span>{lang === 'bn' ? 'প্রকৃত মোট খরচ:' : 'Total Expense:'} <strong className="text-rose-800 font-mono">-{formatCurrency(totalCashOut, lang)}</strong></span>
                         </td>
                         <td className="py-1.5 px-2 text-right font-mono text-sm font-black">
-                          <span className={closingBalance >= 0 ? 'text-emerald-800' : 'text-rose-800'}>
+                          <span className={closingBalance >= 0 ? 'text-emerald-950' : 'text-rose-950'}>
                             = {formatCurrency(closingBalance, lang)}
                           </span>
                         </td>
@@ -1622,21 +1757,21 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
               return (
                 <div className="space-y-4">
                   {/* Banner */}
-                  <div className="p-3 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-xl flex justify-between items-center text-xs">
+                  <div className="p-3.5 bg-gradient-to-r from-teal-950 via-cyan-950 to-slate-950 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs border border-teal-500/60 shadow-lg">
                     <div>
-                      <span className="font-bold uppercase tracking-wider text-emerald-400 text-sm block">
+                      <span className="font-black uppercase tracking-wider text-cyan-300 text-sm sm:text-base block drop-shadow-xs">
                         {lang === 'bn' ? 'আর্থিক হিসাব বিবরণী, লাভ-ক্ষতি (P&L) ও ROI রিপোর্ট' : 'Financial Statement, P&L & ROI Report'}
                       </span>
-                      <p className="text-[11px] text-slate-300">
+                      <p className="text-[11px] text-cyan-200 mt-0.5">
                         {lang === 'bn' ? `হিসাবের সময়কাল: ${formatMonthDisplay(selectedMonth)}` : `Accounting Month: ${formatMonthDisplay(selectedMonth)}`}
                       </p>
                     </div>
                     <div className="text-right">
                       <span
-                        className={`font-bold text-xs px-3 py-1 rounded-full border ${
+                        className={`font-black text-xs px-3.5 py-1.5 rounded-xl border shadow-xs ${
                           isProf
-                            ? 'bg-emerald-600 text-white border-emerald-400'
-                            : 'bg-rose-600 text-white border-rose-400'
+                            ? 'bg-emerald-600/90 text-white border-emerald-400'
+                            : 'bg-rose-600/90 text-white border-rose-400'
                         }`}
                       >
                         {isProf
@@ -1647,31 +1782,31 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                   </div>
 
                   {/* 4 Executive KPI Cards */}
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="p-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-xs">
-                      <span className="text-[10px] text-emerald-800 font-semibold block">{t.totalSalesRevenue}</span>
-                      <div className="text-base font-black font-mono text-emerald-900 mt-0.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-3 rounded-2xl border border-emerald-300 bg-emerald-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-emerald-900 font-extrabold block">{t.totalSalesRevenue}</span>
+                      <div className="text-base font-black font-mono text-emerald-950 mt-0.5">
                         {formatCurrency(totalSales, lang)}
                       </div>
                     </div>
 
-                    <div className="p-2.5 rounded-xl border border-blue-300 bg-blue-50 text-xs">
-                      <span className="text-[10px] text-blue-800 font-semibold block">{t.totalPurchaseCost}</span>
-                      <div className="text-base font-black font-mono text-blue-900 mt-0.5">
+                    <div className="p-3 rounded-2xl border border-blue-300 bg-blue-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-blue-900 font-extrabold block">{t.totalPurchaseCost}</span>
+                      <div className="text-base font-black font-mono text-blue-950 mt-0.5">
                         {formatCurrency(totalPurchases, lang)}
                       </div>
                     </div>
 
-                    <div className="p-2.5 rounded-xl border border-amber-300 bg-amber-50 text-xs">
-                      <span className="text-[10px] text-amber-800 font-semibold block">{lang === 'bn' ? 'মোট পরিচালন ব্যয় (Outflow)' : 'Total Outflow'}</span>
-                      <div className="text-base font-black font-mono text-amber-900 mt-0.5">
+                    <div className="p-3 rounded-2xl border border-amber-300 bg-amber-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-amber-900 font-extrabold block">{lang === 'bn' ? 'মোট পরিচালন ব্যয় (Outflow)' : 'Total Outflow'}</span>
+                      <div className="text-base font-black font-mono text-amber-950 mt-0.5">
                         {formatCurrency(totalInvestmentOutflow, lang)}
                       </div>
                     </div>
 
-                    <div className={`p-2.5 rounded-xl border text-xs ${isProf ? 'border-emerald-400 bg-emerald-100' : 'border-rose-400 bg-rose-100'}`}>
-                      <span className="text-[10px] font-bold block text-slate-800">{t.netProfitLoss}</span>
-                      <div className="text-base font-black font-mono text-slate-900 mt-0.5">
+                    <div className={`p-3 rounded-2xl border text-xs shadow-2xs ${isProf ? 'border-emerald-400 bg-emerald-50/90 ring-1 ring-emerald-300' : 'border-rose-400 bg-rose-50/90 ring-1 ring-rose-300'}`}>
+                      <span className="text-[10px] font-black block text-slate-800">{t.netProfitLoss}</span>
+                      <div className={`text-base font-black font-mono mt-0.5 ${isProf ? 'text-emerald-950' : 'text-rose-950'}`}>
                         {formatCurrency(netProf, lang)}
                       </div>
                     </div>
@@ -1679,23 +1814,23 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
                   {/* Detailed P&L Ledger Breakdown Table */}
                   <div className="space-y-1.5 pt-1">
-                    <strong className="text-xs text-slate-800 block">
+                    <strong className="text-xs text-teal-950 font-black block">
                       {lang === 'bn' ? 'লাভ-ক্ষতি (P&L) বিস্তারিত হিসাব বিবরণী:' : 'Detailed Profit & Loss (P&L) Ledger Waterfall:'}
                     </strong>
 
                     <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
                       <thead>
-                        <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                          <th className="py-1 px-2 border-r border-slate-300">{lang === 'bn' ? 'হিসাবের খাত / বিবরণ' : 'Financial Revenue & Expense Head'}</th>
-                          <th className="py-1 px-2 border-r border-slate-300 text-center w-28">{lang === 'bn' ? 'ধরন' : 'Type'}</th>
-                          <th className="py-1 px-2 text-right w-36">{lang === 'bn' ? 'টাকা (পরিমাণ)' : 'Amount (BDT)'}</th>
+                        <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                          <th className="py-2 px-2 border-r border-slate-700 text-white font-bold">{lang === 'bn' ? 'হিসাবের খাত / বিবরণ' : 'Financial Revenue & Expense Head'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-28 text-white font-bold">{lang === 'bn' ? 'ধরন' : 'Type'}</th>
+                          <th className="py-2 px-2 text-right w-36 text-white font-bold">{lang === 'bn' ? 'টাকা (পরিমাণ)' : 'Amount (BDT)'}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-b border-slate-200">
-                          <td className="py-1.5 px-2 border-r border-slate-200 font-bold text-emerald-800">
+                        <tr className="border-b border-teal-100 hover:bg-teal-50/40">
+                          <td className="py-1.5 px-2 border-r border-teal-100 font-black text-emerald-900">
                             (+) {lang === 'bn' ? 'মোট বিক্রয়, চীন শাখা রপ্তানি ও প্রাপ্তি আয়' : 'Total Sales & China Export Turnover'}
-                            <div className="text-[10px] text-emerald-700 font-normal space-y-0.5 mt-0.5">
+                            <div className="text-[10px] text-emerald-700 font-semibold space-y-0.5 mt-0.5">
                               <div>• {lang === 'bn' ? 'লোকাল ইনভয়েস বিক্রয়:' : 'Local Invoices:'} {formatCurrency(domesticSales, lang)}</div>
                               {totalChinaExportRevenue > 0 && (
                                 <div>• {lang === 'bn' ? 'চীন শাখা রপ্তানি চালান:' : 'China Export:'} {formatCurrency(totalChinaExportRevenue, lang)}</div>
@@ -1704,78 +1839,78 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                                 <div>• {lang === 'bn' ? 'চীন অফিস সরাসরি BDT পেমেন্ট:' : 'China Direct BDT:'} {formatCurrency(totalChinaDirect, lang)}</div>
                               )}
                               {chinaRemainingBal > 0 && (
-                                <div className="font-semibold text-indigo-700">• {lang === 'bn' ? 'চীন অফিস অবশিষ্ট পাওনা (B/L):' : 'China Office Balance (B/L):'} {formatCurrency(chinaRemainingBal, lang)}</div>
+                                <div className="font-bold text-indigo-700">• {lang === 'bn' ? 'চীন অফিস অবশিষ্ট পাওনা (B/L):' : 'China Office Balance (B/L):'} {formatCurrency(chinaRemainingBal, lang)}</div>
                               )}
                             </div>
                           </td>
-                          <td className="py-1.5 px-2 border-r border-slate-200 text-center text-emerald-700 font-semibold text-[10px]">
+                          <td className="py-1.5 px-2 border-r border-teal-100 text-center text-emerald-700 font-black text-[10px]">
                             {lang === 'bn' ? 'আয় (Revenue)' : 'Revenue'}
                           </td>
-                          <td className="py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
+                          <td className="py-1.5 px-2 text-right font-mono font-black text-emerald-800 text-[13px]">
                             {formatCurrency(totalSales, lang)}
                           </td>
                         </tr>
 
-                        <tr className="border-b border-slate-200">
-                          <td className="py-1.5 px-2 border-r border-slate-200 font-bold text-blue-800">
+                        <tr className="border-b border-teal-100 hover:bg-teal-50/40">
+                          <td className="py-1.5 px-2 border-r border-teal-100 font-black text-blue-900">
                             (-) {lang === 'bn' ? 'মোট সার্কিট ও মাদারবোর্ড ক্রয় খরচ (Cost of Goods Purchased)' : 'Total Cost of Goods Purchased'}
-                            <div className="text-[10px] text-blue-700 font-normal space-y-0.5 mt-0.5">
+                            <div className="text-[10px] text-blue-700 font-semibold space-y-0.5 mt-0.5">
                               <div>• {lang === 'bn' ? 'পার্টি পরিশোধিত বিল (Paid):' : 'Party Bills Paid:'} {formatCurrency(partyPaymentsPaid, lang)}</div>
                               {partyDuePayable > 0 && (
                                 <div>• {lang === 'bn' ? 'বকেয়া বিল পাওনা (Due):' : 'Pending Due Payables:'} {formatCurrency(partyDuePayable, lang)}</div>
                               )}
                             </div>
                           </td>
-                          <td className="py-1.5 px-2 border-r border-slate-200 text-center text-rose-700 font-semibold text-[10px]">
+                          <td className="py-1.5 px-2 border-r border-teal-100 text-center text-rose-700 font-black text-[10px]">
                             {lang === 'bn' ? 'ক্রয় খরচ' : 'Purchase Cost'}
                           </td>
-                          <td className="py-1.5 px-2 text-right font-mono font-bold text-rose-700">
+                          <td className="py-1.5 px-2 text-right font-mono font-black text-rose-700 text-[13px]">
                             -{formatCurrency(totalPurchases, lang)}
                           </td>
                         </tr>
 
-                        <tr className="border-b border-slate-200 bg-slate-50/60 font-semibold">
-                          <td className="py-1.5 px-2 border-r border-slate-200 text-purple-900">
+                        <tr className="border-b border-teal-100 bg-purple-50/60 font-bold">
+                          <td className="py-1.5 px-2 border-r border-teal-100 text-purple-950 font-black">
                             (=) {lang === 'bn' ? 'গ্রস পারচেজ ও সেলস মার্জিন (Gross Sales Balance)' : 'Gross Sales Margin'}
                           </td>
-                          <td className="py-1.5 px-2 border-r border-slate-200 text-center text-[10px] text-purple-800">
+                          <td className="py-1.5 px-2 border-r border-teal-100 text-center text-[10px] text-purple-900 font-black">
                             {lang === 'bn' ? 'গ্রস মার্জিন' : 'Gross Margin'}
                           </td>
-                          <td className="py-1.5 px-2 text-right font-mono font-bold text-purple-900">
+                          <td className="py-1.5 px-2 text-right font-mono font-black text-purple-950 text-[13px]">
                             = {formatCurrency(grossMargin, lang)}
                           </td>
                         </tr>
 
-                        <tr className="border-b border-slate-200">
-                          <td className="py-1.5 px-2 border-r border-slate-200">
+                        <tr className="border-b border-teal-100 hover:bg-teal-50/40">
+                          <td className="py-1.5 px-2 border-r border-teal-100 font-bold text-amber-950">
                             (-) {lang === 'bn' ? 'মোট দৈনন্দিন অফিস ও গাড়ি খরচ (Petty Cash & Transport)' : 'Office Petty Cash & Vehicle Transport Expenses'}
                           </td>
-                          <td className="py-1.5 px-2 border-r border-slate-200 text-center text-amber-700 text-[10px]">
+                          <td className="py-1.5 px-2 border-r border-teal-100 text-center text-amber-700 font-black text-[10px]">
                             {lang === 'bn' ? 'অফিস খরচ' : 'Office Expense'}
                           </td>
-                          <td className="py-1.5 px-2 text-right font-mono text-rose-700">
+                          <td className="py-1.5 px-2 text-right font-mono font-black text-rose-700">
                             -{formatCurrency(periodPettyCash, lang)}
                           </td>
                         </tr>
 
-                        <tr className="border-b border-slate-200">
-                          <td className="py-1.5 px-2 border-r border-slate-200">
+                        <tr className="border-b border-teal-100 hover:bg-teal-50/40">
+                          <td className="py-1.5 px-2 border-r border-teal-100 font-bold text-indigo-950">
                             (-) {lang === 'bn' ? 'পরিশোধিত স্টাফ বেতন (Total Paid Staff Salary)' : 'Total Paid Staff Salary'}
                           </td>
-                          <td className="py-1.5 px-2 border-r border-slate-200 text-center text-indigo-700 text-[10px]">
+                          <td className="py-1.5 px-2 border-r border-teal-100 text-center text-indigo-700 font-black text-[10px]">
                             {lang === 'bn' ? 'পে-রোল খরচ' : 'Payroll Expense'}
                           </td>
-                          <td className="py-1.5 px-2 text-right font-mono text-rose-700">
+                          <td className="py-1.5 px-2 text-right font-mono font-black text-rose-700">
                             -{formatCurrency(totalPaidSal, lang)}
                           </td>
                         </tr>
                       </tbody>
                       <tfoot>
-                        <tr className={`font-black text-xs border-t-2 ${isProf ? 'bg-emerald-100 text-emerald-900 border-emerald-800' : 'bg-rose-100 text-rose-900 border-rose-800'}`}>
-                          <td colSpan={2} className="py-2 px-2 text-right uppercase border-r border-slate-400">
+                        <tr className={`font-black text-xs border-t-2 text-black ${isProf ? 'bg-gradient-to-r from-emerald-200 via-teal-100 to-emerald-200 border-emerald-500' : 'bg-gradient-to-r from-rose-200 via-pink-100 to-rose-200 border-rose-500'}`}>
+                          <td colSpan={2} className="py-2 px-2 text-right uppercase border-r border-teal-300 text-black font-black">
                             (=) {t.netProfitLoss} (NET PROFIT / LOSS):
                           </td>
-                          <td className="py-2 px-2 text-right font-mono text-sm font-black">
+                          <td className={`py-2 px-2 text-right font-mono text-base font-black ${isProf ? 'text-emerald-950' : 'text-rose-950'}`}>
                             {formatCurrency(netProf, lang)}
                           </td>
                         </tr>
@@ -1784,24 +1919,24 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                   </div>
 
                   {/* Company ROI & Asset Valuation Summary Box */}
-                  <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs">
+                  <div className="grid grid-cols-3 gap-2.5 p-3.5 bg-gradient-to-r from-teal-50 via-cyan-50 to-blue-50 border border-teal-200 rounded-2xl text-xs shadow-2xs">
                     <div>
-                      <span className="text-[10px] text-slate-500 block">{t.roiPercentage}</span>
-                      <strong className={`text-sm font-mono block ${roiPct >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                      <span className="text-[10px] text-teal-800 font-bold block">{t.roiPercentage}</span>
+                      <strong className={`text-base font-black font-mono block mt-0.5 ${roiPct >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
                         {roiPct >= 0 ? `+${roiPct.toFixed(1)}%` : `${roiPct.toFixed(1)}%`}
                       </strong>
                     </div>
 
                     <div>
-                      <span className="text-[10px] text-slate-500 block">{t.profitMargin}</span>
-                      <strong className="text-sm font-mono block text-slate-900">
+                      <span className="text-[10px] text-teal-800 font-bold block">{t.profitMargin}</span>
+                      <strong className="text-base font-black font-mono block text-teal-950 mt-0.5">
                         {profitMarginPct.toFixed(1)}%
                       </strong>
                     </div>
 
                     <div>
-                      <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'বর্তমান মজুদ মাল মূল্য:' : 'Current Stock Asset Value:'}</span>
-                      <strong className="text-sm font-mono block text-indigo-800">
+                      <span className="text-[10px] text-teal-800 font-bold block">{lang === 'bn' ? 'বর্তমান মজুদ মাল মূল্য:' : 'Current Stock Asset Value:'}</span>
+                      <strong className="text-base font-black font-mono block text-indigo-900 mt-0.5">
                         {formatCurrency(stockValuation, lang)}
                       </strong>
                     </div>
@@ -1825,88 +1960,107 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
               return (
                 <div className="space-y-4">
+                  {/* Banner */}
+                  <div className="p-3.5 bg-gradient-to-r from-rose-950 via-pink-950 to-slate-950 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs border border-rose-500/60 shadow-lg">
+                    <div>
+                      <span className="font-black uppercase tracking-wider text-pink-300 text-sm sm:text-base block drop-shadow-xs">
+                        {lang === 'bn' ? 'প্রসেসিং কর্মী কাজ, ডেলিভারি ও ড্যামেজ বিবরণী' : 'Processing Worker Output & Damage Statement'}
+                      </span>
+                      <p className="text-[11px] text-pink-200 mt-0.5">
+                        {lang === 'bn' ? `হিসাবের সময়কাল: ${formatMonthDisplay(selectedMonth)}` : `Statement Period: ${formatMonthDisplay(selectedMonth)}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono text-xs font-bold bg-rose-700/80 text-white px-3 py-1 rounded-xl border border-rose-400 shadow-xs">
+                        {lang === 'bn' ? 'মোট টাস্ক:' : 'Total Tasks:'} {workerTasks.length}
+                      </span>
+                    </div>
+                  </div>
+
                   {/* Summary Metric Cards */}
-                  <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                    <div className="p-2 border border-slate-300 rounded-lg bg-blue-50/50">
-                      <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'মোট মাল দেওয়া (Given)' : 'Total Given'}</span>
-                      <strong className="text-sm font-mono text-blue-900">{formatNumber(totalGiven, lang)} PCS</strong>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center text-xs">
+                    <div className="p-3 border border-blue-200 rounded-2xl bg-blue-50/80 shadow-2xs">
+                      <span className="text-[10px] text-blue-900 font-extrabold block">{lang === 'bn' ? 'মোট মাল দেওয়া (Given)' : 'Total Given'}</span>
+                      <strong className="text-base font-black font-mono text-blue-950 mt-0.5 block">{formatNumber(totalGiven, lang)} PCS</strong>
                     </div>
-                    <div className="p-2 border border-slate-300 rounded-lg bg-emerald-50/50">
-                      <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'মোট কাজ সম্পন্ন (Delivered)' : 'Total Completed'}</span>
-                      <strong className="text-sm font-mono text-emerald-900">{formatNumber(totalCompleted, lang)} PCS</strong>
+                    <div className="p-3 border border-emerald-200 rounded-2xl bg-emerald-50/80 shadow-2xs">
+                      <span className="text-[10px] text-emerald-900 font-extrabold block">{lang === 'bn' ? 'মোট কাজ সম্পন্ন (Delivered)' : 'Total Completed'}</span>
+                      <strong className="text-base font-black font-mono text-emerald-950 mt-0.5 block">{formatNumber(totalCompleted, lang)} PCS</strong>
                     </div>
-                    <div className="p-2 border border-slate-300 rounded-lg bg-amber-50/50">
-                      <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'বকেয়া কাজ (Remaining)' : 'Total Remaining'}</span>
-                      <strong className="text-sm font-mono text-amber-900">{formatNumber(totalRemaining, lang)} PCS</strong>
+                    <div className="p-3 border border-amber-200 rounded-2xl bg-amber-50/80 shadow-2xs">
+                      <span className="text-[10px] text-amber-900 font-extrabold block">{lang === 'bn' ? 'বকেয়া কাজ (Remaining)' : 'Total Remaining'}</span>
+                      <strong className="text-base font-black font-mono text-amber-950 mt-0.5 block">{formatNumber(totalRemaining, lang)} PCS</strong>
                     </div>
-                    <div className="p-2 border border-slate-300 rounded-lg bg-rose-50/50">
-                      <span className="text-[10px] text-slate-500 block">{lang === 'bn' ? 'নষ্ট / ড্যামেজ (Damage)' : 'Total Damaged'}</span>
-                      <strong className="text-sm font-mono text-rose-900">{formatNumber(totalDamaged, lang)} PCS ({rate}%)</strong>
+                    <div className="p-3 border border-rose-300 rounded-2xl bg-rose-50/90 shadow-2xs ring-1 ring-rose-300">
+                      <span className="text-[10px] text-rose-950 font-black block">{lang === 'bn' ? 'নষ্ট / ড্যামেজ (Damage)' : 'Total Damaged'}</span>
+                      <strong className="text-base font-black font-mono text-rose-950 mt-0.5 block">{formatNumber(totalDamaged, lang)} PCS ({rate}%)</strong>
                     </div>
                   </div>
 
                   {/* Worker Breakdown Table */}
-                  <table className="w-full text-xs border border-slate-300">
-                    <thead className="bg-slate-100 text-slate-700">
-                      <tr className="border-b border-slate-300 text-left">
-                        <th className="py-1.5 px-2 border-r border-slate-300">#</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300">{lang === 'bn' ? 'কর্মী (Worker)' : 'Worker'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300">{lang === 'bn' ? 'পণ্যের বিবরণ / ব্যাচ' : 'Product / Batch'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 text-right">{lang === 'bn' ? 'মাল প্রদান (Given)' : 'Given'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 text-right">{lang === 'bn' ? 'ডেলিভারি (Delivered)' : 'Delivered'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 text-right">{lang === 'bn' ? 'বাকি (Remaining)' : 'Remaining'}</th>
-                        <th className="py-1.5 px-2 border-r border-slate-300 text-right">{lang === 'bn' ? 'ড্যামেজ (Damaged)' : 'Damaged'}</th>
-                        <th className="py-1.5 px-2 text-center">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workerTasks.map((t, idx) => {
-                        const rem = Math.max(0, t.givenPcs - t.completedPcs - t.damagedPcs);
-                        return (
-                          <tr key={t.id || idx} className="border-b border-slate-200">
-                            <td className="py-1.5 px-2 border-r border-slate-200 text-slate-500">{idx + 1}</td>
-                            <td className="py-1.5 px-2 border-r border-slate-200">{formatDate(t.date, lang)}</td>
-                            <td className="py-1.5 px-2 border-r border-slate-200 font-semibold">{t.workerName}</td>
-                            <td className="py-1.5 px-2 border-r border-slate-200">
-                              <span className="font-semibold">{t.productName}</span>
-                              {t.batchNo && <span className="text-[10px] text-slate-500 block">Batch: {t.batchNo}</span>}
-                              {t.extractedItems && t.extractedItems.length > 0 ? (
-                                <div className="text-[9px] text-emerald-800 font-semibold mt-0.5">
-                                  ➔ {t.extractedItems.map((it) => `${it.name}: ${it.quantity} ${it.unit}`).join(', ')}
-                                </div>
-                              ) : t.extractedProductSummary ? (
-                                <div className="text-[9px] text-emerald-800 font-semibold mt-0.5">
-                                  ➔ {t.extractedProductSummary}
-                                </div>
-                              ) : null}
-                            </td>
-                            <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono font-semibold">{t.givenPcs}</td>
-                            <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono text-emerald-700 font-semibold">{t.completedPcs}</td>
-                            <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono text-amber-700 font-semibold">{rem}</td>
-                            <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono text-rose-700 font-semibold">{t.damagedPcs}</td>
-                            <td className="py-1.5 px-2 text-center">
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                                {t.status}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot className="bg-slate-50 font-bold border-t border-slate-300">
-                      <tr>
-                        <td colSpan={4} className="py-1.5 px-2 text-right border-r border-slate-300 uppercase">
-                          {lang === 'bn' ? 'মোট:' : 'Total:'}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono border-r border-slate-300">{totalGiven}</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-emerald-700 border-r border-slate-300">{totalCompleted}</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-amber-700 border-r border-slate-300">{totalRemaining}</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-rose-700 border-r border-slate-300">{totalDamaged}</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                  <div className="sheet-freeze-wrapper">
+                    <table className="w-full text-xs border-collapse border border-slate-300 print-compact">
+                      <thead className="sticky top-0 z-20">
+                        <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs text-left">
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-8 sticky top-0 text-white font-bold">#</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 sticky top-0 text-white font-bold">{lang === 'bn' ? 'কর্মী (Worker)' : 'Worker'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 sticky top-0 text-white font-bold">{lang === 'bn' ? 'পণ্যের বিবরণ / ব্যাচ' : 'Product / Batch'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-right w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'মাল প্রদান' : 'Given'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-right w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'ডেলিভারি' : 'Delivered'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-right w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'বাকি' : 'Remaining'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-right w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'ড্যামেজ' : 'Damaged'}</th>
+                          <th className="py-2 px-2 text-center w-20 sticky top-0 text-white font-bold">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workerTasks.map((t, idx) => {
+                          const rem = Math.max(0, t.givenPcs - t.completedPcs - t.damagedPcs);
+                          return (
+                            <tr key={t.id || idx} className="border-b border-rose-100 hover:bg-rose-50/40">
+                              <td className="py-1.5 px-2 border-r border-rose-100 text-slate-500 text-center font-mono">{idx + 1}</td>
+                              <td className="py-1.5 px-2 border-r border-rose-100 font-mono text-[11px] font-semibold text-slate-700">{formatDate(t.date, lang)}</td>
+                              <td className="py-1.5 px-2 border-r border-rose-100 font-bold text-slate-900">{t.workerName}</td>
+                              <td className="py-1.5 px-2 border-r border-rose-100">
+                                <span className="font-bold text-slate-900">{t.productName}</span>
+                                {t.batchNo && <span className="text-[10px] text-rose-800 font-semibold block">Batch: {t.batchNo}</span>}
+                                {t.extractedItems && t.extractedItems.length > 0 ? (
+                                  <div className="text-[9px] text-emerald-800 font-bold mt-0.5">
+                                    ➔ {t.extractedItems.map((it) => `${it.name}: ${it.quantity} ${it.unit}`).join(', ')}
+                                  </div>
+                                ) : t.extractedProductSummary ? (
+                                  <div className="text-[9px] text-emerald-800 font-bold mt-0.5">
+                                    ➔ {t.extractedProductSummary}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-rose-100 text-right font-mono font-bold text-blue-900">{t.givenPcs}</td>
+                              <td className="py-1.5 px-2 border-r border-rose-100 text-right font-mono font-bold text-emerald-800">{t.completedPcs}</td>
+                              <td className="py-1.5 px-2 border-r border-rose-100 text-right font-mono font-bold text-amber-800">{rem}</td>
+                              <td className="py-1.5 px-2 border-r border-rose-100 text-right font-mono font-black text-rose-700">{t.damagedPcs}</td>
+                              <td className="py-1.5 px-2 text-center">
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 border border-rose-300">
+                                  {t.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-gradient-to-r from-rose-100 via-pink-100 to-rose-200 text-rose-950 font-black text-xs border-t-2 border-rose-400">
+                          <td colSpan={4} className="py-1.5 px-2 text-right border-r border-rose-300 uppercase font-black">
+                            {lang === 'bn' ? 'মোট:' : 'Total:'}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-blue-950 border-r border-rose-300 font-black">{totalGiven}</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-emerald-950 border-r border-rose-300 font-black">{totalCompleted}</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-amber-950 border-r border-rose-300 font-black">{totalRemaining}</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-rose-700 border-r border-rose-300 font-black">{totalDamaged}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
               );
             })()}

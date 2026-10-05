@@ -247,16 +247,16 @@ export const ExpensePanel: React.FC<ExpensePanelProps> = ({
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-slate-900 text-white uppercase text-[10px] font-bold border-b border-slate-950">
               <tr>
-                <th className="py-2.5 px-3 w-8 text-center">{t.sl}</th>
-                <th className="py-2.5 px-3 w-28">{t.invoiceDate}</th>
-                <th className="py-2.5 px-3 w-32">{t.category}</th>
-                <th className="py-2.5 px-3">{t.expenseTitle}</th>
-                <th className="py-2.5 px-3 w-32">{lang === 'bn' ? 'প্রাপক' : 'Paid To'}</th>
-                <th className="py-2.5 px-3 w-24 text-center">{t.paymentMethod}</th>
-                <th className="py-2.5 px-3 w-28 text-right">{t.amount}</th>
-                <th className="py-2.5 px-3 w-16 text-right">{t.action}</th>
+                <th className="py-2.5 px-3 w-8 text-center text-white font-bold">{t.sl}</th>
+                <th className="py-2.5 px-3 w-28 text-white font-bold">{t.invoiceDate}</th>
+                <th className="py-2.5 px-3 w-32 text-white font-bold">{t.category}</th>
+                <th className="py-2.5 px-3 text-white font-bold">{t.expenseTitle}</th>
+                <th className="py-2.5 px-3 w-32 text-white font-bold">{lang === 'bn' ? 'প্রাপক' : 'Paid To'}</th>
+                <th className="py-2.5 px-3 w-24 text-center text-white font-bold">{t.paymentMethod}</th>
+                <th className="py-2.5 px-3 w-28 text-right text-white font-bold">{t.amount}</th>
+                <th className="py-2.5 px-3 w-16 text-right text-white font-bold">{t.action}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

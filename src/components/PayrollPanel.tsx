@@ -1051,21 +1051,21 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-slate-900 text-white uppercase text-[10px] font-bold border-b border-slate-950">
               <tr>
-                <th className="py-2.5 px-3">{t.staffName}</th>
-                <th className="py-2.5 px-3">{t.designation}</th>
-                <th className="py-2.5 px-3 text-center">{t.category}</th>
-                <th className="py-2.5 px-3 text-right">{t.baseSalary}</th>
-                <th className="py-2.5 px-3 text-center">{lang === 'bn' ? 'উপস্থিতি (দিন)' : 'Present Days'}</th>
-                <th className="py-2.5 px-3 text-center">{t.otHours}</th>
-                <th className="py-2.5 px-3 text-right">{lang === 'bn' ? 'ওটি টাকা (৬০x)' : 'OT Amount (60x)'}</th>
-                <th className="py-2.5 px-3 text-right">{t.advanceTaken}</th>
-                <th className="py-2.5 px-3 text-right text-amber-600 dark:text-amber-400">{lang === 'bn' ? 'লেট কর্তন' : 'Late Deduction'}</th>
-                <th className="py-2.5 px-3 text-right text-rose-600 dark:text-rose-400">{lang === 'bn' ? 'ড্যামেজ কর্তন' : 'Damage Penalty'}</th>
-                <th className="py-2.5 px-3 text-right">{t.netSalary}</th>
-                <th className="py-2.5 px-3 text-center">{lang === 'bn' ? 'পেমেন্ট স্ট্যাটাস' : 'Payment Status'}</th>
-                <th className="py-2.5 px-3 text-right">{t.action}</th>
+                <th className="py-2.5 px-3 text-white font-bold">{t.staffName}</th>
+                <th className="py-2.5 px-3 text-white font-bold">{t.designation}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{t.category}</th>
+                <th className="py-2.5 px-3 text-right text-white font-bold">{t.baseSalary}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{lang === 'bn' ? 'উপস্থিতি (দিন)' : 'Present Days'}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{t.otHours}</th>
+                <th className="py-2.5 px-3 text-right text-white font-bold">{lang === 'bn' ? 'ওটি টাকা (৬০x)' : 'OT Amount (60x)'}</th>
+                <th className="py-2.5 px-3 text-right text-white font-bold">{t.advanceTaken}</th>
+                <th className="py-2.5 px-3 text-right text-amber-300 font-bold">{lang === 'bn' ? 'লেট কর্তন' : 'Late Deduction'}</th>
+                <th className="py-2.5 px-3 text-right text-rose-300 font-bold">{lang === 'bn' ? 'ড্যামেজ কর্তন' : 'Damage Penalty'}</th>
+                <th className="py-2.5 px-3 text-right text-white font-bold">{t.netSalary}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{lang === 'bn' ? 'পেমেন্ট স্ট্যাটাস' : 'Payment Status'}</th>
+                <th className="py-2.5 px-3 text-right text-white font-bold">{t.action}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1409,18 +1409,18 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-slate-900 text-white uppercase text-[10px] font-bold border-b border-slate-950">
               <tr>
-                <th className="py-2.5 px-3">{t.staffName}</th>
-                <th className="py-2.5 px-3">{t.category}</th>
-                <th className="py-2.5 px-3 text-center">{t.attendanceStatus}</th>
-                <th className="py-2.5 px-3 text-center">{t.inTime}</th>
-                <th className="py-2.5 px-3 text-center">{t.outTime}</th>
-                <th className="py-2.5 px-3 text-center">{t.lateMinutes}</th>
-                <th className="py-2.5 px-3 text-center">{t.otHours}</th>
-                <th className="py-2.5 px-3 text-right">{lang === 'bn' ? 'ওটি বিল (৬০x)' : 'OT Bill (60x)'}</th>
-                <th className="py-2.5 px-3">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
-                <th className="py-2.5 px-3 text-right">{t.action}</th>
+                <th className="py-2.5 px-3 text-white font-bold">{t.staffName}</th>
+                <th className="py-2.5 px-3 text-white font-bold">{t.category}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{t.attendanceStatus}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{t.inTime}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{t.outTime}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{t.lateMinutes}</th>
+                <th className="py-2.5 px-3 text-center text-white font-bold">{t.otHours}</th>
+                <th className="py-2.5 px-3 text-right text-white font-bold">{lang === 'bn' ? 'ওটি বিল (৬০x)' : 'OT Bill (60x)'}</th>
+                <th className="py-2.5 px-3 text-white font-bold">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
+                <th className="py-2.5 px-3 text-right text-white font-bold">{t.action}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

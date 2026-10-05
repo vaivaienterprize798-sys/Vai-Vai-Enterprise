@@ -996,15 +996,15 @@ ${DEFAULT_COMPANY.name}`;
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                  <thead className="bg-slate-900 text-white font-bold border-b border-slate-950">
                     <tr>
-                      <th className="p-3">মাস (Month)</th>
-                      <th className="p-3 text-center">চালান সংখ্যা</th>
-                      <th className="p-3 text-right">ক্রয় (৳)</th>
-                      <th className="p-3 text-right">বিক্রয় (৳)</th>
-                      <th className="p-3 text-right">পরিশোধ (৳)</th>
-                      <th className="p-3 text-right">বকেয়া (৳)</th>
-                      <th className="p-3 text-center">অ্যাকশন</th>
+                      <th className="p-3 text-white font-bold">মাস (Month)</th>
+                      <th className="p-3 text-center text-white font-bold">চালান সংখ্যা</th>
+                      <th className="p-3 text-right text-white font-bold">ক্রয় (৳)</th>
+                      <th className="p-3 text-right text-white font-bold">বিক্রয় (৳)</th>
+                      <th className="p-3 text-right text-white font-bold">পরিশোধ (৳)</th>
+                      <th className="p-3 text-right text-white font-bold">বকেয়া (৳)</th>
+                      <th className="p-3 text-center text-white font-bold">অ্যাকশন</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
@@ -1074,18 +1074,18 @@ ${DEFAULT_COMPANY.name}`;
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                  <thead className="bg-slate-900 text-white font-bold border-b border-slate-950">
                     <tr>
-                      <th className="p-3">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
-                      <th className="p-3">{t.invoiceNo}</th>
-                      <th className="p-3">{lang === 'bn' ? 'পার্টি' : 'Party'}</th>
-                      <th className="p-3">{lang === 'bn' ? 'লেনদেনের ধরন' : 'Type'}</th>
-                      <th className="p-3">{lang === 'bn' ? 'মালের বিবরণ / আইটেম' : 'Items'}</th>
-                      <th className="p-3 text-right">মোট বিল (৳)</th>
-                      <th className="p-3 text-right">পরিশোধ (৳)</th>
-                      <th className="p-3 text-right">বকেয়া (৳)</th>
-                      <th className="p-3 text-center">{t.paymentStatus}</th>
-                      <th className="p-3 text-center">অ্যাকশন</th>
+                      <th className="p-3 text-white font-bold">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
+                      <th className="p-3 text-white font-bold">{t.invoiceNo}</th>
+                      <th className="p-3 text-white font-bold">{lang === 'bn' ? 'পার্টি' : 'Party'}</th>
+                      <th className="p-3 text-white font-bold">{lang === 'bn' ? 'লেনদেনের ধরন' : 'Type'}</th>
+                      <th className="p-3 text-white font-bold">{lang === 'bn' ? 'মালের বিবরণ / আইটেম' : 'Items'}</th>
+                      <th className="p-3 text-right text-white font-bold">মোট বিল (৳)</th>
+                      <th className="p-3 text-right text-white font-bold">পরিশোধ (৳)</th>
+                      <th className="p-3 text-right text-white font-bold">বকেয়া (৳)</th>
+                      <th className="p-3 text-center text-white font-bold">{t.paymentStatus}</th>
+                      <th className="p-3 text-center text-white font-bold">অ্যাকশন</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">

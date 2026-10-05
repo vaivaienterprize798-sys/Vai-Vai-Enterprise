@@ -15,6 +15,9 @@ import {
   AlertTriangle,
   ArrowRight,
   Download,
+  Coins,
+  MapPin,
+  Phone,
 } from 'lucide-react';
 import {
   Invoice,
@@ -28,6 +31,7 @@ import {
 } from '../types';
 import { PartyLedgerStatement, DailyCashBook } from './LedgerStatementPanel';
 import { generateNextSerial, DOKAN_PAYMENT_PREFIX } from '../lib/invoiceUtils';
+import { storageService } from '../lib/storage';
 import {
   translations,
   formatCurrency,
@@ -69,9 +73,22 @@ export const DokanHishabPanel: React.FC<DokanHishabPanelProps> = ({
 
   // Modals and tabs
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'invoices' | 'payments' | 'print' | 'ledger' | 'cashbook'>('overview');
+  const [isOpeningModalOpen, setIsOpeningModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'invoices' | 'payments' | 'print' | 'ledger'>('overview');
   const [isPrinting, setIsPrinting] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  // Opening Balance state
+  const [openingBalance, setOpeningBalance] = useState<number>(() => storageService.getDokanOpeningBalance());
+  const [openingInput, setOpeningInput] = useState<number | string>(openingBalance);
+
+  const handleSaveOpeningBalance = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = Number(openingInput) || 0;
+    storageService.setDokanOpeningBalance(val);
+    setOpeningBalance(val);
+    setIsOpeningModalOpen(false);
+  };
 
   // Payment Form States
   const [payDate, setPayDate] = useState(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
@@ -110,7 +127,7 @@ export const DokanHishabPanel: React.FC<DokanHishabPanelProps> = ({
     return dokanPayments.reduce((sum, p) => sum + p.amount, 0);
   }, [dokanPayments]);
 
-  const netBalance = totalPurchaseAmount - totalPaidAmount;
+  const netBalance = openingBalance + totalPurchaseAmount - totalPaidAmount;
   const isDue = netBalance > 0;
   const isAdvance = netBalance < 0;
 
@@ -124,11 +141,12 @@ export const DokanHishabPanel: React.FC<DokanHishabPanelProps> = ({
   const printPayments = useMemo(() => dokanPayments.filter((p) => inRange(p.date)).sort(byDate), [dokanPayments, printFrom, printTo]);
   const printPurchaseTotal = printInvoices.reduce((s2, inv) => s2 + (inv.netInvoiceAmount || inv.grandTotal || 0), 0);
   const printPaidTotal = printPayments.reduce((s2, p) => s2 + p.amount, 0);
-  // Balance carried in from before the start date
+  // Balance carried in from before the start date (including opening balance)
   const printOpening = printFrom
-    ? dokanInvoices.filter((i) => i.date < printFrom).reduce((s2, inv) => s2 + (inv.netInvoiceAmount || inv.grandTotal || 0), 0) -
+    ? openingBalance +
+      dokanInvoices.filter((i) => i.date < printFrom).reduce((s2, inv) => s2 + (inv.netInvoiceAmount || inv.grandTotal || 0), 0) -
       dokanPayments.filter((p) => p.date < printFrom).reduce((s2, p) => s2 + p.amount, 0)
-    : 0;
+    : openingBalance;
   const printClosing = printOpening + printPurchaseTotal - printPaidTotal;
   const printIsDue = printClosing > 0;
   const printIsAdvance = printClosing < 0;
@@ -150,7 +168,8 @@ export const DokanHishabPanel: React.FC<DokanHishabPanelProps> = ({
     return `*${companyInfo.name} - ${lang === 'bn' ? 'দোকানের হিসাব স্টেটমেন্ট' : 'Shop Account Statement'}*
 📅 *সময়:* ${printPeriodLabel}
 ────────────────────────
-${printFrom ? `↪️ *পূর্বের জের:* ৳${printOpening.toLocaleString()}\n` : ''}🛒 *মোট ক্রয়:* ৳${printPurchaseTotal.toLocaleString()} (${printInvoices.length} টি ইনভয়েস)
+↪️ *প্রারম্ভিক জের (Opening B/L):* ৳${printOpening.toLocaleString()}
+🛒 *মোট ক্রয়:* ৳${printPurchaseTotal.toLocaleString()} (${printInvoices.length} টি ইনভয়েস)
 💵 *মোট পরিশোধ:* ৳${printPaidTotal.toLocaleString()} (${printPayments.length} টি পেমেন্ট)
 ────────────────────────
 ${daily || 'এই সময়ে কোনো লেনদেন নেই'}
@@ -195,6 +214,7 @@ _${companyInfo.name}_`;
     return `*${companyInfo.name} - ${lang === 'bn' ? 'দোকানের হিসাব স্টেটমেন্ট' : 'Shop Account Statement'}*
 📅 *তারিখ:* ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
 ────────────────────────
+🏦 *প্রারম্ভিক জের (Opening B/L):* ৳${openingBalance.toLocaleString()}
 🛒 *দোকান থেকে মোট ক্রয়:* ৳${totalPurchaseAmount.toLocaleString()} (${dokanInvoices.length} টি ইনভয়েস)
 💵 *দোকানে মোট পরিশোধ/জমা:* ৳${totalPaidAmount.toLocaleString()} (${dokanPayments.length} টি পেমেন্ট)
 ────────────────────────
@@ -250,6 +270,18 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
           />
 
           <button
+            onClick={() => {
+              setOpeningInput(openingBalance);
+              setIsOpeningModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+            title={lang === 'bn' ? 'দোকানের পূর্বের প্রারম্ভিক জের (Opening B/L) সেট করুন' : 'Set Shop Opening Balance'}
+          >
+            <Coins className="w-3.5 h-3.5 text-amber-400" />
+            <span>{lang === 'bn' ? 'প্রারম্ভিক জের (Opening B/L)' : 'Opening B/L'}</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab(activeTab === 'print' ? 'overview' : 'print')}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
           >
@@ -276,7 +308,29 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        {/* Opening Balance Card */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-medium mb-1">
+            <span>{lang === 'bn' ? 'প্রারম্ভিক জের (Opening B/L)' : 'Opening Balance'}</span>
+            <Coins className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
+            {formatCurrency(openingBalance, lang)}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">
+            <button
+              onClick={() => {
+                setOpeningInput(openingBalance);
+                setIsOpeningModalOpen(true);
+              }}
+              className="text-amber-600 dark:text-amber-400 hover:underline cursor-pointer font-semibold"
+            >
+              {lang === 'bn' ? '✏️ জের পরিবর্তন করুন' : '✏️ Edit Opening B/L'}
+            </button>
+          </p>
+        </div>
+
         {/* Total Purchase Card */}
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-medium mb-1">
@@ -287,7 +341,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
             {formatCurrency(totalPurchaseAmount, lang)}
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            {formatNumber(dokanInvoices.length, lang)} {lang === 'bn' ? 'টি দোকান ইনভয়েস থেকে অটো সংযুক্ত' : 'shop invoices auto-linked'}
+            {formatNumber(dokanInvoices.length, lang)} {lang === 'bn' ? 'টি দোকান ইনভয়েস' : 'shop invoices'}
           </p>
         </div>
 
@@ -301,7 +355,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
             {formatCurrency(totalPaidAmount, lang)}
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            {formatNumber(dokanPayments.length, lang)} {lang === 'bn' ? 'টি পরিশোধ ভাউচার রেকর্ড' : 'payment records'}
+            {formatNumber(dokanPayments.length, lang)} {lang === 'bn' ? 'টি পরিশোধ ভাউচার' : 'payment records'}
           </p>
         </div>
 
@@ -414,21 +468,16 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
         >
           {lang === 'bn' ? '১-পেজ প্রিন্ট প্রিভিউ' : '1-Page Print View'}
         </button>
-        {(['ledger', 'cashbook'] as const).map((k) => (
-          <button
-            key={k}
-            onClick={() => setActiveTab(k)}
-            className={`pb-2.5 transition-colors cursor-pointer border-b-2 ${
-              activeTab === k
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-            }`}
-          >
-            {k === 'ledger'
-              ? lang === 'bn' ? 'পার্টি লেজার / স্টেটমেন্ট' : 'Party Ledger / Statement'
-              : lang === 'bn' ? 'দৈনিক ক্যাশ বুক' : 'Daily Cash Book'}
-          </button>
-        ))}
+        <button
+          onClick={() => setActiveTab('ledger')}
+          className={`pb-2.5 transition-colors cursor-pointer border-b-2 ${
+            activeTab === 'ledger'
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+          }`}
+        >
+          {lang === 'bn' ? 'পার্টি লেজার / স্টেটমেন্ট' : 'Party Ledger / Statement'}
+        </button>
       </div>
 
       {activeTab === 'ledger' && (
@@ -443,17 +492,6 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
         />
       )}
 
-      {activeTab === 'cashbook' && (
-        <DailyCashBook
-          invoices={invoices}
-          dokanPayments={dokanPayments}
-          pettyCash={pettyCashExpenses}
-          carExpenses={carExpenses}
-          lang={lang}
-          companyInfo={companyInfo}
-          onViewInvoice={onViewInvoice}
-        />
-      )}
 
       {/* TAB 1: OVERVIEW COMBINED LEDGER */}
       {activeTab === 'overview' && (
@@ -751,54 +789,81 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
             id="dokan-sheet-print"
             className="one-page-sheet max-w-4xl mx-auto bg-white text-slate-900 p-6 sm:p-8 rounded-2xl border border-slate-300 shadow-lg print:border-none print:shadow-none print:p-0"
           >
-            {/* Company Header */}
-            <div className="border-b-2 border-slate-800 pb-3 flex justify-between items-start gap-4">
-              <div className="flex items-start gap-3">
-                <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-12 h-12 shrink-0" />
-                <div className="space-y-1">
-                  <h1 className="text-xl font-black text-slate-900 tracking-tight leading-tight">
+            {/* Centralized Framed Company Header Box */}
+            <div className="mb-4 p-4 sm:p-5 rounded-2xl border-2 border-slate-900 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-950 text-white shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden">
+              {/* Top Golden Accent Bar */}
+              <div className="w-full h-1 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 rounded-t-full mb-3" />
+
+              {/* Centralized Logo & Premium Vibrant Company Name */}
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 z-10">
+                <div className="p-1.5 bg-white rounded-2xl shadow-md border-2 border-amber-400 shrink-0">
+                  <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-12 h-12 sm:w-14 sm:h-14" />
+                </div>
+                <div className="space-y-1 text-center sm:text-left">
+                  <h1 className="text-2xl sm:text-3xl font-black text-amber-300 bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent tracking-tight leading-tight uppercase font-sans drop-shadow-md">
                     {companyInfo.name}
                   </h1>
-                  <p className="text-[11px] font-medium text-slate-600">
+                  <div className="inline-block px-3 py-0.5 rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white text-[11px] font-extrabold tracking-wide uppercase shadow-xs">
                     {lang === 'bn' ? companyInfo.businessTypeBn : companyInfo.businessTypeEn}
-                  </p>
-                  <div className="text-[10px] text-slate-500">
-                    <span>{companyInfo.address} &bull; {companyInfo.phones.join(', ')}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="text-right space-y-1 shrink-0">
-                <div className="inline-block px-2.5 py-1 bg-slate-900 text-white font-bold text-xs rounded-md uppercase tracking-wider">
-                  {lang === 'bn' ? 'দোকানের হিসাব স্টেটমেন্ট' : 'Shop Account Statement'}
+              {/* Centralized Contact Details Ribbon */}
+              <div className="text-[11px] text-slate-200 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 pt-2.5 border-t border-slate-800/80 w-full font-medium z-10">
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>{companyInfo.address}</span>
+                </span>
+                <span className="flex items-center gap-1 font-mono text-cyan-300 font-bold">
+                  <Phone className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>{companyInfo.phones.join(', ')}</span>
+                </span>
+              </div>
+
+              {/* Statement Badge & Date Line */}
+              <div className="mt-2.5 pt-2 w-full flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-800 text-xs font-mono z-10">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-300 font-semibold">{lang === 'bn' ? 'রিপোর্ট বিষয়:' : 'Statement:'}</span>
+                  <span className="inline-block px-3 py-1 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-500 text-white font-extrabold text-xs rounded-lg uppercase tracking-wider shadow-md">
+                    {lang === 'bn' ? 'দোকানের হিসাব স্টেটমেন্ট' : 'Shop Account Statement'}
+                  </span>
                 </div>
-                <div className="text-[11px] text-slate-600 font-mono">
-                  {lang === 'bn' ? 'তারিখ: ' : 'Date: '}
-                  <strong>{printPeriodLabel}</strong>
+                <div className="text-[11px] text-slate-300 font-bold">
+                  {lang === 'bn' ? 'সময় / তারিখ: ' : 'Period/Date: '}
+                  <strong className="text-cyan-300 font-bold">{printPeriodLabel}</strong>
                 </div>
               </div>
             </div>
 
-            {/* Quick Financial Summary Bar */}
-            <div className="grid grid-cols-3 gap-3 my-4 p-3 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs">
-              <div>
-                <span className="text-[10px] text-slate-500 uppercase font-bold block">
+            {/* Quick Financial Summary Bar (Dynamic & Colorful) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 my-3.5 text-center text-xs">
+              <div className="p-2.5 rounded-xl border border-amber-300 bg-amber-50/90 text-amber-950 shadow-2xs">
+                <span className="text-[10px] text-amber-800 uppercase font-extrabold block">
+                  {lang === 'bn' ? 'প্রারম্ভিক জের (Opening)' : 'Opening B/L'}
+                </span>
+                <span className="font-mono font-black text-sm text-amber-900 mt-0.5 block">
+                  {formatCurrency(printOpening, lang)}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl border border-blue-300 bg-blue-50/90 text-blue-950 shadow-2xs">
+                <span className="text-[10px] text-blue-800 uppercase font-extrabold block">
                   {lang === 'bn' ? 'মোট মাল ক্রয়' : 'Total Purchased'}
                 </span>
-                <span className="font-mono font-bold text-sm text-slate-900">
+                <span className="font-mono font-black text-sm text-blue-900 mt-0.5 block">
                   {formatCurrency(printPurchaseTotal, lang)}
                 </span>
               </div>
-              <div>
-                <span className="text-[10px] text-slate-500 uppercase font-bold block">
+              <div className="p-2.5 rounded-xl border border-emerald-300 bg-emerald-50/90 text-emerald-950 shadow-2xs">
+                <span className="text-[10px] text-emerald-800 uppercase font-extrabold block">
                   {lang === 'bn' ? 'মোট পরিশোধ' : 'Total Paid'}
                 </span>
-                <span className="font-mono font-bold text-sm text-emerald-700">
+                <span className="font-mono font-black text-sm text-emerald-900 mt-0.5 block">
                   {formatCurrency(printPaidTotal, lang)}
                 </span>
               </div>
-              <div>
-                <span className="text-[10px] text-slate-500 uppercase font-bold block">
+              <div className={`p-2.5 rounded-xl border-2 shadow-2xs ${printIsDue ? 'border-rose-400 bg-rose-50 text-rose-950' : printIsAdvance ? 'border-emerald-400 bg-emerald-50 text-emerald-950' : 'border-slate-300 bg-slate-50 text-slate-800'}`}>
+                <span className="text-[10px] uppercase font-black block">
                   {printIsDue
                     ? lang === 'bn'
                       ? 'দোকানে বকেয়া (Due)'
@@ -812,7 +877,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
                     : 'Account Status'}
                 </span>
                 <span
-                  className={`font-mono font-black text-sm ${
+                  className={`font-mono font-black text-base mt-0.5 block ${
                     printIsDue ? 'text-rose-700' : printIsAdvance ? 'text-emerald-700' : 'text-slate-800'
                   }`}
                 >
@@ -823,35 +888,54 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
 
             {/* Table of Invoices */}
             <div className="mb-4">
-              <h4 className="text-xs font-bold text-slate-800 uppercase mb-1">
-                {lang === 'bn' ? '১. দোকান থেকে মাল ক্রয়ের তালিকা' : '1. Shop Purchases List'}
+              <h4 className="text-xs font-black text-indigo-950 uppercase mb-1 flex items-center gap-1.5">
+                <span>🛒</span> {lang === 'bn' ? '১. দোকান থেকে মাল ক্রয়ের তালিকা (Purchases)' : '1. Shop Purchases List'}
               </h4>
               <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                    <th className="py-1 px-2 border-r border-slate-300 text-center w-8">ক্র.</th>
-                    <th className="py-1 px-2 border-r border-slate-300 w-28">ইনভয়েস নং</th>
-                    <th className="py-1 px-2 border-r border-slate-300 w-20">তারিখ</th>
-                    <th className="py-1 px-2 border-r border-slate-300">পণ্যের বিবরণ</th>
-                    <th className="py-1 px-2 text-right w-28">মোট টাকা</th>
+                  <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                    <th className="py-2 px-2 border-r border-slate-700 text-center w-8 text-white font-bold">#</th>
+                    <th className="py-2 px-2 border-r border-slate-700 w-28 text-white font-bold">ইনভয়েস নং</th>
+                    <th className="py-2 px-2 border-r border-slate-700 w-24 text-white font-bold">তারিখ</th>
+                    <th className="py-2 px-2 border-r border-slate-700 text-white font-bold">পণ্যের বিবরণ</th>
+                    <th className="py-2 px-2 text-right w-28 text-white font-bold">মোট বিল (৳)</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {printOpening !== 0 && (
+                    <tr className="bg-amber-100/90 font-black border-b border-indigo-200 text-amber-950">
+                      <td className="py-1.5 px-2 border-r border-indigo-200 text-center font-mono text-slate-500">
+                        —
+                      </td>
+                      <td className="py-1.5 px-2 border-r border-indigo-200 font-mono font-black text-amber-900">
+                        OPENING
+                      </td>
+                      <td className="py-1.5 px-2 border-r border-indigo-200 font-mono text-amber-900 font-bold">
+                        {printFrom ? formatDate(printFrom, lang) : '—'}
+                      </td>
+                      <td className="py-1.5 px-2 border-r border-indigo-200 text-amber-950 font-black italic">
+                        {lang === 'bn' ? 'পূর্বের প্রারম্ভিক জের (Opening Balance B/F)' : 'Opening Balance (brought forward)'}
+                      </td>
+                      <td className="py-1.5 px-2 text-right font-mono font-black text-amber-950">
+                        {formatCurrency(printOpening, lang)}
+                      </td>
+                    </tr>
+                  )}
                   {printInvoices.map((inv, idx) => (
-                    <tr key={inv.id} className="border-b border-slate-200">
-                      <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
+                    <tr key={inv.id} className="border-b border-indigo-100 hover:bg-indigo-50/40">
+                      <td className="py-1.5 px-2 border-r border-indigo-100 text-center font-mono text-slate-500">
                         {formatNumber(idx + 1, lang)}
                       </td>
-                      <td className="py-1 px-2 border-r border-slate-200 font-mono font-bold">
+                      <td className="py-1.5 px-2 border-r border-indigo-100 font-mono font-black text-slate-900">
                         {inv.invoiceNo}
                       </td>
-                      <td className="py-1 px-2 border-r border-slate-200 font-mono">
+                      <td className="py-1.5 px-2 border-r border-indigo-100 font-mono font-semibold text-slate-700">
                         {formatDate(inv.date, lang)}
                       </td>
-                      <td className="py-1 px-2 border-r border-slate-200">
+                      <td className="py-1.5 px-2 border-r border-indigo-100 font-medium text-slate-900">
                         {inv.items.map((i) => `${i.name} (${i.quantity} ${i.unit})`).join(', ')}
                       </td>
-                      <td className="py-1 px-2 text-right font-mono font-bold">
+                      <td className="py-1.5 px-2 text-right font-mono font-black text-indigo-950">
                         {formatCurrency(inv.netInvoiceAmount || inv.grandTotal, lang)}
                       </td>
                     </tr>
@@ -862,39 +946,39 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
 
             {/* Table of Payments */}
             <div className="mb-6">
-              <h4 className="text-xs font-bold text-slate-800 uppercase mb-1">
-                {lang === 'bn' ? '২. দোকানে পরিশোধকৃত ভাউচার' : '2. Payments Made to Shop'}
+              <h4 className="text-xs font-black text-purple-950 uppercase mb-1 flex items-center gap-1.5">
+                <span>💵</span> {lang === 'bn' ? '২. দোকানে পরিশোধকৃত ভাউচার তালিকা (Payments)' : '2. Payments Made to Shop'}
               </h4>
               <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-800 uppercase text-[10px] font-bold border-b border-slate-300">
-                    <th className="py-1 px-2 border-r border-slate-300 text-center w-8">ক্র.</th>
-                    <th className="py-1 px-2 border-r border-slate-300 w-28">ভাউচার নং</th>
-                    <th className="py-1 px-2 border-r border-slate-300 w-20">তারিখ</th>
-                    <th className="py-1 px-2 border-r border-slate-300 w-20">মাধ্যম</th>
-                    <th className="py-1 px-2 border-r border-slate-300">গ্রহীতা / বিবরণ</th>
-                    <th className="py-1 px-2 text-right w-28">পরিশোধিত টাকা</th>
+                  <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                    <th className="py-2 px-2 border-r border-slate-700 text-center w-8 text-white font-bold">#</th>
+                    <th className="py-2 px-2 border-r border-slate-700 w-28 text-white font-bold">ভাউচার নং</th>
+                    <th className="py-2 px-2 border-r border-slate-700 w-24 text-white font-bold">তারিখ</th>
+                    <th className="py-2 px-2 border-r border-slate-700 w-20 text-center text-white font-bold">মাধ্যম</th>
+                    <th className="py-2 px-2 border-r border-slate-700 text-white font-bold">গ্রহীতা / বিবরণ</th>
+                    <th className="py-2 px-2 text-right w-28 text-white font-bold">পরিশোধিত টাকা (৳)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {printPayments.map((p, idx) => (
-                    <tr key={p.id} className="border-b border-slate-200">
-                      <td className="py-1 px-2 border-r border-slate-200 text-center font-mono">
+                    <tr key={p.id} className="border-b border-purple-100 hover:bg-purple-50/40">
+                      <td className="py-1.5 px-2 border-r border-purple-100 text-center font-mono text-slate-500">
                         {formatNumber(idx + 1, lang)}
                       </td>
-                      <td className="py-1 px-2 border-r border-slate-200 font-mono font-bold">
+                      <td className="py-1.5 px-2 border-r border-purple-100 font-mono font-black text-slate-900">
                         {p.voucherNo || '-'}
                       </td>
-                      <td className="py-1 px-2 border-r border-slate-200 font-mono">
+                      <td className="py-1.5 px-2 border-r border-purple-100 font-mono font-semibold text-slate-700">
                         {formatDate(p.date, lang)}
                       </td>
-                      <td className="py-1 px-2 border-r border-slate-200 uppercase font-mono text-[10px]">
+                      <td className="py-1.5 px-2 border-r border-purple-100 uppercase font-mono text-[10px] text-center font-bold text-slate-700">
                         {p.paymentMethod}
                       </td>
-                      <td className="py-1 px-2 border-r border-slate-200">
+                      <td className="py-1.5 px-2 border-r border-purple-100 font-medium text-slate-900">
                         {p.recipientName} {p.notes ? `(${p.notes})` : ''}
                       </td>
-                      <td className="py-1 px-2 text-right font-mono font-bold text-emerald-800">
+                      <td className="py-1.5 px-2 text-right font-mono font-black text-emerald-800">
                         {formatCurrency(p.amount, lang)}
                       </td>
                     </tr>
@@ -903,16 +987,18 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
               </table>
             </div>
 
-            {/* Bottom Statement & Signature Line */}
-            <div className="mt-8 pt-4 border-t border-slate-300 grid grid-cols-2 text-center text-xs text-slate-700">
-              <div>
-                <div className="border-t border-slate-400 w-36 mx-auto pt-1 font-semibold">
-                  {lang === 'bn' ? 'দোকান ক্যাশিয়ার স্বাক্ষর' : 'Shop Cashier Signature'}
+            {/* Bottom Statement & Unique Dynamic Signatures */}
+            <div className="grid grid-cols-2 gap-6 mt-8 pt-6 border-t-2 border-slate-300 text-center text-xs">
+              <div className="p-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 flex flex-col justify-between h-20">
+                <div className="w-full border-b border-dashed border-slate-300 pb-3 text-transparent select-none">.</div>
+                <div className="font-black text-slate-800 text-[11px] flex items-center justify-center gap-1">
+                  <span>✍️ {lang === 'bn' ? 'দোকান ক্যাশিয়ার স্বাক্ষর' : 'Shop Cashier Signature'}</span>
                 </div>
               </div>
-              <div>
-                <div className="border-t border-slate-400 w-36 mx-auto pt-1 font-semibold">
-                  {lang === 'bn' ? 'মালিক / হিসাবরক্ষক স্বাক্ষর' : 'Authorized Signature'}
+              <div className="p-3 rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/40 flex flex-col justify-between h-20">
+                <div className="w-full border-b border-dashed border-indigo-200 pb-3 text-transparent select-none">.</div>
+                <div className="font-black text-indigo-900 text-[11px] flex items-center justify-center gap-1">
+                  <span>🏛️ {lang === 'bn' ? 'মালিক / হিসাবরক্ষক স্বাক্ষর' : 'Authorized Signature'}</span>
                 </div>
               </div>
             </div>
@@ -1037,6 +1123,67 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
                   className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold cursor-pointer shadow-md"
                 >
                   {lang === 'bn' ? 'পেমেন্ট সংরক্ষণ করুন' : 'Save Payment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Opening Balance Modal */}
+      {isOpeningModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Coins className="w-5 h-5 text-amber-500" />
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                  {lang === 'bn' ? 'দোকানের প্রারম্ভিক জের (Opening B/L)' : 'Shop Opening Balance (Opening B/L)'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsOpeningModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOpeningBalance} className="space-y-4 text-xs">
+              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
+                {lang === 'bn'
+                  ? 'সফটওয়্যার চালুর পূর্বে দোকানদারের কাছে যদি কোনো আগের বকেয়া থাকে বা বাড়তি অগ্রিম টাকা জমা থাকে, তা এখানে লিখুন (+ মান বাকি, - মান অগ্রিম)।'
+                  : 'Enter the pre-existing balance with the shop before system records (+ for Due, - for Advance).'}
+              </p>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  {lang === 'bn' ? 'প্রারম্ভিক জের পরিমাণ (৳)' : 'Opening Balance Amount (৳)'}
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={openingInput}
+                  onChange={(e) => setOpeningInput(e.target.value)}
+                  placeholder="0.00"
+                  autoFocus
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-base font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsOpeningModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
+                >
+                  {lang === 'bn' ? 'বাতিল' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold cursor-pointer shadow-md"
+                >
+                  {lang === 'bn' ? 'সংরক্ষণ করুন' : 'Save Opening B/L'}
                 </button>
               </div>
             </form>

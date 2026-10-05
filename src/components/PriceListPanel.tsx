@@ -577,23 +577,23 @@ ${activeList.companyName || companyInfo.name}`;
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+            <thead className="bg-slate-900 text-white font-bold uppercase tracking-wider text-[10px]">
               <tr>
-                <th className="p-3 w-12 text-center">নং</th>
-                <th className="p-3">পণ্যের বিবরণ / মডেল</th>
-                <th className="p-3 text-center">একক</th>
+                <th className="p-3 w-12 text-center text-white font-bold">নং</th>
+                <th className="p-3 text-white font-bold">পণ্যের বিবরণ / মডেল</th>
+                <th className="p-3 text-center text-white font-bold">একক</th>
                 {/* 3 Mandatory Price Columns */}
-                <th className="p-3 text-right bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400">
+                <th className="p-3 text-right text-emerald-300 font-bold">
                   ১. ১০০% নগদ মূল্য (৳)
                 </th>
-                <th className="p-3 text-right bg-blue-50/50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400">
+                <th className="p-3 text-right text-cyan-300 font-bold">
                   ২. প্রতিদিন ১টি করে পেমেন্ট (৳)
                 </th>
-                <th className="p-3 text-right bg-purple-50/50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-400">
+                <th className="p-3 text-right text-purple-300 font-bold">
                   ৩. ১ মাসের বাকি পেমেন্ট (৳)
                 </th>
-                <th className="p-3">মন্তব্য / বিবরণ</th>
-                <th className="p-3 text-center">অ্যাকশন</th>
+                <th className="p-3 text-white font-bold">মন্তব্য / বিবরণ</th>
+                <th className="p-3 text-center text-white font-bold">অ্যাকশন</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

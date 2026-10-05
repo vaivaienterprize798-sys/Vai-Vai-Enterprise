@@ -138,7 +138,14 @@ export const Navbar: React.FC<NavbarProps> = ({
       subLabel: lang === 'bn' ? 'ক্রয়, পরিশোধ ও বাকি/অগ্রিম' : 'Purchases, Payments & Due',
       icon: Store,
       color: 'text-emerald-500',
-      badge: lang === 'bn' ? 'নতুন প্যানেল' : 'NEW',
+    },
+    {
+      id: 'daily_cash_book',
+      label: lang === 'bn' ? 'দৈনিক ক্যাশ বুক' : 'Daily Cash Book',
+      subLabel: lang === 'bn' ? 'সকল লেনদেনের সমন্বিত অটো ক্যাশ বুক' : 'Consolidated Auto Cash Book',
+      icon: Wallet,
+      color: 'text-emerald-600',
+      badge: lang === 'bn' ? 'অটো হিসাব' : 'AUTO',
     },
     {
       id: 'stock',

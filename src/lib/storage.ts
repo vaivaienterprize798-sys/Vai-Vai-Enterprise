@@ -53,6 +53,9 @@ const STORAGE_KEYS = {
   CHINA_DIRECT_PAYMENTS: 'rsr_china_direct_payments_v1',
   SETTINGS: 'rsr_settings_v1',
   BRANCH_OPENING: 'rsr_branch_opening_v1',
+  CASH_BOOK_OPENING: 'rsr_cash_book_opening_v1',
+  CASH_BOOK_ENTRIES: 'rsr_cash_book_entries_v1',
+  DOKAN_OPENING: 'rsr_dokan_opening_v1',
   THEME: 'rsr_theme_v1',
   LANGUAGE: 'rsr_lang_v1',
 };
@@ -76,6 +79,7 @@ export const INITIAL_PRICE_LISTS: PriceList[] = [];
 export const INITIAL_WORKER_CONVERSIONS: WorkerProductConversion[] = [];
 export const INITIAL_THIRD_PARTIES: ThirdParty[] = [];
 export const INITIAL_CHINA_DIRECT_PAYMENTS: ChinaDirectPayment[] = [];
+export const INITIAL_CASH_BOOK_ENTRIES: any[] = [];
 
 // Helper to safely read from localStorage
 export const loadFromStorage = <T>(key: string, defaultValue: T): T => {
@@ -776,6 +780,50 @@ export const storageService = {
     return cloudDbService.deleteDocument('chinaDirectPayments', id);
   },
 
+  // Daily Cash Book Opening Balance & Manual Entries
+  getCashBookOpeningBalance: (): number => {
+    return loadFromStorage<number>(STORAGE_KEYS.CASH_BOOK_OPENING, 0);
+  },
+
+  setCashBookOpeningBalance: (val: number): void => {
+    saveToStorage(STORAGE_KEYS.CASH_BOOK_OPENING, Number(val) || 0);
+    // Also save to appSettings for cloud sync
+    cloudDbService.saveDocument('appSettings', { id: 'cashBookOpening', key: 'cashBookOpening', value: String(val) }).catch(() => {});
+  },
+
+  getCashBookManualEntries: (): any[] => {
+    const list = loadFromStorage<any[]>(STORAGE_KEYS.CASH_BOOK_ENTRIES, INITIAL_CASH_BOOK_ENTRIES);
+    return Array.isArray(list) ? list.filter(Boolean) : INITIAL_CASH_BOOK_ENTRIES;
+  },
+
+  saveCashBookManualEntry: (entry: any): void => {
+    const list = storageService.getCashBookManualEntries();
+    const idx = list.findIndex((e: any) => e.id === entry.id);
+    let updated: any[];
+    if (idx >= 0) {
+      updated = [...list];
+      updated[idx] = entry;
+    } else {
+      updated = [entry, ...list];
+    }
+    saveToStorage(STORAGE_KEYS.CASH_BOOK_ENTRIES, updated);
+  },
+
+  deleteCashBookManualEntry: (id: string): void => {
+    const list = storageService.getCashBookManualEntries();
+    saveToStorage(STORAGE_KEYS.CASH_BOOK_ENTRIES, list.filter((e: any) => e.id !== id));
+  },
+
+  // Dokan Opening Balance
+  getDokanOpeningBalance: (): number => {
+    return loadFromStorage<number>(STORAGE_KEYS.DOKAN_OPENING, 0);
+  },
+
+  setDokanOpeningBalance: (val: number): void => {
+    saveToStorage(STORAGE_KEYS.DOKAN_OPENING, Number(val) || 0);
+    cloudDbService.saveDocument('appSettings', { id: 'dokanOpening', key: 'dokanOpening', value: String(val) }).catch(() => {});
+  },
+
   // Missing Backup/Restore & Reset Methods
   exportFullBackup: (): string => {
     const backup = {
@@ -929,52 +977,56 @@ export const storageService = {
 
   // Reset & Wipe
   wipeAllDataClean: async (preserveCompany: boolean = true): Promise<void> => {
-    // 1. If online and authenticated, attempt to wipe cloud collections (Force Clean)
-    // We do this first so listeners don't re-inject data during the local clear
-    if (auth.currentUser) {
-      const collectionsToWipe = [
-        'invoices', 'stock', 'parties', 'staff', 'attendance', 
-        'pettyCash', 'carExpenses', 'dokanPayments', 'workerTasks', 
-        'punchRequests', 'supervisorSamples', 'salaryPayments',
-        'branchConsignments', 'branchRemittances', 'rmbConversions',
-        'priceLists', 'workerConversions', 'thirdParties', 'chinaDirectPayments'
-      ];
-      
-      for (const colName of collectionsToWipe) {
-        try {
-          const snap = await getDocs(collection(db, colName));
-          if (!snap.empty) {
+    // 1. Attempt to wipe all cloud collections (Force Clean across cloud database)
+    const collectionsToWipe = [
+      'invoices', 'stock', 'parties', 'staff', 'attendance', 
+      'pettyCash', 'carExpenses', 'dokanPayments', 'workerTasks', 
+      'punchRequests', 'supervisorSamples', 'salaryPayments',
+      'branchConsignments', 'branchRemittances', 'rmbConversions',
+      'priceLists', 'workerConversions', 'thirdParties', 'chinaDirectPayments',
+      'ledger', 'expenses'
+    ];
+    
+    for (const colName of collectionsToWipe) {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        if (!snap.empty) {
+          for (let i = 0; i < snap.docs.length; i += FIRESTORE_BATCH_LIMIT) {
             const batch = writeBatch(db);
-            snap.forEach((docSnap) => {
+            snap.docs.slice(i, i + FIRESTORE_BATCH_LIMIT).forEach((docSnap) => {
               batch.delete(docSnap.ref);
             });
             await batch.commit();
           }
-        } catch (err) {
-          console.warn(`[Wipe] Cloud collection ${colName} wipe notice:`, err);
         }
+      } catch (err) {
+        console.warn(`[Wipe] Cloud collection ${colName} wipe notice:`, err);
       }
     }
 
     // 2. Clear Local Storage completely
     const savedCompany = preserveCompany ? localStorage.getItem(STORAGE_KEYS.COMPANY) : null;
+    const savedSession = localStorage.getItem('rsr_user_session_v1');
     const savedLang = localStorage.getItem('rsr_lang_pref');
     const savedTheme = localStorage.getItem('rsr_theme_pref');
+    const purgeTime = new Date().toISOString();
     
     localStorage.clear();
     sessionStorage.clear();
     
-    // 3. Restore basic preferences and company if requested
+    // 3. Restore basic preferences, user session and company if requested
     if (preserveCompany && savedCompany) {
       localStorage.setItem(STORAGE_KEYS.COMPANY, savedCompany);
     } else if (!preserveCompany) {
       saveToStorage(STORAGE_KEYS.COMPANY, DEFAULT_COMPANY);
     }
     
+    if (savedSession) localStorage.setItem('rsr_user_session_v1', savedSession);
     if (savedLang) localStorage.setItem('rsr_lang_pref', savedLang);
     if (savedTheme) localStorage.setItem('rsr_theme_pref', savedTheme);
+    localStorage.setItem('rsr_last_wipe_time', purgeTime);
 
-    // 4. Explicitly set empty arrays for all data keys to ensure zero state
+    // 4. Explicitly set empty arrays for all data keys to ensure absolute zero state
     saveToStorage(STORAGE_KEYS.INVOICES, []);
     saveToStorage(STORAGE_KEYS.STOCK, []);
     saveToStorage(STORAGE_KEYS.PARTIES, []);
@@ -995,6 +1047,8 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.WORKER_CONVERSIONS, []);
     saveToStorage(STORAGE_KEYS.THIRD_PARTIES, []);
     saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, []);
+    saveToStorage(STORAGE_KEYS.CASH_BOOK_ENTRIES, []);
+    saveToStorage(STORAGE_KEYS.LEDGER, []);
   },
 
   resetToDefaults: async (): Promise<void> => {

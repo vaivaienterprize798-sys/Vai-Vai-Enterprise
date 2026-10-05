@@ -113,8 +113,17 @@ export async function testConnection(): Promise<boolean> {
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log('[Firebase] Cloud Firestore connection test verified.');
     return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
+  } catch (error: any) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const code = error?.code || '';
+    if (
+      code === 'unavailable' ||
+      msg.includes('unavailable') ||
+      msg.includes('could not be completed') ||
+      msg.includes('the client is offline') ||
+      msg.includes('Connection failed') ||
+      msg.includes('Could not reach Cloud Firestore backend')
+    ) {
       console.warn('[Firebase] Offline or connectivity issue. Local persistence active.');
       return false;
     }

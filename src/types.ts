@@ -538,10 +538,26 @@ export interface ThirdParty {
   email?: string;
   city?: string;
   address?: string;
+  openingBalance?: number; // প্রারম্ভিক ব্যালেন্স (Opening B/L)
   notes?: string;
   status?: 'active' | 'inactive';
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface CashBookManualEntry {
+  id: string;
+  date: string;
+  type: 'in' | 'out';
+  category?: string;
+  title?: string;
+  particulars?: string;
+  amount: number;
+  paymentMethod?: PaymentMethod;
+  referenceNo?: string;
+  refNo?: string;
+  notes?: string;
+  createdAt: string;
 }
 
 export interface ChinaDirectPayment {

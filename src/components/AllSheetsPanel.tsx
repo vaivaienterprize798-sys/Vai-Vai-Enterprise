@@ -14,6 +14,9 @@ import {
   Boxes,
   CheckCircle2,
   Clock,
+  Trash2,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   StockItem,
@@ -76,6 +79,20 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
 
   // Active Sheet Tab State
   const [activeSheetType, setActiveSheetType] = useState<StatementType>(initialType);
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+
+  const handlePurgeAllOldData = async () => {
+    try {
+      setIsPurging(true);
+      await storageService.wipeAllDataClean(true);
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to purge stale data:', err);
+      setIsPurging(false);
+      alert(lang === 'bn' ? 'পুরনো ডেটা মুছে ফেলার সময় সমস্যা হয়েছে' : 'Failed to clean old data');
+    }
+  };
 
   // Date and Month Filter States (User Requirement)
   const [filterMode, setFilterMode] = useState<PeriodFilterMode>('month');
@@ -232,7 +249,7 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-slate-500 dark:text-slate-400">
           <span className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
             {lang === 'bn' ? 'ফিল্টারকৃত ইনভয়েস:' : 'Invoices:'}{' '}
             <strong className="text-indigo-600 dark:text-indigo-400">{filteredInvoices.length}</strong>
@@ -241,6 +258,15 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
             {lang === 'bn' ? 'খরচ এন্ট্রি:' : 'Expenses:'}{' '}
             <strong className="text-amber-600 dark:text-amber-400">{filteredExpenses.length}</strong>
           </span>
+          <button
+            type="button"
+            onClick={() => setIsPurgeModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold cursor-pointer transition-all"
+            title={lang === 'bn' ? 'পূর্বের সকল ট্রায়াল বা পুরনো ডেটা মুছে সম্পূর্ণ ফ্রেশ করুন' : 'Deep purge all old/stale history forever'}
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+            <span>{lang === 'bn' ? 'পূর্বের ডেটা ক্লিন' : 'Purge Old Data'}</span>
+          </button>
         </div>
       </div>
 
@@ -401,32 +427,42 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
       </div>
 
       {/* Sheet Type Selection Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {sheetTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSheetType === tab.type;
+          
+          const activeGradients: Record<StatementType, string> = {
+            stock: 'from-emerald-900 via-teal-900 to-slate-900 border-emerald-400 ring-2 ring-emerald-400/50 shadow-emerald-950/30',
+            party: 'from-indigo-900 via-blue-900 to-slate-900 border-indigo-400 ring-2 ring-indigo-400/50 shadow-indigo-950/30',
+            payroll: 'from-purple-900 via-indigo-900 to-slate-900 border-purple-400 ring-2 ring-purple-400/50 shadow-purple-950/30',
+            expense: 'from-amber-900 via-orange-900 to-slate-900 border-amber-400 ring-2 ring-amber-400/50 shadow-amber-950/30',
+            financial: 'from-teal-900 via-cyan-900 to-slate-900 border-teal-400 ring-2 ring-teal-400/50 shadow-teal-950/30',
+            worker_tracking: 'from-rose-900 via-pink-900 to-slate-900 border-rose-400 ring-2 ring-rose-400/50 shadow-rose-950/30',
+          };
+
           return (
             <button
               key={tab.type}
               onClick={() => setActiveSheetType(tab.type)}
-              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 shadow-xs ${
                 isActive
-                  ? 'bg-slate-900 dark:bg-slate-800 text-white border-indigo-500 shadow-md ring-2 ring-indigo-500/40'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-slate-700'
+                  ? `bg-gradient-to-br ${activeGradients[tab.type]} text-white shadow-lg scale-[1.02]`
+                  : 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 hover:scale-[1.01]'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className={`p-1.5 rounded-lg text-white ${tab.color}`}>
+                <span className={`p-2 rounded-xl text-white shadow-xs ${tab.color}`}>
                   <Icon className="w-4 h-4" />
                 </span>
-                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg uppercase tracking-wider ${
+                  isActive ? 'bg-white/20 text-cyan-200 border border-white/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                 }`}>
                   {lang === 'bn' ? tab.badgeBn : tab.badgeEn}
                 </span>
               </div>
               <div>
-                <span className="font-bold text-xs block leading-tight">
+                <span className={`font-black text-xs block leading-tight ${isActive ? 'text-white drop-shadow-xs' : 'text-slate-900 dark:text-slate-100'}`}>
                   {lang === 'bn' ? tab.labelBn : tab.labelEn}
                 </span>
               </div>
@@ -436,7 +472,7 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
       </div>
 
       {/* Embedded 1-Page Printable Statement View for the Active Sheet */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2 sm:p-4 shadow-sm">
+      <div className="bg-gradient-to-b from-slate-50 to-slate-100/60 dark:from-slate-900 dark:to-slate-950 rounded-3xl border-2 border-indigo-200 dark:border-indigo-900/60 p-2 sm:p-5 shadow-xl">
         <PrintStatements
           type={activeSheetType}
           lang={lang}
@@ -456,6 +492,67 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
           endDate={endDate}
         />
       </div>
+
+      {/* Permanent Purge Stale/Old Data Confirmation Modal */}
+      {isPurgeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-900/60 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-rose-100 dark:bg-rose-950/60 text-rose-600 rounded-2xl">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {lang === 'bn' ? 'পূর্বের পুরনো ডেটা স্থায়ীভাবে মুছে ফেলুন' : 'Permanent Purge Stale History'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {lang === 'bn' ? 'অল শিট প্যানেল ও সকল হিসাব ক্লিন রিসেট' : 'Clean Wipe Stale & Ghost Records'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-2xl text-xs text-rose-800 dark:text-rose-300 space-y-2 leading-relaxed">
+              <p>
+                {lang === 'bn'
+                  ? '⚠️ এটি নিশ্চিত করলে ক্লাউড ফায়ারস্টোর ডাটাবেজ এবং লোকাল ক্যাশ মেমোরি থেকে পূর্বের সকল ট্রায়াল/পুরনো চালান, খরচ ও ভাউচার স্থায়ীভাবে মুছে যাবে এবং প্রারম্ভিক হিসাব থেকে ফ্রেশভাবে কাজ শুরু হবে।'
+                  : '⚠️ This will permanently erase all previous test/stale invoices, expenses, and vouchers from both Firestore cloud and local memory.'}
+              </p>
+              <p className="font-semibold text-rose-900 dark:text-rose-200">
+                {lang === 'bn' ? 'মুছে ফেলা ডেটা আর কখনোই স্বয়ংক্রিয়ভাবে ফিরে আসবে না।' : 'Wiped records will never resurrect or interfere with calculations.'}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isPurging}
+                onClick={() => setIsPurgeModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+              >
+                {lang === 'bn' ? 'বাতিল' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={isPurging}
+                onClick={handlePurgeAllOldData}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-md disabled:opacity-50"
+              >
+                {isPurging ? (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                    <span>{lang === 'bn' ? 'পরিষ্কার হচ্ছে...' : 'Purging...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{lang === 'bn' ? 'হ্যাঁ, স্থায়ীভাবে মুছে ফেলুন' : 'Yes, Purge Permanently'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

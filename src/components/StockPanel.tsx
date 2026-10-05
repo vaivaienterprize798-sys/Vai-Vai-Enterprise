@@ -567,22 +567,22 @@ export const StockPanel: React.FC<StockPanelProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-slate-900 text-white uppercase text-[10px] font-bold border-b border-slate-950">
               <tr>
-                <th className="py-3 px-3 w-8 text-center">{t.sl}</th>
-                <th className="py-3 px-3 w-28">{t.itemCode}</th>
-                <th className="py-3 px-3">{t.itemDescription}</th>
-                <th className="py-3 px-3 w-28">{t.category}</th>
-                <th className="py-3 px-3 text-center w-24 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-bold">
+                <th className="py-3 px-3 w-8 text-center text-white font-bold">{t.sl}</th>
+                <th className="py-3 px-3 w-28 text-white font-bold">{t.itemCode}</th>
+                <th className="py-3 px-3 text-white font-bold">{t.itemDescription}</th>
+                <th className="py-3 px-3 w-28 text-white font-bold">{t.category}</th>
+                <th className="py-3 px-3 text-center w-24 text-emerald-300 font-bold">
                   {t.todayPurchase}
                 </th>
-                <th className="py-3 px-3 text-center w-24 bg-blue-50/70 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 font-bold">
+                <th className="py-3 px-3 text-center w-24 text-cyan-300 font-bold">
                   {t.todaySale}
                 </th>
-                <th className="py-3 px-3 text-center w-28">{t.inStock}</th>
-                <th className="py-3 px-3 text-right w-28">{t.purchaseRate}</th>
-                <th className="py-3 px-3 text-right w-32">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Stock Value'}</th>
-                <th className="py-3 px-3 text-right w-20">{t.action}</th>
+                <th className="py-3 px-3 text-center w-28 text-white font-bold">{t.inStock}</th>
+                <th className="py-3 px-3 text-right w-28 text-white font-bold">{t.purchaseRate}</th>
+                <th className="py-3 px-3 text-right w-32 text-white font-bold">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Stock Value'}</th>
+                <th className="py-3 px-3 text-right w-20 text-white font-bold">{t.action}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -872,7 +872,21 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-medium text-amber-600 dark:text-amber-400 mb-1">
+                    {lang === 'bn' ? 'প্রারম্ভিক মজুদ (Opening Stock)' : 'Opening Stock'}
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={formOpeningQty || ''}
+                    onChange={(e) => setFormOpeningQty(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="w-full px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs text-amber-700 dark:text-amber-300"
+                  />
+                </div>
+
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
                     {lang === 'bn' ? 'বর্তমান মজুদ (Current Stock)' : t.inStock}

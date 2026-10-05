@@ -998,18 +998,18 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden animate-in fade-in duration-150">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+              <thead className="bg-slate-900 text-white font-bold border-b border-slate-950">
                 <tr>
-                  <th className="p-3.5">{lang === 'bn' ? 'তারিখ & সময়' : 'Date & Time'}</th>
-                  <th className="p-3.5">ব্যাচ নং</th>
-                  <th className="p-3.5">কারিগর (Worker)</th>
-                  <th className="p-3.5">{lang === 'bn' ? 'উৎস পণ্য ➔ কী আইটেম ও কত পিস বের হলো' : 'Source ➔ Extracted Output & PCS'}</th>
-                  <th className="p-3.5 text-center">দেওয়া (Given)</th>
-                  <th className="p-3.5 text-center">ডেলিভারি (Delivered)</th>
-                  <th className="p-3.5 text-center text-rose-600">ড্যামেজ (Damaged)</th>
-                  <th className="p-3.5 text-center text-blue-600">অবশিষ্ট (Remaining)</th>
-                  <th className="p-3.5 text-center">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
-                  <th className="p-3.5 text-center">অ্যাকশন</th>
+                  <th className="p-3.5 text-white font-bold">{lang === 'bn' ? 'তারিখ & সময়' : 'Date & Time'}</th>
+                  <th className="p-3.5 text-white font-bold">ব্যাচ নং</th>
+                  <th className="p-3.5 text-white font-bold">কারিগর (Worker)</th>
+                  <th className="p-3.5 text-white font-bold">{lang === 'bn' ? 'উৎস পণ্য ➔ কী আইটেম ও কত পিস বের হলো' : 'Source ➔ Extracted Output & PCS'}</th>
+                  <th className="p-3.5 text-center text-white font-bold">দেওয়া (Given)</th>
+                  <th className="p-3.5 text-center text-white font-bold">ডেলিভারি (Delivered)</th>
+                  <th className="p-3.5 text-center text-rose-300 font-bold">ড্যামেজ (Damaged)</th>
+                  <th className="p-3.5 text-center text-cyan-300 font-bold">অবশিষ্ট (Remaining)</th>
+                  <th className="p-3.5 text-center text-white font-bold">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
+                  <th className="p-3.5 text-center text-white font-bold">অ্যাকশন</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
@@ -1337,16 +1337,16 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
           {/* Table of Conversions */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+              <thead className="bg-slate-900 text-white font-bold border-b border-slate-950">
                 <tr>
-                  <th className="p-3">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'কারিগর' : 'Worker'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'ইনপুট পণ্য ও পরিমাণ' : 'Input Material'}</th>
-                  <th className="p-3 text-cyan-600 dark:text-cyan-400">{lang === 'bn' ? 'উৎপাদিত নতুন আউটপুট' : 'Output Produced'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'এক্সট্রাক্ট পার্টস/উপাদান' : 'Extracted Components'}</th>
-                  <th className="p-3 text-center text-rose-600">{lang === 'bn' ? 'অপচয় / লস' : 'Wastage'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
-                  <th className="p-3 text-center">{lang === 'bn' ? 'অ্যাকশন' : 'Actions'}</th>
+                  <th className="p-3 text-white font-bold">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
+                  <th className="p-3 text-white font-bold">{lang === 'bn' ? 'কারিগর' : 'Worker'}</th>
+                  <th className="p-3 text-white font-bold">{lang === 'bn' ? 'ইনপুট পণ্য ও পরিমাণ' : 'Input Material'}</th>
+                  <th className="p-3 text-cyan-300 font-bold">{lang === 'bn' ? 'উৎপাদিত নতুন আউটপুট' : 'Output Produced'}</th>
+                  <th className="p-3 text-white font-bold">{lang === 'bn' ? 'এক্সট্রাক্ট পার্টস/উপাদান' : 'Extracted Components'}</th>
+                  <th className="p-3 text-center text-rose-300 font-bold">{lang === 'bn' ? 'অপচয় / লস' : 'Wastage'}</th>
+                  <th className="p-3 text-white font-bold">{lang === 'bn' ? 'মন্তব্য' : 'Notes'}</th>
+                  <th className="p-3 text-center text-white font-bold">{lang === 'bn' ? 'অ্যাকশন' : 'Actions'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">

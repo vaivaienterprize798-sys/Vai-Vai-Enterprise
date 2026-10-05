@@ -379,17 +379,17 @@ export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-slate-900 text-white uppercase text-[10px] font-bold border-b border-slate-950">
               <tr>
-                <th className="py-3 px-3 w-8 text-center">{lang === 'bn' ? 'নং' : 'SL'}</th>
-                <th className="py-3 px-3 w-28">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
-                <th className="py-3 px-3 w-36">{lang === 'bn' ? 'গাড়ির নম্বর' : 'Vehicle No'}</th>
-                <th className="py-3 px-3 w-32">{lang === 'bn' ? 'খরচের খাত' : 'Category'}</th>
-                <th className="py-3 px-3">{lang === 'bn' ? 'বিবরণ ও ট্রিপ রুট' : 'Description & Trip'}</th>
-                <th className="py-3 px-3 w-28">{lang === 'bn' ? 'ড্রাইভার' : 'Driver'}</th>
-                <th className="py-3 px-3 text-center w-24">{lang === 'bn' ? 'লিটার / কিমি' : 'Qty / KM'}</th>
-                <th className="py-3 px-3 text-right w-28">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
-                <th className="py-3 px-3 text-right w-16">{lang === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
+                <th className="py-3 px-3 w-8 text-center text-white font-bold">{lang === 'bn' ? 'নং' : 'SL'}</th>
+                <th className="py-3 px-3 w-28 text-white font-bold">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
+                <th className="py-3 px-3 w-36 text-white font-bold">{lang === 'bn' ? 'গাড়ির নম্বর' : 'Vehicle No'}</th>
+                <th className="py-3 px-3 w-32 text-white font-bold">{lang === 'bn' ? 'খরচের খাত' : 'Category'}</th>
+                <th className="py-3 px-3 text-white font-bold">{lang === 'bn' ? 'বিবরণ ও ট্রিপ রুট' : 'Description & Trip'}</th>
+                <th className="py-3 px-3 w-28 text-white font-bold">{lang === 'bn' ? 'ড্রাইভার' : 'Driver'}</th>
+                <th className="py-3 px-3 text-center w-24 text-white font-bold">{lang === 'bn' ? 'লিটার / কিমি' : 'Qty / KM'}</th>
+                <th className="py-3 px-3 text-right w-28 text-white font-bold">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
+                <th className="py-3 px-3 text-right w-16 text-white font-bold">{lang === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

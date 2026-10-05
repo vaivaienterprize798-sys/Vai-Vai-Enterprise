@@ -399,6 +399,29 @@
         "updatedAt": { "type": "string", "maxLength": 100 }
       },
       "required": ["id", "date", "referenceNo", "branchName", "amountBdt", "paymentMethod"]
+    },
+    "SupervisorSample": {
+      "title": "SupervisorSample",
+      "description": "Supervisor sample and model rate configuration records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "code": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 255 },
+        "rate": { "type": "number" }
+      },
+      "required": ["id"]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Global application configuration and branch opening balance settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "key": { "type": "string", "maxLength": 100 },
+        "value": { "type": "string", "maxLength": 5000 }
+      },
+      "required": ["id"]
     }
   },
   "firestore": {
@@ -477,6 +500,14 @@
     "/chinaDirectPayments/{paymentId}": {
       "schema": { "$ref": "#/entities/ChinaDirectPayment" },
       "description": "China office direct BDT payments record"
+    },
+    "/supervisorSamples/{sampleId}": {
+      "schema": { "$ref": "#/entities/SupervisorSample" },
+      "description": "Supervisor sample code records"
+    },
+    "/appSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/AppSetting" },
+      "description": "Application settings and branch configurations"
     },
     "/test/{testId}": {
       "schema": { "$ref": "#/entities/TestConnection" },

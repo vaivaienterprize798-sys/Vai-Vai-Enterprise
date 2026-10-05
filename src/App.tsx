@@ -12,6 +12,7 @@ import { CarExpensePanel } from './components/CarExpensePanel';
 import { FinancialAnalyticsPanel } from './components/FinancialAnalyticsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { DokanHishabPanel } from './components/DokanHishabPanel';
+import { DailyCashBookPanel } from './components/DailyCashBookPanel';
 import { generateNextInvoiceNo } from './lib/invoiceUtils';
 import { WorkerTrackingPanel } from './components/WorkerTrackingPanel';
 import { BranchOfficePanel } from './components/BranchOfficePanel';
@@ -235,8 +236,14 @@ export default function App() {
       unsubs.push(
         cloudDbService.subscribeToCollection<Invoice>('invoices', (cloudInvoices) => {
           if (Array.isArray(cloudInvoices)) {
-            setInvoices(cloudInvoices);
-            localStorage.setItem('rsr_invoices_v1', JSON.stringify(cloudInvoices));
+            const resetAt = storageService.getPartyResetAt();
+            const filtered = resetAt
+              ? cloudInvoices.filter((inv) => !inv || !inv.createdAt || inv.createdAt > resetAt)
+              : cloudInvoices;
+            localStorage.setItem('rsr_invoices_v1', JSON.stringify(filtered));
+            const cleanInvoices = storageService.getInvoices();
+            setInvoices(cleanInvoices);
+            setParties(storageService.getParties());
           }
         })
       );
@@ -1111,6 +1118,22 @@ export default function App() {
                 parties={parties}
                 pettyCashExpenses={pettyCashExpenses}
                 carExpenses={carExpenses}
+              />
+            )}
+
+            {/* Daily Cash Book Panel (দৈনিক ক্যাশ বুক) */}
+            {currentTab === 'daily_cash_book' && (
+              <DailyCashBookPanel
+                invoices={invoices}
+                dokanPayments={dokanPayments}
+                pettyCash={pettyCashExpenses}
+                carExpenses={carExpenses}
+                chinaDirectPayments={chinaDirectPayments}
+                conversions={rmbConversions}
+                parties={parties}
+                lang={lang}
+                companyInfo={companyInfo}
+                onViewInvoice={handlePrintInvoice}
               />
             )}
 

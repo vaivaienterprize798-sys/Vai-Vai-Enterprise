@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Printer, Download, Calendar, RotateCcw, BookOpen, Wallet } from 'lucide-react';
+import { Printer, Download, Calendar, RotateCcw, BookOpen, Wallet, MapPin, Phone } from 'lucide-react';
 import { CarExpense, CompanyInfo, DokanPayment, Invoice, Language, Party, PettyCashExpense } from '../types';
 import { formatCurrency, formatDate } from '../lib/translations';
 import { executePrint, exportElementToPdf } from '../lib/printUtils';
@@ -12,6 +12,7 @@ import {
 } from '../lib/ledger';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 import { CompanyLogo } from './CompanyLogo';
+import { storageService } from '../lib/storage';
 
 /* ----------------------------- date helpers ----------------------------- */
 const localToday = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
@@ -154,27 +155,82 @@ const StatementSheet: React.FC<{
   const td = 'p-2 border border-slate-200 text-xs';
   return (
     <div id={id} className="one-page-sheet bg-white text-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-300 shadow-sm print:border-none print:shadow-none print:p-0">
-      <div className="flex justify-between items-start gap-4 border-b-2 border-slate-800 pb-3 mb-3">
-        <div className="flex items-start gap-3">
-          <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-12 h-12 shrink-0" />
-          <div>
-            <h1 className="text-lg font-black leading-tight">{companyInfo.name}</h1>
-            <p className="text-[10px] text-slate-600">{companyInfo.address}</p>
-            <p className="text-[10px] text-slate-600 font-mono">{companyInfo.phones.join(', ')}</p>
+      {/* Centralized Framed Company Header Box */}
+      <div className="mb-4 p-4 sm:p-5 rounded-2xl border-2 border-slate-900 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-950 text-white shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden">
+        {/* Top Golden Accent Bar */}
+        <div className="w-full h-1 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 rounded-t-full mb-3" />
+
+        {/* Centralized Logo & Premium Vibrant Company Name */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 z-10">
+          <div className="p-1.5 bg-white rounded-2xl shadow-md border-2 border-amber-400 shrink-0">
+            <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-12 h-12 sm:w-14 sm:h-14" />
+          </div>
+          <div className="space-y-1 text-center sm:text-left">
+            <h1 className="text-2xl sm:text-3xl font-black text-amber-300 bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent tracking-tight leading-tight uppercase font-sans drop-shadow-md">
+              {companyInfo.name}
+            </h1>
+            <div className="inline-block px-3 py-0.5 rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white text-[11px] font-extrabold tracking-wide uppercase shadow-xs">
+              {lang === 'bn' ? companyInfo.businessTypeBn : companyInfo.businessTypeEn}
+            </div>
           </div>
         </div>
-        <div className="text-right">
-          <div className="inline-block px-3 py-1 bg-slate-900 text-white rounded text-xs font-black tracking-wide">{title}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{subtitle}</div>
-          <div className="text-[11px] font-bold mt-0.5">{periodText(filter, lang)}</div>
+
+        {/* Centralized Contact Details Ribbon */}
+        <div className="text-[11px] text-slate-200 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 pt-2.5 border-t border-slate-800/80 w-full font-medium z-10">
+          <span className="flex items-center gap-1">
+            <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>{companyInfo.address}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-cyan-300 font-bold">
+            <Phone className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span>{companyInfo.phones.join(', ')}</span>
+          </span>
+        </div>
+
+        {/* Statement Badge & Period Line */}
+        <div className="mt-2.5 pt-2 w-full flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-800 text-xs font-mono z-10">
+          <div className="flex items-center gap-2">
+            <span className="inline-block px-3 py-1 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-500 text-white font-extrabold text-xs rounded-lg uppercase tracking-wider shadow-md">
+              {title}
+            </span>
+            <span className="text-[11px] text-amber-300 font-bold">({subtitle})</span>
+          </div>
+          <div className="text-[11px] text-slate-200 font-bold">
+            {lang === 'bn' ? 'সময়কাল: ' : 'Period: '}
+            <strong className="text-cyan-300 font-bold">{periodText(filter, lang)}</strong>
+          </div>
         </div>
       </div>
 
       {partyLines.length > 0 && (
-        <div className="mb-3 text-xs space-y-0.5">
-          {partyLines.map((l, i) => (
-            <div key={i} className={i === 0 ? 'font-bold text-sm' : 'text-slate-600'}>{l}</div>
-          ))}
+        <div className="mb-4 p-3.5 sm:p-4 rounded-2xl border-2 border-indigo-500/60 bg-gradient-to-r from-indigo-50/90 via-sky-50/70 to-blue-50/90 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-indigo-600 text-white shrink-0 shadow-xs">
+              <BookOpen className="w-4 h-4 text-cyan-200" />
+            </div>
+            <div className="space-y-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-indigo-700 text-white font-black text-[10px] uppercase">
+                  {lang === 'bn' ? 'পার্টির নাম' : 'Party Name'}
+                </span>
+                <span className="font-black text-base sm:text-lg text-indigo-950 uppercase">{partyLines[0]}</span>
+              </div>
+              {partyLines.length > 1 && (
+                <div className="flex items-center gap-1 text-slate-800 font-bold text-xs pt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span>{partyLines.slice(1).join(' • ')}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="shrink-0 text-center sm:text-right border-t sm:border-t-0 sm:border-l sm:pl-4 border-indigo-200/80 pt-1.5 sm:pt-0">
+            <span className="text-[10px] uppercase font-black text-indigo-700 block">
+              {lang === 'bn' ? 'পার্টি লেজার খাতা' : 'Party Ledger'}
+            </span>
+            <span className="text-[11px] font-mono font-bold text-slate-700">
+              {periodText(filter, lang)}
+            </span>
+          </div>
         </div>
       )}
 
@@ -236,30 +292,44 @@ const StatementSheet: React.FC<{
         </table>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs">
-        <div className="p-2 rounded-lg border border-slate-200">
-          <div className="text-[10px] text-slate-500">{lang === 'bn' ? 'প্রারম্ভিক জের' : 'Opening'}</div>
-          <div className="font-mono font-bold">{fmtBal(statement.opening)}</div>
+      {/* Dynamic & Colorful Summary Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3.5 text-xs">
+        <div className="p-2.5 rounded-xl border border-amber-300 bg-amber-50/90 text-amber-950 shadow-2xs">
+          <div className="text-[10px] text-amber-800 font-extrabold uppercase">{lang === 'bn' ? 'প্রারম্ভিক জের' : 'Opening'}</div>
+          <div className="font-mono font-black text-sm text-amber-900 mt-0.5">{fmtBal(statement.opening)}</div>
         </div>
-        <div className="p-2 rounded-lg border border-slate-200">
-          <div className="text-[10px] text-slate-500">{lang === 'bn' ? 'মোট ডেবিট' : 'Total Debit'}</div>
-          <div className="font-mono font-bold">{formatCurrency(statement.totalDr, lang)}</div>
+        <div className="p-2.5 rounded-xl border border-blue-300 bg-blue-50/90 text-blue-950 shadow-2xs">
+          <div className="text-[10px] text-blue-800 font-extrabold uppercase">{lang === 'bn' ? 'মোট ডেবিট' : 'Total Debit'}</div>
+          <div className="font-mono font-black text-sm text-blue-900 mt-0.5">{formatCurrency(statement.totalDr, lang)}</div>
         </div>
-        <div className="p-2 rounded-lg border border-slate-200">
-          <div className="text-[10px] text-slate-500">{lang === 'bn' ? 'মোট ক্রেডিট' : 'Total Credit'}</div>
-          <div className="font-mono font-bold">{formatCurrency(statement.totalCr, lang)}</div>
+        <div className="p-2.5 rounded-xl border border-emerald-300 bg-emerald-50/90 text-emerald-950 shadow-2xs">
+          <div className="text-[10px] text-emerald-800 font-extrabold uppercase">{lang === 'bn' ? 'মোট ক্রেডিট' : 'Total Credit'}</div>
+          <div className="font-mono font-black text-sm text-emerald-900 mt-0.5">{formatCurrency(statement.totalCr, lang)}</div>
         </div>
-        <div className={`p-2 rounded-lg border-2 ${balanceMode === 'dueAdvance' ? (statement.closing > 0 ? 'border-rose-400 bg-rose-50' : statement.closing < 0 ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300') : 'border-slate-800 bg-slate-50'}`}>
-          <div className="text-[10px] text-slate-600 font-semibold">
+        <div className={`p-2.5 rounded-xl border-2 shadow-2xs ${balanceMode === 'dueAdvance' ? (statement.closing > 0 ? 'border-rose-400 bg-rose-50 text-rose-950' : statement.closing < 0 ? 'border-emerald-400 bg-emerald-50 text-emerald-950' : 'border-slate-300 bg-slate-50 text-slate-800') : 'border-slate-800 bg-slate-100'}`}>
+          <div className="text-[10px] uppercase font-black">
             {lang === 'bn' ? 'সমাপনী জের' : 'Closing'} {balanceMode === 'dueAdvance' ? `- ${balanceTag(statement.closing, lang)}` : ''}
           </div>
-          <div className="font-mono font-black">{balanceMode === 'cash' ? formatCurrency(statement.closing, lang) : formatCurrency(Math.abs(statement.closing), lang)}</div>
+          <div className="font-mono font-black text-base mt-0.5">
+            {balanceMode === 'cash' ? formatCurrency(statement.closing, lang) : formatCurrency(Math.abs(statement.closing), lang)}
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-10 pt-10 text-center text-[10px] text-slate-500">
-        <div className="border-t border-slate-400 pt-1">{lang === 'bn' ? 'হিসাবরক্ষক' : 'Accountant'}</div>
-        <div className="border-t border-slate-400 pt-1">{lang === 'bn' ? 'অনুমোদনকারী' : 'Authorised Signature'}</div>
+      {/* Unique Dynamic Signatures Section */}
+      <div className="grid grid-cols-2 gap-6 pt-10 text-center text-xs">
+        <div className="p-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 flex flex-col justify-between h-20">
+          <div className="w-full border-b border-dashed border-slate-300 pb-3 text-transparent select-none">.</div>
+          <div className="font-black text-slate-800 text-[11px] flex items-center justify-center gap-1">
+            <span>📋 {lang === 'bn' ? 'হিসাবরক্ষক' : 'Accountant'}</span>
+          </div>
+        </div>
+        <div className="p-3 rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/40 flex flex-col justify-between h-20">
+          <div className="w-full border-b border-dashed border-indigo-200 pb-3 text-transparent select-none">.</div>
+          <div className="font-black text-indigo-900 text-[11px] flex items-center justify-center gap-1">
+            <span>🏛️ {lang === 'bn' ? 'অনুমোদনকারী ও সিল' : 'Authorised Signature'}</span>
+          </div>
+        </div>
       </div>
       <p className="text-center text-[9px] text-slate-400 mt-2">
         {lang === 'bn' ? 'প্রিন্টের তারিখ' : 'Printed on'}: {formatDate(localToday(), lang)}
@@ -383,7 +453,7 @@ export const PartyLedgerStatement: React.FC<{
 
   const { entries, baseOpening } = useMemo(() => {
     if (party) return { entries: partyStatementEntries(party, invoices, lang), baseOpening: partyNaturalOpening(party) };
-    return { entries: shopStatementEntries(dokanInvoices, dokanPayments, lang), baseOpening: 0 };
+    return { entries: shopStatementEntries(dokanInvoices, dokanPayments, lang), baseOpening: storageService.getDokanOpeningBalance() };
   }, [party, invoices, dokanInvoices, dokanPayments, lang]);
 
   const statement = useMemo(() => buildPeriodStatement(entries, baseOpening, filter.from || undefined, filter.to || undefined), [entries, baseOpening, filter]);
@@ -486,7 +556,7 @@ export const DailyCashBook: React.FC<{
   const today = localToday();
   const [filter, setFilter] = useState<PeriodFilter>({ from: today, to: today, month: '' });
   const entries = useMemo(() => cashBookEntries(invoices, dokanPayments, pettyCash, carExpenses, lang), [invoices, dokanPayments, pettyCash, carExpenses, lang]);
-  const statement = useMemo(() => buildPeriodStatement(entries, 0, filter.from || undefined, filter.to || undefined), [entries, filter]);
+  const statement = useMemo(() => buildPeriodStatement(entries, storageService.getCashBookOpeningBalance(), filter.from || undefined, filter.to || undefined), [entries, filter]);
   const months = useMemo(() => monthsFromEntries(entries), [entries]);
   const fileBase = `cash-book-${filter.from || 'all'}-${filter.to || 'all'}`;
 

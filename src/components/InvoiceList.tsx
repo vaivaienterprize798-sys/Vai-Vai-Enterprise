@@ -275,18 +275,18 @@ Status: ${(inv.paymentStatus || 'unpaid').toUpperCase()}`;
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-slate-900 text-white uppercase text-[10px] font-bold border-b border-slate-950">
               <tr>
-                <th className="py-3 px-3">{t.invoiceNo}</th>
-                <th className="py-3 px-3">{t.invoiceDate}</th>
-                <th className="py-3 px-3">{t.invoiceType}</th>
-                <th className="py-3 px-3">{t.partyName}</th>
-                <th className="py-3 px-3 text-center">{lang === 'bn' ? 'আইটেম' : 'Items'}</th>
-                <th className="py-3 px-3 text-right">{lang === 'bn' ? 'নেট বিল' : 'Net Amount'}</th>
-                <th className="py-3 px-3 text-right">{t.paidAmount}</th>
-                <th className="py-3 px-3 text-right">{t.remainingDue}</th>
-                <th className="py-3 px-3 text-center">{t.paymentStatus}</th>
-                <th className="py-3 px-3 text-right">{t.action}</th>
+                <th className="py-3 px-3 text-white font-bold">{t.invoiceNo}</th>
+                <th className="py-3 px-3 text-white font-bold">{t.invoiceDate}</th>
+                <th className="py-3 px-3 text-white font-bold">{t.invoiceType}</th>
+                <th className="py-3 px-3 text-white font-bold">{t.partyName}</th>
+                <th className="py-3 px-3 text-center text-white font-bold">{lang === 'bn' ? 'আইটেম' : 'Items'}</th>
+                <th className="py-3 px-3 text-right text-white font-bold">{lang === 'bn' ? 'নেট বিল' : 'Net Amount'}</th>
+                <th className="py-3 px-3 text-right text-white font-bold">{t.paidAmount}</th>
+                <th className="py-3 px-3 text-right text-white font-bold">{t.remainingDue}</th>
+                <th className="py-3 px-3 text-center text-white font-bold">{t.paymentStatus}</th>
+                <th className="py-3 px-3 text-right text-white font-bold">{t.action}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

@@ -129,6 +129,7 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
   const [tpCity, setTpCity] = useState('');
   const [tpAddress, setTpAddress] = useState('');
   const [tpNotes, setTpNotes] = useState('');
+  const [tpOpeningBalance, setTpOpeningBalance] = useState<number>(0);
 
   // China Direct Payment Form State
   const [cdpDate, setCdpDate] = useState(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
@@ -344,6 +345,7 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     setTpCity('');
     setTpAddress('');
     setTpNotes('');
+    setTpOpeningBalance(0);
     setIsThirdPartyModalOpen(true);
   };
 
@@ -356,6 +358,7 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     setTpCity(tp.city || '');
     setTpAddress(tp.address || '');
     setTpNotes(tp.notes || '');
+    setTpOpeningBalance(tp.openingBalance || 0);
     setIsThirdPartyModalOpen(true);
   };
 
@@ -371,6 +374,7 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
       email: tpEmail.trim(),
       city: tpCity.trim(),
       address: tpAddress.trim(),
+      openingBalance: Number(tpOpeningBalance) || 0,
       notes: tpNotes.trim(),
       status: 'active',
       createdAt: editingThirdParty ? editingThirdParty.createdAt : now,
@@ -1466,16 +1470,16 @@ _${companyInfo.name}_`;
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+              <thead className="bg-slate-900 text-white font-bold uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="p-3">চালান নং & তারিখ</th>
-                  <th className="p-3">শাখা / গন্তব্য</th>
-                  <th className="p-3">মালের বিবরণ & পরিমাণ</th>
-                  <th className="p-3 text-right">বাংলাদেশ মূল্য (BDT)</th>
-                  <th className="p-3 text-right">আনুমানিক RMB (¥)</th>
-                  <th className="p-3">শিপিং মাধ্যম & ট্র্যাকিং</th>
-                  <th className="p-3 text-center">স্ট্যাটাস</th>
-                  <th className="p-3 text-center">অ্যাকশন</th>
+                  <th className="p-3 text-white font-bold">চালান নং & তারিখ</th>
+                  <th className="p-3 text-white font-bold">শাখা / গন্তব্য</th>
+                  <th className="p-3 text-white font-bold">মালের বিবরণ & পরিমাণ</th>
+                  <th className="p-3 text-right text-white font-bold">বাংলাদেশ মূল্য (BDT)</th>
+                  <th className="p-3 text-right text-white font-bold">আনুমানিক RMB (¥)</th>
+                  <th className="p-3 text-white font-bold">শিপিং মাধ্যম & ট্র্যাকিং</th>
+                  <th className="p-3 text-center text-white font-bold">স্ট্যাটাস</th>
+                  <th className="p-3 text-center text-white font-bold">অ্যাকশন</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2729,6 +2733,20 @@ _${companyInfo.name}_`;
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-amber-600 dark:text-amber-400 mb-1">
+                  প্রারম্ভিক জের / ব্যালেন্স (Opening B/L ৳)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={tpOpeningBalance || ''}
+                  onChange={(e) => setTpOpeningBalance(parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 font-mono font-bold text-amber-700 dark:text-amber-300"
+                />
               </div>
 
               <div>

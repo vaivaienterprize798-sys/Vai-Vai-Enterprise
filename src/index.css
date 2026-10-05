@@ -34,13 +34,13 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 6mm 8mm;
+    margin: 4mm 6mm;
   }
 
   html, body, #root, main {
     background: #ffffff !important;
     color: #0f172a !important;
-    font-size: 11px !important;
+    font-size: 10px !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     margin: 0 !important;
@@ -59,16 +59,17 @@
   }
 
   .one-page-sheet {
-    page-break-inside: auto !important;
-    break-inside: auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
     width: 100% !important;
-    max-width: 210mm !important;
+    max-width: 100% !important;
     margin: 0 auto !important;
     box-shadow: none !important;
     border-radius: 0 !important;
     border: none !important;
-    padding: 8px !important;
+    padding: 2px !important;
     overflow: visible !important;
+    transform-origin: top center;
   }
 
   .sheet-freeze-wrapper {
@@ -83,6 +84,8 @@
   .sheet-freeze-wrapper table thead th {
     position: static !important;
     box-shadow: none !important;
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
   }
 
   table {
@@ -105,11 +108,12 @@
   /* Compact rows for print */
   .print-compact td,
   .print-compact th {
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-    padding-left: 4px !important;
-    padding-right: 4px !important;
-    font-size: 10px !important;
+    padding-top: 1.5px !important;
+    padding-bottom: 1.5px !important;
+    padding-left: 3px !important;
+    padding-right: 3px !important;
+    font-size: 9.5px !important;
+    line-height: 1.25 !important;
   }
 }
 
