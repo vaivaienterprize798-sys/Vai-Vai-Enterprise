@@ -66,7 +66,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const [partyAddress, setPartyAddress] = useState<string>('');
   const [previousBalance, setPreviousBalance] = useState<number>(0);
 
-  // Items (Up to 40 items supported)
+  // Items (Up to 50 items supported)
   const [items, setItems] = useState<InvoiceItem[]>([]);
 
   // Financials - Only Courier deduction and notes (Discount, Paid/Cash, Payment method removed per requirement)
@@ -248,7 +248,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       } else {
         // Last cell in row (rate)
         if (rowIndex === items.length - 1) {
-          if (items.length < 40) {
+          if (items.length < 50) {
             handleAddRow();
             setTimeout(() => {
               const newRowName = document.querySelector<HTMLElement>(`[data-cell="${rowIndex + 1}-0"]`);
@@ -263,10 +263,10 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     }
   };
 
-  // Add Row (Up to 40 items)
+  // Add Row (Up to 50 items)
   const handleAddRow = () => {
-    if (items.length >= 40) {
-      alert(lang === 'bn' ? 'সর্বোচ্চ ৪০ টি পণ্য একসাথে যুক্ত করা যাবে!' : 'Maximum 40 products allowed per invoice!');
+    if (items.length >= 50) {
+      alert(lang === 'bn' ? 'সর্বোচ্চ ৫০ টি পণ্য একসাথে যুক্ত করা যাবে!' : 'Maximum 50 products allowed per invoice!');
       return;
     }
     setItems([
@@ -627,14 +627,14 @@ Thank you for doing business with us!`;
             </div>
           </div>
 
-          {/* Product Items Table (Up to 40 items supported with Keyboard Enter Navigation) */}
+          {/* Product Items Table (Up to 50 items supported with Keyboard Enter Navigation) */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span>{t.productItems}</span>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 font-mono">
-                    {formatNumber(items.length, lang)} / {formatNumber(40, lang)}
+                    {formatNumber(items.length, lang)} / {formatNumber(50, lang)}
                   </span>
                   <span className="text-[11px] px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-medium hidden sm:inline-flex items-center gap-1">
                     <span>Enter কী চাপলে কার্সার পরবর্তী ঘরে যাবে</span>
@@ -650,7 +650,7 @@ Thank you for doing business with us!`;
               <button
                 type="button"
                 onClick={handleAddRow}
-                disabled={items.length >= 40}
+                disabled={items.length >= 50}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -663,7 +663,7 @@ Thank you for doing business with us!`;
                 <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
                   <tr>
                     <th className="py-2.5 px-2 w-8 text-center">{t.sl}</th>
-                    <th className="py-2.5 px-2 w-40">{lang === 'bn' ? 'স্টক প্রিসেট' : 'Stock Preset'}</th>
+                    <th className="py-2.5 px-2 w-50">{lang === 'bn' ? 'স্টক প্রিসেট' : 'Stock Preset'}</th>
                     <th className="py-2.5 px-2">{t.itemDescription}</th>
                     <th className="py-2.5 px-2 w-24 text-center bg-blue-50/50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300">
                       {lang === 'bn' ? 'মজুদ স্টক' : 'In Stock'}
@@ -681,7 +681,7 @@ Thank you for doing business with us!`;
                   {items.map((it, idx) => {
                     const matchedStock = getStockForItem(it);
                     return (
-                      <tr key={it.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <tr key={it.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="py-2 px-2 text-center font-mono font-medium text-slate-500">
                           {formatNumber(idx + 1, lang)}
                         </td>
