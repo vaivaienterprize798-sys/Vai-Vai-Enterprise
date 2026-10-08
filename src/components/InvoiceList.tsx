@@ -135,7 +135,7 @@ Status: ${(inv.paymentStatus || 'unpaid').toUpperCase()}`;
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>{t.createInvoice} (৪০টি আইটেম)</span>
+          <span>{t.createInvoice} (৫০টি আইটেম)</span>
         </button>
       </div>
 
