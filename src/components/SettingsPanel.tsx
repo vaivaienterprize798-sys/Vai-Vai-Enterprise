@@ -17,7 +17,7 @@ import {
   Smartphone,
   Info,
   Cloud,
-  CloudCheck,
+  CheckCircle2,
   UserCheck,
   Eye,
   EyeOff,
@@ -487,7 +487,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               onClick={onOpenCloudSyncModal}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
             >
-              <CloudCheck className="w-4 h-4" />
+              <CheckCircle2 className="w-4 h-4" />
               <span>{lang === 'bn' ? 'ক্লাউড সিঙ্ক কন্ট্রোল প্যানেল' : 'Cloud Sync Control'}</span>
             </button>
           )}

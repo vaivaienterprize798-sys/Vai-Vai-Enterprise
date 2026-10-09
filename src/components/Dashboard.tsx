@@ -16,7 +16,7 @@ import {
   Share2,
   Wallet,
   Cloud,
-  CloudCheck,
+  CheckCircle2,
   Globe,
 } from 'lucide-react';
 import {

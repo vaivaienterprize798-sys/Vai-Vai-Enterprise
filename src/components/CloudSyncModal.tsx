@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Cloud,
-  CloudCheck,
+  CheckCircle2,
   CloudOff,
   RefreshCw,
   UploadCloud,
@@ -239,7 +239,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             <div className="shrink-0 mt-0.5">
               {currentUser ? (
                 <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
-                  <CloudCheck className="w-5 h-5" />
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
               ) : (
                 <div className="w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center font-bold">

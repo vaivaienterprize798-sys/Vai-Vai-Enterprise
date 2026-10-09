@@ -1,0 +1,9 @@
+{
+  "apiKey": "AIzaSyPlaceholder-offline-mode",
+  "authDomain": "rsr-vai-vai-offline.firebaseapp.com",
+  "projectId": "rsr-vai-vai-offline",
+  "storageBucket": "rsr-vai-vai-offline.appspot.com",
+  "messagingSenderId": "000000000000",
+  "appId": "1:000000000000:web:0000000000000000000000",
+  "firestoreDatabaseId": "(default)"
+}
