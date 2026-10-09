@@ -9,7 +9,6 @@ import {
   Laptop,
   Smartphone,
   ShieldCheck,
-  CheckCircle2,
   AlertCircle,
   X,
   LogIn,
