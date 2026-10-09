@@ -193,8 +193,7 @@ export function executePrint(targetElementId?: string, documentTitle?: string): 
         </style>
         <script>
           // Full-page fit: enlarge short statements to fill the A4 sheet, and shrink long ones
-          // only slightly (never below 85%) so text always stays readable. Very long statements
-          // continue onto the next page instead of becoming tiny.
+          // down as far as 0.35 so even 50-item invoices fit on a single A4 page.
           (function () {
             function fit() {
               var w = document.querySelector('.print-page-wrapper');
@@ -207,8 +206,7 @@ export function executePrint(targetElementId?: string, documentTitle?: string): 
               var byW = A4_W / Math.max(1, sw);
               var byH = A4_H / Math.max(1, h);
               var scale = Math.min(byW, byH);
-              if (scale < 0.85) scale = Math.min(byW, 1); // too long: keep readable, flow to next page
-              scale = Math.max(0.85, Math.min(1.3, scale * 0.98));
+              scale = Math.max(0.35, Math.min(1.3, scale * 0.98));
               document.documentElement.style.setProperty('--one-page-fit', String(scale));
             }
             window.addEventListener('load', fit);
@@ -607,23 +605,11 @@ export async function exportElementToPdf(
     const contentHeight = contentWidth * imgAspect;
 
     const pageH = pdfHeight - margin * 2;
-    if (contentHeight <= pageH * 1.18) {
-      // Fits on one page (slight shrink allowed) - fill the full page width/height
-      const scale = Math.min(1, pageH / contentHeight);
-      const w = contentWidth * scale;
-      const h = contentHeight * scale;
-      pdf.addImage(imgDataUrl, 'PNG', (pdfWidth - w) / 2, margin, w, h, undefined, 'FAST');
-    } else {
-      // Long statement: keep full width (readable text) and continue on extra pages
-      let offset = 0;
-      let first = true;
-      while (offset < contentHeight) {
-        if (!first) pdf.addPage();
-        pdf.addImage(imgDataUrl, 'PNG', margin, margin - offset, contentWidth, contentHeight, undefined, 'FAST');
-        offset += pageH;
-        first = false;
-      }
-    }
+    // Always fit on one page: scale down to fit height if needed
+    const fitScale = Math.min(1, pageH / contentHeight);
+    const w = contentWidth * fitScale;
+    const h = contentHeight * fitScale;
+    pdf.addImage(imgDataUrl, 'PNG', (pdfWidth - w) / 2, margin, w, h, undefined, 'FAST');
 
     const safeFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
     pdf.save(safeFileName);
