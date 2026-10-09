@@ -58,17 +58,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         const targetUsername = (companyInfo.adminUsername || 'ADMIN').trim();
         const targetPassword = (companyInfo.adminPassword || 'admin123').trim();
 
-        const isUserMatch =
-          cleanId.toUpperCase() === targetUsername.toUpperCase() ||
-          cleanId.toUpperCase() === 'ADMIN' ||
-          cleanId.toUpperCase() === 'SUPERADMIN' ||
-          cleanId.toUpperCase() === 'VAIVAI';
+        const isUserMatch = cleanId.toUpperCase() === targetUsername.toUpperCase();
 
-        const isPassMatch =
-          cleanPass === targetPassword ||
-          cleanPass === 'admin123' ||
-          cleanPass === 'admin' ||
-          cleanPass === '123456';
+        const isPassMatch = cleanPass === targetPassword;
 
         if (isUserMatch && isPassMatch) {
           onLogin({
@@ -118,7 +110,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         }
 
         const expectedPass = stf.password || '123456';
-        if (cleanPass !== expectedPass && cleanPass !== '123456') {
+        if (cleanPass !== expectedPass) {
           setErrorMsg(
             lang === 'bn'
               ? 'স্টাফ পাসওয়ার্ড ভুল হয়েছে। সঠিক পাসওয়ার্ড দিয়ে আবার চেষ্টা করুন।'
