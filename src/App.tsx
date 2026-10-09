@@ -447,13 +447,19 @@ export default function App() {
       );
     };
 
-    // Immediately trigger listeners so all devices stay updated in real-time
-    setupListeners();
+    // Only set up cloud listeners when a cloud user is authenticated,
+    // otherwise Firestore returns empty snapshots that wipe local data.
+    if (auth.currentUser) {
+      setupListeners();
+    }
 
     const unsubAuth = cloudDbService.onAuthChanged((user) => {
       setCurrentUser(user);
       if (user) {
         setupListeners();
+      } else {
+        unsubs.forEach(unsub => unsub());
+        unsubs.length = 0;
       }
     });
 
