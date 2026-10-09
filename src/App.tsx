@@ -55,6 +55,7 @@ import {
 } from './types';
 import { storageService } from './lib/storage';
 import { translations } from './lib/translations';
+import seedData from './seed-data.json';
 import { PeriodFilterMode } from './components/PettyCashPanel';
 
 export default function App() {
@@ -114,6 +115,25 @@ export default function App() {
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
+
+  // One-time auto-restore from bundled seed data if localStorage is empty
+  const _seedRestored = (() => {
+    const SEED_FLAG = 'rsr_seed_restored_v1';
+    if (!localStorage.getItem(SEED_FLAG)) {
+      const existingInvoices = storageService.getInvoices();
+      const existingStock = storageService.getStock();
+      if (existingInvoices.length === 0 && existingStock.length === 0) {
+        try {
+          const seedJson = JSON.stringify(seedData);
+          storageService.restoreBackup(seedJson);
+        } catch (e) {
+          console.warn('Seed restore failed:', e);
+        }
+      }
+      localStorage.setItem(SEED_FLAG, '1');
+    }
+    return true;
+  })();
 
   // State Entities loaded from Storage
   const [invoices, setInvoices] = useState<Invoice[]>(() => storageService.getInvoices());
