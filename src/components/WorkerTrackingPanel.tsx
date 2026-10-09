@@ -45,6 +45,7 @@ import {
   formatCurrency,
 } from '../lib/translations';
 import { storageService } from '../lib/storage';
+import { executePrint } from '../lib/printUtils';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
 interface WorkerTrackingPanelProps {
@@ -1239,7 +1240,7 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
 
       {/* TAB: Product Conversion & Yield Output Tracking */}
       {activeTab === 'conversions' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden animate-in fade-in duration-150 space-y-4 p-4">
+        <div id="worker-conversions-print" className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden animate-in fade-in duration-150 space-y-4 p-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
@@ -1266,7 +1267,7 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
               />
 
               <button
-                onClick={() => window.print()}
+                onClick={() => executePrint('worker-conversions-print', 'Worker Conversions Report')}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs shadow-xs transition-colors cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5" />

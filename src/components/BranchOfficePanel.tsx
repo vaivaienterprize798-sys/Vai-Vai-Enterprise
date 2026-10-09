@@ -2924,7 +2924,7 @@ _${companyInfo.name}_`;
       {/* PRINT VIEW MODAL FOR CONSIGNMENT */}
       {printingConsignment && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white text-slate-900 rounded-2xl w-full max-w-2xl p-8 space-y-6 shadow-2xl my-8">
+          <div id="consignment-print-area" className="bg-white text-slate-900 rounded-2xl w-full max-w-2xl p-8 space-y-6 shadow-2xl my-8">
             <div className="flex justify-between items-start border-b pb-4">
               <div>
                 <h1 className="text-xl font-black uppercase tracking-wider">{companyInfo.name}</h1>
@@ -2996,7 +2996,7 @@ _${companyInfo.name}_`;
                 বন্ধ করুন
               </button>
               <button
-                onClick={() => window.print()}
+                onClick={() => executePrint('consignment-print-area', `${companyInfo.name} - Consignment ${printingConsignment.consignmentNo}`)}
                 className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white cursor-pointer font-bold text-xs flex items-center gap-1.5"
               >
                 <Printer className="w-4 h-4" />

@@ -42,306 +42,96 @@ export function executePrint(targetElementId?: string, documentTitle?: string): 
     styleTags += tag.outerHTML + '\n';
   });
 
-  const printDocumentHtml = `
-    <!DOCTYPE html>
-    <html lang="bn">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${docTitle}</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-        ${styleTags}
-        <style>
-          @page {
-            size: A4 portrait !important;
-            margin: 6mm 8mm !important;
-          }
-          *, *::before, *::after {
-            box-sizing: border-box !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #f8fafc !important;
-            color: #0f172a !important;
-            font-family: 'Hind Siliguri', 'Outfit', system-ui, -apple-system, sans-serif !important;
-          }
-          .print-toolbar {
-            position: sticky;
-            top: 0;
-            z-index: 99999;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 20px;
-            background: #0f172a;
-            color: #ffffff;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            font-family: system-ui, sans-serif;
-          }
-          .print-toolbar-title {
-            font-size: 14px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          }
-          .print-toolbar-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-          }
-          .print-btn {
-            background: #10b981;
-            color: #ffffff;
-            border: none;
-            padding: 8px 18px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            transition: background 0.15s ease;
-          }
-          .print-btn:hover {
-            background: #059669;
-          }
-          .close-btn {
-            background: #334155;
-            color: #ffffff;
-            border: none;
-            padding: 8px 14px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.15s ease;
-          }
-          .close-btn:hover {
-            background: #475569;
-          }
-          .print-page-wrapper {
-            max-width: 210mm;
-            margin: 20px auto;
-            padding: 16px;
-            background: #ffffff;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-            border-radius: 12px;
-          }
-          .one-page-sheet {
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 auto !important;
-            padding: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-            background: #ffffff !important;
-          }
-          table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-            page-break-inside: avoid !important;
-          }
-          tr {
-            page-break-inside: avoid !important;
-          }
-          @media print {
-            .print-toolbar, .no-print {
-              display: none !important;
-            }
-            html, body {
-              background: #ffffff !important;
-            }
-            .print-page-wrapper {
-              margin: 0 !important;
-              padding: 0 !important;
-              max-width: 100% !important;
-              box-shadow: none !important;
-              border-radius: 0 !important;
-            }
-          }
-        </style>
-      </head>
-      <body class="capture-mode">
-        <div class="print-toolbar no-print">
-          <div class="print-toolbar-title">
-            <span>📄 ${docTitle}</span>
-          </div>
-          <div class="print-toolbar-actions">
-            <button class="print-btn" onclick="window.print()">
-              🖨️ প্রিন্ট করুন (Print Now)
-            </button>
-            <button class="close-btn" onclick="window.close()">
-              ✕ বন্ধ করুন
-            </button>
-          </div>
-        </div>
-        <div class="print-page-wrapper">
-          ${clonedContent.outerHTML}
-        </div>
-        <style>
-          @media print {
-            .print-page-wrapper { zoom: var(--one-page-fit, 1); }
-            tr, .rounded-xl, .rounded-lg { break-inside: avoid; }
-          }
-        </style>
-        <script>
-          // Full-page fit: enlarge short statements to fill the A4 sheet, and shrink long ones
-          // down as far as 0.35 so even 50-item invoices fit on a single A4 page.
-          (function () {
-            function fit() {
-              var w = document.querySelector('.print-page-wrapper');
-              if (!w) return;
-              var A4_W = 733, A4_H = 1070; // printable area in CSS px (A4 minus margins)
-              var prev = { w: w.style.width, p: w.style.padding, m: w.style.maxWidth };
-              w.style.width = A4_W + 'px'; w.style.maxWidth = A4_W + 'px'; w.style.padding = '0';
-              var h = w.scrollHeight, sw = w.scrollWidth;
-              w.style.width = prev.w; w.style.maxWidth = prev.m; w.style.padding = prev.p;
-              var byW = A4_W / Math.max(1, sw);
-              var byH = A4_H / Math.max(1, h);
-              var scale = Math.min(byW, byH);
-              scale = Math.max(0.35, Math.min(1.3, scale * 0.98));
-              document.documentElement.style.setProperty('--one-page-fit', String(scale));
-            }
-            window.addEventListener('load', fit);
-            window.addEventListener('beforeprint', fit);
-            setTimeout(fit, 300);
-          })();
-        </script>
-      </body>
-    </html>
-  `;
+  const printDocumentHtml = `<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${docTitle}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+${styleTags}
+<style>
+@page { size: A4 portrait !important; margin: 6mm 8mm !important; }
+*, *::before, *::after { box-sizing: border-box !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; color: #0f172a !important; font-family: 'Hind Siliguri', 'Outfit', system-ui, sans-serif !important; }
+.print-page-wrapper { max-width: 210mm; margin: 0 auto; padding: 0; background: #ffffff; }
+.one-page-sheet { width: 100% !important; max-width: 100% !important; margin: 0 auto !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: #ffffff !important; }
+table { width: 100% !important; border-collapse: collapse !important; page-break-inside: avoid !important; }
+tr { page-break-inside: avoid !important; }
+@media print { .no-print { display: none !important; } }
+</style>
+<style>
+@media print { .print-page-wrapper { zoom: var(--one-page-fit, 1); } tr, .rounded-xl, .rounded-lg { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="print-page-wrapper">${clonedContent.outerHTML}</div>
+<script>
+(function(){function fit(){var w=document.querySelector('.print-page-wrapper');if(!w)return;var A4_W=733,A4_H=1070;var prev={w:w.style.width,p:w.style.padding,m:w.style.maxWidth};w.style.width=A4_W+'px';w.style.maxWidth=A4_W+'px';w.style.padding='0';var h=w.scrollHeight,sw=w.scrollWidth;w.style.width=prev.w;w.style.maxWidth=prev.m;w.style.padding=prev.p;var byW=A4_W/Math.max(1,sw);var byH=A4_H/Math.max(1,h);var scale=Math.min(byW,byH);scale=Math.max(0.35,Math.min(1.3,scale*0.98));document.documentElement.style.setProperty('--one-page-fit',String(scale));}window.addEventListener('load',function(){fit();setTimeout(function(){try{window.focus();window.print();}catch(e){}},200);});window.addEventListener('beforeprint',fit);setTimeout(fit,300);})();
+</script>
+</body>
+</html>`;
 
-  // Strategy 1: Open a dedicated full-page print window (Most reliable across all iframes and popups)
-  let printWindow: Window | null = null;
-  try {
-    printWindow = window.open('', '_blank');
-  } catch (openErr) {
-    console.warn('window.open was blocked, falling back to direct window.print:', openErr);
+  // Strategy: Use a hidden iframe to avoid popup blockers entirely
+  const existingFrame = document.getElementById('__rsr_print_frame__');
+  if (existingFrame && existingFrame.parentNode) {
+    existingFrame.parentNode.removeChild(existingFrame);
   }
 
-  if (printWindow && !printWindow.closed) {
+  const printFrame = document.createElement('iframe');
+  printFrame.id = '__rsr_print_frame__';
+  printFrame.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:0;display:none;';
+  document.body.appendChild(printFrame);
+
+  let printed = false;
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
     try {
-      printWindow.document.open();
-      printWindow.document.write(printDocumentHtml);
-      printWindow.document.close();
-
-      // Trigger print dialog once loaded
-      printWindow.onload = () => {
-        try {
-          printWindow?.focus();
-          printWindow?.print();
-        } catch (printErr) {
-          console.warn('Dedicated window print trigger error:', printErr);
-        }
-      };
-
-      // Fallback trigger in case onload was already fired
+      const frameWindow = printFrame.contentWindow;
+      if (frameWindow) {
+        frameWindow.focus();
+        frameWindow.print();
+      }
+    } catch (e) {
+      console.warn('Iframe print error, falling back to window.print:', e);
+      // Last resort: direct main-window print
+      const originalTitle = document.title;
+      document.title = docTitle;
+      const fallbackStyle = document.createElement('style');
+      fallbackStyle.id = '__rsr_print_fallback__';
+      fallbackStyle.innerHTML = `@media print{body *{visibility:hidden!important}#${elementId},#${elementId} *{visibility:visible!important}#${elementId}{position:absolute!important;left:0!important;top:0!important;width:100%!important}}`;
+      document.head.appendChild(fallbackStyle);
+      window.print();
       setTimeout(() => {
-        try {
-          if (printWindow && !printWindow.closed) {
-            printWindow.focus();
-            printWindow.print();
-          }
-        } catch (e) {
-          console.warn('Delayed dedicated print trigger error:', e);
-        }
-      }, 350);
-
-      return;
-    } catch (writeErr) {
-      console.warn('Failed writing to dedicated print window:', writeErr);
-    }
-  }
-
-  // Strategy 2: Direct Main-Window Print Fallback (if popups are blocked by browser)
-  try {
-    const originalTitle = document.title;
-    document.title = docTitle;
-
-    const existingStyle = document.getElementById('__rsr_print_override_styles__');
-    if (existingStyle && existingStyle.parentNode) {
-      existingStyle.parentNode.removeChild(existingStyle);
-    }
-
-    const fallbackStyleEl = document.createElement('style');
-    fallbackStyleEl.id = '__rsr_print_override_styles__';
-    fallbackStyleEl.innerHTML = `
-      @media print {
-        @page {
-          size: A4 portrait !important;
-          margin: 6mm 8mm !important;
-        }
-        *, *::before, *::after {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        html, body {
-          background: #ffffff !important;
-          color: #0f172a !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          overflow: visible !important;
-          height: auto !important;
-          font-family: 'Hind Siliguri', 'Outfit', system-ui, sans-serif !important;
-        }
-        .no-print, header, nav, aside, button, footer, .modal-backdrop {
-          display: none !important;
-        }
-        body * {
-          visibility: hidden !important;
-        }
-        #${elementId}, #${elementId} * {
-          visibility: visible !important;
-        }
-        #${elementId} {
-          position: absolute !important;
-          left: 0 !important;
-          top: 0 !important;
-          width: 100% !important;
-          max-width: 210mm !important;
-          margin: 0 auto !important;
-          padding: 0 !important;
-          box-shadow: none !important;
-          border: none !important;
-          background: #ffffff !important;
-          color: #0f172a !important;
-          display: block !important;
-        }
-        table {
-          width: 100% !important;
-          border-collapse: collapse !important;
-          page-break-inside: avoid !important;
-        }
-        tr {
-          page-break-inside: avoid !important;
-        }
-      }
-    `;
-    document.head.appendChild(fallbackStyleEl);
-
-    const cleanup = () => {
-      try {
-        if (fallbackStyleEl && fallbackStyleEl.parentNode) {
-          fallbackStyleEl.parentNode.removeChild(fallbackStyleEl);
-        }
+        if (fallbackStyle.parentNode) fallbackStyle.parentNode.removeChild(fallbackStyle);
         document.title = originalTitle;
-      } catch (e) {
-        console.warn('Cleanup error:', e);
-      }
-    };
+      }, 1000);
+    }
+    // Clean up iframe after print dialog
+    setTimeout(() => {
+      if (printFrame.parentNode) printFrame.parentNode.removeChild(printFrame);
+    }, 60000);
+  };
 
-    window.addEventListener('afterprint', cleanup, { once: true });
-    window.focus();
-    window.print();
-  } catch (mainPrintErr) {
-    console.error('Direct window.print fallback error:', mainPrintErr);
+  try {
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+    if (!frameDoc) throw new Error('Cannot access iframe document');
+    frameDoc.open();
+    frameDoc.write(printDocumentHtml);
+    frameDoc.close();
+
+    // Wait for iframe to load, then auto-trigger print
+    printFrame.onload = () => {
+      setTimeout(doPrint, 400);
+    };
+    // Fallback if onload doesn't fire (some browsers)
+    setTimeout(doPrint, 1500);
+  } catch (err) {
+    console.warn('Iframe write failed, using direct fallback:', err);
+    doPrint();
   }
 }
 
