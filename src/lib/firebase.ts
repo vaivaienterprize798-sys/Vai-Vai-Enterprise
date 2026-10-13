@@ -26,17 +26,50 @@ import {
 } from 'firebase/firestore';
 import fileConfig from '../../firebase-applet-config.json';
 
-// Real Firebase settings come from Vercel Environment Variables (VITE_FIREBASE_*).
+// Real Firebase settings come from (in priority order):
+// 1. In-app setup saved to localStorage (easiest — paste once in the Cloud Sync panel)
+// 2. Vercel Environment Variables (VITE_FIREBASE_*)
+// 3. firebase-applet-config.json fallback
+const CONFIG_OVERRIDE_KEY = 'rsr_firebase_config_override';
+
+function isValidApiKey(key: string | undefined): boolean {
+  return !!key && key.startsWith('AIza') && key.length >= 35;
+}
+
+export function getConfigOverride(): Record<string, string> | null {
+  try {
+    const raw = localStorage.getItem(CONFIG_OVERRIDE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && isValidApiKey(parsed.apiKey)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveConfigOverride(config: Record<string, string>): void {
+  localStorage.setItem(CONFIG_OVERRIDE_KEY, JSON.stringify(config));
+}
+
+export function clearConfigOverride(): void {
+  localStorage.removeItem(CONFIG_OVERRIDE_KEY);
+}
+
 const env = import.meta.env;
+const override = typeof window !== 'undefined' ? getConfigOverride() : null;
 const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || fileConfig.apiKey,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || fileConfig.authDomain,
-  projectId: env.VITE_FIREBASE_PROJECT_ID || fileConfig.projectId,
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket,
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || fileConfig.messagingSenderId,
-  appId: env.VITE_FIREBASE_APP_ID || fileConfig.appId,
-  firestoreDatabaseId: env.VITE_FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '(default)',
+  apiKey: override?.apiKey || env.VITE_FIREBASE_API_KEY || fileConfig.apiKey,
+  authDomain: override?.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN || fileConfig.authDomain,
+  projectId: override?.projectId || env.VITE_FIREBASE_PROJECT_ID || fileConfig.projectId,
+  storageBucket: override?.storageBucket || env.VITE_FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket,
+  messagingSenderId: override?.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID || fileConfig.messagingSenderId,
+  appId: override?.appId || env.VITE_FIREBASE_APP_ID || fileConfig.appId,
+  firestoreDatabaseId: override?.firestoreDatabaseId || env.VITE_FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '(default)',
 };
+
+// True only when a real Firebase key is configured (not the offline placeholder)
+export const isFirebaseConfigured = isValidApiKey(firebaseConfig.apiKey);
 import {
   Invoice,
   StockItem,

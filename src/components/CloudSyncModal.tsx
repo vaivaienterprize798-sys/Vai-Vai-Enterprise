@@ -16,7 +16,7 @@ import {
   Copy,
   ExternalLink,
 } from 'lucide-react';
-import { auth, cloudDbService } from '../lib/firebase';
+import { auth, cloudDbService, isFirebaseConfigured, saveConfigOverride, clearConfigOverride, getConfigOverride } from '../lib/firebase';
 import { storageService } from '../lib/storage';
 import { Language } from '../types';
 import { User } from 'firebase/auth';
@@ -44,6 +44,54 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [configText, setConfigText] = useState('');
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [hasOverride, setHasOverride] = useState(!!getConfigOverride());
+
+  // Parse the config snippet copied from the Firebase console
+  // (accepts either the full `const firebaseConfig = {...};` snippet or plain JSON)
+  const handleSaveConfig = () => {
+    setConfigError(null);
+    try {
+      let text = configText.trim();
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error('no-object');
+      const normalized = match[0]
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+        .replace(/'/g, '"')
+        .replace(/,\s*}/g, '}');
+      const parsed = JSON.parse(normalized);
+      if (!parsed.apiKey || !parsed.apiKey.startsWith('AIza')) {
+        throw new Error('bad-key');
+      }
+      saveConfigOverride({
+        apiKey: parsed.apiKey,
+        authDomain: parsed.authDomain || '',
+        projectId: parsed.projectId || '',
+        storageBucket: parsed.storageBucket || '',
+        messagingSenderId: String(parsed.messagingSenderId || ''),
+        appId: parsed.appId || '',
+        firestoreDatabaseId: parsed.firestoreDatabaseId || '(default)',
+      });
+      window.location.reload();
+    } catch (e: any) {
+      setConfigError(
+        e?.message === 'bad-key'
+          ? (lang === 'bn'
+              ? 'API Key ঠিক নেই। Firebase কনসোল থেকে পুরো কনফিগ কপি করে আবার পেস্ট করুন।'
+              : 'Invalid API key. Copy the full config from the Firebase console and paste again.')
+          : (lang === 'bn'
+              ? 'কনফিগ পড়া যায়নি। Firebase কনসোল থেকে পুরো কোডটা কপি করে পেস্ট করুন।'
+              : 'Could not read the config. Paste the full snippet from the Firebase console.')
+      );
+    }
+  };
+
+  const handleResetConfig = () => {
+    clearConfigOverride();
+    setHasOverride(false);
+    window.location.reload();
+  };
 
   useEffect(() => {
     const unsub = cloudDbService.onAuthChanged((user) => {
@@ -304,6 +352,54 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-xl text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Firebase Setup Card — shown when no real config is available */}
+          {!isFirebaseConfigured && (
+            <div className="p-4 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-300 dark:border-rose-800 space-y-3">
+              <h3 className="text-xs font-bold text-rose-800 dark:text-rose-200 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600" />
+                {lang === 'bn' ? 'একবারের Firebase সেটআপ (আসল Key বসান)' : 'One-time Firebase Setup (paste real config)'}
+              </h3>
+              <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed">
+                {lang === 'bn'
+                  ? 'Firebase Console → Project Settings → Your apps → Web app-এ গিয়ে "firebaseConfig" কোডটা কপি করে নিচে পেস্ট করুন। একবার সেভ করলেই এই ডিভাইসে চিরকালের জন্য ঠিক হয়ে যাবে।'
+                  : 'Go to Firebase Console → Project Settings → Your apps → Web app, copy the "firebaseConfig" code and paste it below. Save once and this device is fixed forever.'}
+              </p>
+              <textarea
+                value={configText}
+                onChange={(e) => setConfigText(e.target.value)}
+                rows={5}
+                placeholder={'const firebaseConfig = {\n  apiKey: "AIza...",\n  authDomain: "...",\n  projectId: "...",\n  ...\n};'}
+                className="w-full bg-white dark:bg-slate-950 border border-rose-300 dark:border-rose-800 text-slate-800 dark:text-slate-200 text-[11px] px-3 py-2 rounded-lg font-mono focus:outline-hidden focus:ring-2 focus:ring-rose-400"
+              />
+              {configError && (
+                <p className="text-[11px] text-rose-700 dark:text-rose-300 font-bold">{configError}</p>
+              )}
+              <button
+                onClick={handleSaveConfig}
+                disabled={!configText.trim()}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{lang === 'bn' ? 'সেভ করে সংযোগ ঠিক করুন' : 'Save & Fix Connection'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Reset saved config (only when an in-app override exists) */}
+          {hasOverride && isFirebaseConfigured && (
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] text-slate-500">
+                {lang === 'bn' ? 'এই ডিভাইসে সেভ করা Firebase কনফিগ ব্যবহার হচ্ছে' : 'Using Firebase config saved on this device'}
+              </span>
+              <button
+                onClick={handleResetConfig}
+                className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+              >
+                {lang === 'bn' ? 'রিসেট করুন' : 'Reset'}
+              </button>
             </div>
           )}
 
