@@ -59,13 +59,13 @@ export function clearConfigOverride(): void {
 const env = import.meta.env;
 const override = typeof window !== 'undefined' ? getConfigOverride() : null;
 const firebaseConfig = {
-  apiKey: override?.apiKey || env.VITE_FIREBASE_API_KEY || fileConfig.apiKey,
-  authDomain: override?.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN || fileConfig.authDomain,
-  projectId: override?.projectId || env.VITE_FIREBASE_PROJECT_ID || fileConfig.projectId,
-  storageBucket: override?.storageBucket || env.VITE_FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket,
-  messagingSenderId: override?.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID || fileConfig.messagingSenderId,
-  appId: override?.appId || env.VITE_FIREBASE_APP_ID || fileConfig.appId,
-  firestoreDatabaseId: override?.firestoreDatabaseId || env.VITE_FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '(default)',
+  apiKey: fileConfig.apiKey || override?.apiKey || env.VITE_FIREBASE_API_KEY,
+  authDomain: fileConfig.authDomain || override?.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: fileConfig.projectId || override?.projectId || env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: fileConfig.storageBucket || override?.storageBucket || env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: fileConfig.messagingSenderId || override?.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: fileConfig.appId || override?.appId || env.VITE_FIREBASE_APP_ID,
+  firestoreDatabaseId: fileConfig.firestoreDatabaseId || override?.firestoreDatabaseId || env.VITE_FIREBASE_DATABASE_ID || '(default)',
 };
 
 // True only when a real Firebase key is configured (not the offline placeholder)
@@ -328,7 +328,11 @@ export const cloudDbService = {
     const colRef = collection(db, collectionName);
     return onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        // Never overwrite local data with an empty offline-cache snapshot
+        // (happens on a new device / fresh refresh before the server responds).
+        if (snapshot.metadata.fromCache && snapshot.empty) return;
         const items: T[] = [];
         snapshot.forEach((docSnap) => {
           items.push(docSnap.data() as T);

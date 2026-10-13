@@ -1,9 +1,9 @@
 {
-  "apiKey": "AIzaSyPlaceholder-offline-mode",
-  "authDomain": "rsr-vai-vai-offline.firebaseapp.com",
-  "projectId": "rsr-vai-vai-offline",
-  "storageBucket": "rsr-vai-vai-offline.appspot.com",
-  "messagingSenderId": "000000000000",
-  "appId": "1:000000000000:web:0000000000000000000000",
+  "apiKey": "AIzaSyCaF-9nNRB7VkFZZOKP_avu_3qK41N9Z60",
+  "authDomain": "hazel-gateway-w1ttq.firebaseapp.com",
+  "projectId": "hazel-gateway-w1ttq",
+  "storageBucket": "hazel-gateway-w1ttq.firebasestorage.app",
+  "messagingSenderId": "258202950135",
+  "appId": "1:258202950135:web:475db690c97e8adca8f6f2",
   "firestoreDatabaseId": "(default)"
 }
