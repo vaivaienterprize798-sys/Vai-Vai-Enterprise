@@ -3,6 +3,10 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  browserLocalPersistence,
+  setPersistence,
   signOut,
   onAuthStateChanged,
   User,
@@ -63,6 +67,11 @@ if (typeof window !== 'undefined') {
 }
 
 export const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch(() => {});
+// Finish a redirect-based Google sign-in (used when the popup is blocked)
+if (typeof window !== 'undefined') {
+  getRedirectResult(auth).catch((err) => console.warn('[Auth] redirect result:', err?.code));
+}
 export const googleProvider = new GoogleAuthProvider();
 
 // Standard Firestore error handling specification
@@ -188,8 +197,24 @@ export const cloudDbService = {
   signInWithGoogle: async (): Promise<User> => {
     try {
       googleProvider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, googleProvider);
-      return result.user;
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        return result.user;
+      } catch (popupErr: any) {
+        const fallback = [
+          'auth/popup-blocked',
+          'auth/cancelled-popup-request',
+          'auth/operation-not-supported-in-this-environment',
+          'auth/web-storage-unsupported',
+          'auth/internal-error',
+        ];
+        if (fallback.includes(popupErr?.code)) {
+          // Popup cannot open (installed app / mobile / blocked) -> full-page Google sign-in
+          await signInWithRedirect(auth, googleProvider);
+          return new Promise<User>(() => {});
+        }
+        throw popupErr;
+      }
     } catch (err) {
       console.error('Google sign-in error:', err);
       throw err;
