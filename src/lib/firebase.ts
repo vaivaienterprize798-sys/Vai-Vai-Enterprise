@@ -20,7 +20,19 @@ import {
   Unsubscribe,
   enableIndexedDbPersistence,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import fileConfig from '../../firebase-applet-config.json';
+
+// Real Firebase settings come from Vercel Environment Variables (VITE_FIREBASE_*).
+const env = import.meta.env;
+const firebaseConfig = {
+  apiKey: env.VITE_FIREBASE_API_KEY || fileConfig.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || fileConfig.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || fileConfig.projectId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || fileConfig.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || fileConfig.appId,
+  firestoreDatabaseId: env.VITE_FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '(default)',
+};
 import {
   Invoice,
   StockItem,

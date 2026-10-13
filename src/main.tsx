@@ -8,34 +8,10 @@ import { initAutoUpdateListener, forceUpdateAndReloadApp } from './lib/appUpdate
 // Initialize Auto-Update Listener
 initAutoUpdateListener();
 
-// Service Worker management: active only in production, clean & unregister in dev
+// Remove any old service worker + caches so every device always loads the latest version
 if ('serviceWorker' in navigator) {
-  if (import.meta.env.DEV) {
-    // In dev mode, immediately unregister any service worker and purge caches
-    // to prevent stale React chunk collisions and "Invalid hook call" errors
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((reg) => reg.unregister());
-    });
-    if ('caches' in window) {
-      caches.keys().then((names) => {
-        names.forEach((name) => caches.delete(name));
-      });
-    }
-  } else {
-    // In production, register the service worker for PWA & offline support with immediate update check
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
-        .then((reg) => {
-          console.log('[RSR PWA] Service worker registered successfully:', reg.scope);
-          // Check for update on start
-          reg.update().catch(() => {});
-        })
-        .catch((err) => {
-          console.warn('[RSR PWA] Service worker registration notice:', err);
-        });
-    });
-  }
+  navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
+  if ('caches' in window) caches.keys().then((names) => names.forEach((n) => caches.delete(n)));
 }
 
 // Self-healing handler for desktop PWA stale chunks or dynamic import failures

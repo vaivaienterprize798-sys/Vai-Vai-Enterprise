@@ -1,6 +1,6 @@
 // App Version and Auto-Update Management
-export const CURRENT_APP_VERSION = 'v4.3.0';
-export const BUILD_TIMESTAMP = '2026-09-30-v4.3';
+export const CURRENT_APP_VERSION = 'v4.3.1';
+export const BUILD_TIMESTAMP = '2026-10-13-v4.3.1';
 
 /**
  * Force clean all browser caches, service workers, and reload the application
