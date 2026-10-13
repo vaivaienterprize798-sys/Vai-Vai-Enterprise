@@ -9,6 +9,7 @@ import {
   setPersistence,
   signOut,
   onAuthStateChanged,
+  signInAnonymously,
   User,
 } from 'firebase/auth';
 import {
@@ -106,6 +107,16 @@ if (typeof window !== 'undefined') {
   getRedirectResult(auth).catch((err) => console.warn('[Auth] redirect result:', err?.code));
 }
 export const googleProvider = new GoogleAuthProvider();
+
+// Silent automatic sign-in: no Google login needed. Failure is harmless —
+// with open Firestore rules, sync works without any sign-in at all.
+if (typeof window !== 'undefined') {
+  auth.authStateReady().then(() => {
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch((err) => console.warn('[Auth] auto sign-in skipped:', err?.code));
+    }
+  });
+}
 
 // Standard Firestore error handling specification
 export enum OperationType {
@@ -224,6 +235,20 @@ export function sanitizeForFirestore<T>(obj: T): T {
   return obj;
 }
 
+const LOCAL_KEY_BY_COLLECTION: Record<string, string> = {
+  invoices: 'rsr_invoices_v1', stock: 'rsr_stock_v1', parties: 'rsr_parties_v1',
+};
+// Guard: never let an empty cloud collection wipe data that exists on this device
+function hasLocalData(collectionName: string): boolean {
+  try {
+    const key = LOCAL_KEY_BY_COLLECTION[collectionName] ||
+      Object.keys(localStorage).find((k) => k.toLowerCase().includes(collectionName.toLowerCase()));
+    if (!key) return false;
+    const v = JSON.parse(localStorage.getItem(key) || 'null');
+    return Array.isArray(v) ? v.length > 0 : !!v && typeof v === 'object' && Object.keys(v).length > 0;
+  } catch { return false; }
+}
+
 // Cloud Database API service for multi-device sync
 export const cloudDbService = {
   // Authentication
@@ -332,7 +357,7 @@ export const cloudDbService = {
       (snapshot) => {
         // Never overwrite local data with an empty offline-cache snapshot
         // (happens on a new device / fresh refresh before the server responds).
-        if (snapshot.metadata.fromCache && snapshot.empty) return;
+        if (snapshot.empty && (snapshot.metadata.fromCache || hasLocalData(collectionName))) return;
         const items: T[] = [];
         snapshot.forEach((docSnap) => {
           items.push(docSnap.data() as T);

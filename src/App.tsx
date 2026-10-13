@@ -467,23 +467,34 @@ export default function App() {
       );
     };
 
-    // Only set up cloud listeners when a cloud user is authenticated,
-    // otherwise Firestore returns empty snapshots that wipe local data.
-    if (auth.currentUser) {
-      setupListeners();
-    }
+    // Fully automatic sync: no login, no Upload button.
+    // 1) First time on this device: push local data to the cloud (merge, never deletes).
+    // 2) Then start real-time listeners so every device updates instantly.
+    let cancelled = false;
+    (async () => {
+      const AUTO_UPLOAD_KEY = 'rsr_auto_uploaded_v1';
+      if (!localStorage.getItem(AUTO_UPLOAD_KEY)) {
+        try {
+          const hasLocal = storageService.getInvoices().length + storageService.getStock().length + storageService.getParties().length > 0;
+          if (hasLocal) {
+            const res = await storageService.uploadAllToCloud();
+            if (res.success) localStorage.setItem(AUTO_UPLOAD_KEY, new Date().toISOString());
+          } else {
+            localStorage.setItem(AUTO_UPLOAD_KEY, 'empty-device');
+          }
+        } catch (err) {
+          console.warn('[AutoSync] background upload notice:', err);
+        }
+      }
+      if (!cancelled) setupListeners();
+    })();
 
     const unsubAuth = cloudDbService.onAuthChanged((user) => {
       setCurrentUser(user);
-      if (user) {
-        setupListeners();
-      } else {
-        unsubs.forEach(unsub => unsub());
-        unsubs.length = 0;
-      }
     });
 
     return () => {
+      cancelled = true;
       unsubAuth();
       unsubs.forEach(unsub => unsub());
     };
@@ -1012,7 +1023,7 @@ export default function App() {
         onOpenStatementsModal={() => setIsStatementSelectorOpen(true)}
         onOpenBackupModal={() => setIsSecurityModalOpen(true)}
         onOpenCloudSyncModal={() => setIsCloudSyncModalOpen(true)}
-        isCloudConnected={Boolean(currentUser)}
+        isCloudConnected={true}
         isOnline={isOnline}
         companyInfo={companyInfo}
         stock={stock}
@@ -1112,7 +1123,7 @@ export default function App() {
                 onOpenStatementsModal={() => setIsStatementSelectorOpen(true)}
                 onSelectTab={(tab) => setCurrentTab(tab)}
                 onViewInvoice={handlePrintInvoice}
-                isCloudConnected={Boolean(currentUser)}
+                isCloudConnected={true}
                 onOpenCloudSyncModal={() => setIsCloudSyncModalOpen(true)}
               />
             )}

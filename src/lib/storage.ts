@@ -943,7 +943,7 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.PARTIES, finalParties);
 
     // 3. Cloud wipe (includes any party invoice that exists only in the cloud)
-    if (auth.currentUser) {
+    {
       try {
         const snap = await getDocs(collection(db, 'invoices'));
         const refs = snap.docs.filter((d) => isPartyInvoice(d.data() as Invoice)).map((d) => d.ref);
