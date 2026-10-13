@@ -24,6 +24,8 @@ import {
   onSnapshot,
   Unsubscribe,
   enableIndexedDbPersistence,
+  writeBatch,
+  serverTimestamp,
 } from 'firebase/firestore';
 import fileConfig from '../../firebase-applet-config.json';
 
@@ -108,14 +110,112 @@ if (typeof window !== 'undefined') {
 }
 export const googleProvider = new GoogleAuthProvider();
 
-// Silent automatic sign-in: no Google login needed. Failure is harmless —
-// with open Firestore rules, sync works without any sign-in at all.
+// ---------------------------------------------------------------------------
+// SECURE NO-LOGIN ACCESS
+// Each device signs in silently (anonymous) and joins with the shop's private
+// Sync Access Key. Firestore rules only allow joined devices (see firestore.rules).
+// ---------------------------------------------------------------------------
+const SYNC_KEY_STORAGE = 'rsr_sync_access_key';
+
+export function getSyncKey(): string {
+  try { return localStorage.getItem(SYNC_KEY_STORAGE) || ''; } catch { return ''; }
+}
+export function setSyncKey(key: string): void {
+  try { localStorage.setItem(SYNC_KEY_STORAGE, key.trim()); } catch {}
+}
+
+// Accept key from share link: https://app/#key=XXXX (then remove it from the address bar)
 if (typeof window !== 'undefined') {
-  auth.authStateReady().then(() => {
-    if (!auth.currentUser) {
-      signInAnonymously(auth).catch((err) => console.warn('[Auth] auto sign-in skipped:', err?.code));
-    }
+  const m = window.location.hash.match(/key=([^&]+)/);
+  if (m) {
+    setSyncKey(decodeURIComponent(m[1]));
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
+
+export class TimeoutError extends Error {
+  constructor(label: string) { super(`${label} timed out`); this.name = 'TimeoutError'; }
+}
+export function withTimeout<T>(p: Promise<T>, ms: number, label = 'Operation'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new TimeoutError(label)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
+}
+
+let accessGranted = false;
+let accessPromise: Promise<boolean> | null = null;
+const accessListeners = new Set<(ok: boolean) => void>();
+export const hasCloudAccess = () => accessGranted;
+export function onAccessChanged(cb: (ok: boolean) => void): () => void {
+  accessListeners.add(cb);
+  return () => accessListeners.delete(cb);
+}
+function setAccess(ok: boolean) {
+  accessGranted = ok;
+  accessListeners.forEach((cb) => cb(ok));
+}
+
+async function doEnsureAccess(): Promise<boolean> {
+  if (!isFirebaseConfigured) return false;
+  await withTimeout(auth.authStateReady(), 10000, 'Auth');
+  if (!auth.currentUser) await withTimeout(signInAnonymously(auth), 15000, 'Sign-in');
+  const u = auth.currentUser;
+  if (!u) return false;
+  if (u.email === 'vaivaienterprize798@gmail.com' && u.emailVerified) return true;
+  const ref = doc(db, 'members', u.uid);
+  try {
+    const snap = await withTimeout(getDocFromServer(ref), 12000, 'Access check');
+    if (snap.exists()) return true;
+  } catch (e) {
+    console.warn('[Access] check notice:', (e as any)?.code || e);
+  }
+  const key = getSyncKey();
+  if (!key) return false;
+  await withTimeout(
+    setDoc(ref, { key, createdAt: serverTimestamp(), device: navigator.userAgent.slice(0, 150) }),
+    15000,
+    'Join'
+  );
+  return true;
+}
+
+/** Signs in silently and joins this device. Never hangs (all steps time out). */
+export function ensureCloudAccess(force = false): Promise<boolean> {
+  if (accessGranted && !force) return Promise.resolve(true);
+  if (!accessPromise || force) {
+    accessPromise = doEnsureAccess()
+      .then((ok) => { setAccess(ok); return ok; })
+      .catch((err) => {
+        console.warn('[Access] denied:', err?.code || err?.message);
+        setAccess(false);
+        if (err?.code === 'permission-denied') throw new Error('INVALID_KEY');
+        throw err;
+      })
+      .finally(() => { accessPromise = null; });
+  }
+  return accessPromise;
+}
+
+/** Joins this device with a key typed by the user. */
+export async function joinWithKey(key: string): Promise<boolean> {
+  setSyncKey(key);
+  return ensureCloudAccess(true);
+}
+
+// Firestore document hard limit is 1 MiB. Drop huge embedded images (data URLs)
+// so a big logo/signature can never make the company upload fail.
+export function shrinkForFirestore<T>(obj: T, maxField = 700_000): T {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out: any = Array.isArray(obj) ? [] : {};
+  for (const [k, v] of Object.entries(obj as any)) {
+    if (typeof v === 'string' && v.length > maxField) {
+      console.warn(`[Firestore] field "${k}" too large (${v.length}), skipped for cloud`);
+      continue;
+    }
+    out[k] = v && typeof v === 'object' ? shrinkForFirestore(v, maxField) : v;
+  }
+  return out;
 }
 
 // Standard Firestore error handling specification
@@ -324,7 +424,7 @@ export const cloudDbService = {
   getCollectionDocs: async <T>(collectionName: string): Promise<T[]> => {
     try {
       const colRef = collection(db, collectionName);
-      const snap = await getDocs(colRef);
+      const snap = await withTimeout(getDocs(colRef), 30000, 'Download');
       const items: T[] = [];
       snap.forEach((d) => items.push(d.data() as T));
       return items;
@@ -333,12 +433,49 @@ export const cloudDbService = {
     }
   },
 
+  /**
+   * Fast, non-hanging bulk upload: groups writes into batches (max 400 docs),
+   * each commit has a timeout. If the network is slow the writes stay queued
+   * on the device and finish automatically later (status 'queued').
+   */
+  saveBatch: async (
+    items: { col: string; id: string; data: any }[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<{ done: number; queued: number }> => {
+    let done = 0, queued = 0;
+    const CHUNK = 400;
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const part = items.slice(i, i + CHUNK);
+      const batch = writeBatch(db);
+      for (const it of part) {
+        batch.set(doc(db, it.col, it.id), shrinkForFirestore(sanitizeForFirestore(it.data)), { merge: true });
+      }
+      try {
+        await withTimeout(batch.commit(), 30000, 'Upload');
+      } catch (e) {
+        if (e instanceof TimeoutError) queued += part.length;
+        else handleFirestoreError(e, OperationType.WRITE, part[0]?.col || null);
+      }
+      done += part.length;
+      onProgress?.(done, items.length);
+      // let the UI breathe between batches
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    return { done, queued };
+  },
+
   // Save Company Profile
   saveCompany: async (company: CompanyInfo): Promise<void> => {
     const docPath = 'company/main';
     try {
-      const sanitized = sanitizeForFirestore(company);
-      await setDoc(doc(db, 'company', 'main'), sanitized, { merge: true });
+      const sanitized = shrinkForFirestore(sanitizeForFirestore(company));
+      try {
+        await withTimeout(setDoc(doc(db, 'company', 'main'), sanitized, { merge: true }), 20000, 'Company save');
+      } catch (e) {
+        // Slow network: the write stays queued on this device and syncs later.
+        if (e instanceof TimeoutError) { console.warn('[Firestore] company save queued'); return; }
+        throw e;
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, docPath);
     }

@@ -226,7 +226,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
                     {formatCurrency(it.unitPrice, lang)}
                   </td>
                   <td className="py-1.5 px-2 text-right font-mono font-bold">
-                    {formatCurrency(it.total, lang)}
+                    {formatCurrency(Number(it.total) || (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), lang)}
                   </td>
                 </tr>
               ))}
@@ -235,7 +235,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
         </div>
 
         {/* Totals & Party Summary — Clean Two-Column Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+        <div className="grid grid-cols-2 gap-4 text-xs">
           {/* Left: Party Account Summary */}
           <div className="space-y-2">
             <div className="border border-slate-400 text-[11px] leading-tight print-compact">

@@ -25,7 +25,7 @@ import {
   ChinaDirectPayment,
 } from '../types';
 import { withComputedBalance, withComputedBalances } from './ledger';
-import { cloudDbService, auth, db, handleFirestoreError, OperationType } from './firebase';
+import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout } from './firebase';
 import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
@@ -140,7 +140,10 @@ export const storageService = {
     }
     saveToStorage(STORAGE_KEYS.INVOICES, updated);
 
-    // Auto Stock Adjustment
+    // Auto Stock Adjustment: when editing, first reverse the old version so qty & avg rate never double-count
+    if (index >= 0) {
+      storageService.applyInvoiceToStock(invoices[index], -1);
+    }
     storageService.applyInvoiceToStock(invoice);
 
     // Auto Party Due/Advance update
@@ -159,40 +162,8 @@ export const storageService = {
     const invoice = invoices.find((i) => i.id === id);
     if (!invoice) return;
 
-    // 1. Reverse Stock Adjustment
-    const stock = storageService.getStock();
-    const isPurchase = invoice.mode === 'purchase';
-    const updatedStock = stock.map((stockItem) => {
-      const matching = invoice.items.find(
-        (it) =>
-          (it.code && it.code.trim().toLowerCase() === stockItem.code.trim().toLowerCase()) ||
-          it.name.trim().toLowerCase() === stockItem.nameBn.trim().toLowerCase() ||
-          it.name.trim().toLowerCase() === stockItem.nameEn.trim().toLowerCase()
-      );
-      if (matching) {
-        if (isPurchase) {
-          // Reduce stock (was added during purchase)
-          return { ...stockItem, quantity: Math.max(0, stockItem.quantity - matching.quantity) };
-        } else {
-          // Increase stock (was removed during sale)
-          return { ...stockItem, quantity: stockItem.quantity + matching.quantity };
-        }
-      }
-      return stockItem;
-    });
-    saveToStorage(STORAGE_KEYS.STOCK, updatedStock);
-    
-    // Sync modified stock items to cloud
-    for (const stk of updatedStock) {
-      const isModified = invoice.items.some(
-        (it) => (it.code && it.code.trim().toLowerCase() === stk.code.trim().toLowerCase()) || 
-                it.name.trim().toLowerCase() === stk.nameBn.trim().toLowerCase() || 
-                it.name.trim().toLowerCase() === stk.nameEn.trim().toLowerCase()
-      );
-      if (isModified) {
-        await cloudDbService.saveDocument('stock', stk).catch(() => {});
-      }
-    }
+    // 1. Reverse Stock Adjustment (quantity AND weighted average rate)
+    storageService.applyInvoiceToStock(invoice, -1);
 
     // 3. Final Delete from local list and Cloud
     const filtered = invoices.filter((i) => i.id !== id);
@@ -255,36 +226,57 @@ export const storageService = {
     return cloudDbService.deleteDocument('stock', id);
   },
 
-  applyInvoiceToStock: (invoice: Invoice): void => {
-    const stock = storageService.getStock();
+  /**
+   * Apply (direction = 1) or reverse (direction = -1) an invoice on stock.
+   * Purchases update quantity + weighted average purchase rate; sales only reduce quantity.
+   * Multiple lines of the same product in one invoice are aggregated.
+   */
+  applyInvoiceToStock: (invoice: Invoice, direction: 1 | -1 = 1): void => {
+    if (!invoice || !Array.isArray(invoice.items)) return;
     const isPurchase = invoice.mode === 'purchase';
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const norm = (v?: string) => (v || '').trim().toLowerCase();
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const stock = storageService.getStock();
+    const modified = new Set<string>();
     const updatedStock = stock.map((stockItem) => {
-      const matching = invoice.items.find(
+      const lines = invoice.items.filter(
         (it) =>
-          (it.code && it.code.trim().toLowerCase() === stockItem.code.trim().toLowerCase()) ||
-          it.name.trim().toLowerCase() === stockItem.nameBn.trim().toLowerCase() ||
-          it.name.trim().toLowerCase() === stockItem.nameEn.trim().toLowerCase()
+          it &&
+          ((it.code && norm(it.code) === norm(stockItem.code)) ||
+            (norm(it.name) && (norm(it.name) === norm(stockItem.nameBn) || norm(it.name) === norm(stockItem.nameEn))))
       );
-      if (matching) {
-        const changeQty = matching.quantity;
-        if (isPurchase) {
-          const oldQty = stockItem.quantity;
-          const oldAvgRate = stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? 0;
-          const newQty = oldQty + changeQty;
-          const newAvgRate = newQty > 0 ? Math.round(((oldQty * oldAvgRate + changeQty * matching.unitPrice) / newQty) * 100) / 100 : matching.unitPrice;
-          return { ...stockItem, quantity: newQty, purchaseAvgRate: newAvgRate, purchaseRate: newAvgRate, lastUpdated: invoice.date || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0] };
-        } else {
-          return { ...stockItem, quantity: Math.max(0, stockItem.quantity - changeQty), lastUpdated: invoice.date || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0] };
+      if (lines.length === 0) return stockItem;
+      const qty = lines.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+      const value = lines.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
+      if (qty <= 0) return stockItem;
+      modified.add(stockItem.id);
+      const oldQty = Math.max(0, Number(stockItem.quantity) || 0);
+      const oldAvg = Number(stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? 0) || 0;
+      const lastUpdated = invoice.date || today;
+
+      if (isPurchase) {
+        if (direction === 1) {
+          const newQty = oldQty + qty;
+          const newAvg = newQty > 0 ? r2((oldQty * oldAvg + value) / newQty) : r2(value / qty);
+          return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
         }
+        // Reverse a purchase: remove its quantity and its value from the weighted average
+        const newQty = Math.max(0, oldQty - qty);
+        let newAvg = oldAvg;
+        if (newQty > 0) {
+          const remainingValue = oldQty * oldAvg - value;
+          newAvg = remainingValue > 0 ? r2(remainingValue / newQty) : oldAvg;
+        }
+        return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
       }
-      return stockItem;
+      // Sales never change the average purchase rate
+      const newQty = direction === 1 ? Math.max(0, oldQty - qty) : oldQty + qty;
+      return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: oldAvg, purchaseRate: oldAvg, lastUpdated };
     });
     saveToStorage(STORAGE_KEYS.STOCK, updatedStock);
     updatedStock.forEach((stk) => {
-      const isModified = invoice.items.some(
-        (it) => (it.code && it.code.trim().toLowerCase() === stk.code.trim().toLowerCase()) || it.name.trim().toLowerCase() === stk.nameBn.trim().toLowerCase() || it.name.trim().toLowerCase() === stk.nameEn.trim().toLowerCase()
-      );
-      if (isModified) cloudDbService.saveDocument('stock', stk).catch(() => {});
+      if (modified.has(stk.id)) cloudDbService.saveDocument('stock', stk).catch(() => {});
     });
   },
 
@@ -1055,12 +1047,14 @@ export const storageService = {
     await storageService.wipeAllDataClean(true);
   },
 
-  uploadAllToCloud: async (onProgress?: (msg: string) => void): Promise<{ success: boolean; count: number; error?: string }> => {
+  uploadAllToCloud: async (
+    onProgress?: (msg: string, percent?: number) => void
+  ): Promise<{ success: boolean; count: number; queued?: number; error?: string }> => {
     try {
-      if (onProgress) onProgress('কোম্পানি তথ্য সিঙ্ক হচ্ছে...');
-      await cloudDbService.saveCompany(storageService.getCompanyInfo());
-      let total = 1;
-      const collections = [
+      onProgress?.('ক্লাউড অ্যাক্সেস যাচাই হচ্ছে...', 0);
+      const ok = await ensureCloudAccess();
+      if (!ok) return { success: false, count: 0, error: 'NO_ACCESS' };
+      const sources: { key: string; data: any[] }[] = [
         { key: 'invoices', data: storageService.getInvoices() },
         { key: 'stock', data: storageService.getStock() },
         { key: 'parties', data: storageService.getParties() },
@@ -1079,21 +1073,28 @@ export const storageService = {
         { key: 'thirdParties', data: storageService.getThirdParties() },
         { key: 'chinaDirectPayments', data: storageService.getChinaDirectPayments() },
       ];
-      for (const col of collections) {
-        if (onProgress) onProgress(`${col.key} সিঙ্ক হচ্ছে...`);
-        for (const item of col.data) {
-          await cloudDbService.saveDocument(col.key, item);
-          total++;
+      const items: { col: string; id: string; data: any }[] = [
+        { col: 'company', id: 'main', data: storageService.getCompanyInfo() },
+      ];
+      for (const s of sources) {
+        for (const it of s.data || []) {
+          if (it && it.id) items.push({ col: s.key, id: String(it.id), data: it });
         }
       }
-      return { success: true, count: total };
+      onProgress?.(`মোট ${items.length} টি রেকর্ড আপলোড হচ্ছে...`, 1);
+      const res = await cloudDbService.saveBatch(items, (done, total) => {
+        onProgress?.(`আপলোড হচ্ছে... ${done}/${total}`, Math.round((done / total) * 100));
+      });
+      return { success: true, count: items.length, queued: res.queued };
     } catch (err: any) {
       return { success: false, count: 0, error: err?.message };
     }
   },
 
-  downloadAllFromCloud: async (onProgress?: (msg: string) => void): Promise<{ success: boolean; count: number; error?: string }> => {
+  downloadAllFromCloud: async (onProgress?: (msg: string, percent?: number) => void): Promise<{ success: boolean; count: number; error?: string }> => {
     try {
+      onProgress?.('ক্লাউড অ্যাক্সেস যাচাই হচ্ছে...', 0);
+      if (!(await ensureCloudAccess())) return { success: false, count: 0, error: 'NO_ACCESS' };
       const mappings = [
         { col: 'invoices', key: STORAGE_KEYS.INVOICES },
         { col: 'stock', key: STORAGE_KEYS.STOCK },
@@ -1115,8 +1116,9 @@ export const storageService = {
       ];
       let total = 0;
       for (const m of mappings) {
-        if (onProgress) onProgress(`${m.col} নামানো হচ্ছে...`);
-        const snap = await getDocs(collection(db, m.col));
+        const idx = mappings.indexOf(m);
+        onProgress?.(`${m.col} নামানো হচ্ছে...`, Math.round((idx / mappings.length) * 100));
+        const snap = await withTimeout(getDocs(collection(db, m.col)), 30000, 'Download');
         if (!snap.empty) {
           const list: any[] = [];
           snap.forEach((d) => list.push(d.data()));

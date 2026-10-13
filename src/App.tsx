@@ -23,7 +23,7 @@ import { StatementSelectorModal } from './components/StatementSelectorModal';
 import { SecurityComplianceModal } from './components/SecurityComplianceModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { AuthScreen } from './components/AuthScreen';
-import { auth, cloudDbService } from './lib/firebase';
+import { auth, cloudDbService, ensureCloudAccess, onAccessChanged } from './lib/firebase';
 import { User } from 'firebase/auth';
 import { RefreshCw, X as CloseIcon } from 'lucide-react';
 import { CURRENT_APP_VERSION, forceUpdateAndReloadApp } from './lib/appUpdate';
@@ -471,7 +471,10 @@ export default function App() {
     // 1) First time on this device: push local data to the cloud (merge, never deletes).
     // 2) Then start real-time listeners so every device updates instantly.
     let cancelled = false;
-    (async () => {
+    let started = false;
+    const start = async () => {
+      if (started || cancelled) return;
+      started = true;
       const AUTO_UPLOAD_KEY = 'rsr_auto_uploaded_v1';
       if (!localStorage.getItem(AUTO_UPLOAD_KEY)) {
         try {
@@ -487,7 +490,10 @@ export default function App() {
         }
       }
       if (!cancelled) setupListeners();
-    })();
+    };
+    // Secure access: only start syncing after this device has joined with the key
+    const unsubAccess = onAccessChanged((ok) => { if (ok) start(); });
+    ensureCloudAccess().then((ok) => { if (ok) start(); }).catch((e) => console.warn('[AutoSync] access:', e?.message));
 
     const unsubAuth = cloudDbService.onAuthChanged((user) => {
       setCurrentUser(user);
@@ -495,6 +501,7 @@ export default function App() {
 
     return () => {
       cancelled = true;
+      unsubAccess();
       unsubAuth();
       unsubs.forEach(unsub => unsub());
     };

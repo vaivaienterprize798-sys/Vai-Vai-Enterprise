@@ -169,7 +169,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Total Stock Value using weighted average purchase rate
   const totalStockValue = useMemo(() => {
     return stock.reduce(
-      (sum, item) => sum + item.quantity * (item.purchaseAvgRate || item.purchaseRate || 0),
+      (sum, item) => sum + item.quantity * (item.purchaseAvgRate ?? item.purchaseRate ?? 0),
       0
     );
   }, [stock]);
@@ -212,7 +212,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const items = stock.filter((s) => s.category === cat.key);
       const totalQty = items.reduce((sum, s) => sum + s.quantity, 0);
       const val = items.reduce(
-        (sum, s) => sum + s.quantity * (s.purchaseAvgRate || s.purchaseRate || 0),
+        (sum, s) => sum + s.quantity * (s.purchaseAvgRate ?? s.purchaseRate ?? 0),
         0
       );
       const alertItems = items.filter((s) => s.quantity <= s.minAlertQty).length;
