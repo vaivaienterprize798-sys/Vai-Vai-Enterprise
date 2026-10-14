@@ -1,11 +1,12 @@
 /**
  * Robust cross-browser and iframe-safe printing and PDF export utility for RSR Vai Vai Enterprise
  * Uses modern html-to-image rasterization to support all CSS features (including OKLCH, Tailwind v4, Flexbox, Grid)
- * with zero parser errors and exact 1-Page A4 print-layout fidelity.
+ * with fixed A4 challans and continuous full-width report printing.
  */
 
 import { toBlob, toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import { isChallanPrint, continuousPrintStyles } from './printLayout';
 
 /**
  * WhatsApp phone targets
@@ -18,14 +19,15 @@ export const WHATSAPP_NUMBERS = {
 };
 
 /**
- * Execute 1-Page A4 Print seamlessly across all browsers and preview environments.
- * Opens a dedicated full-page print window with all A4 CSS styles and triggers the native print dialog.
+ * Print challans with their original A4 fit; other documents use normal full-width flow.
+ * Uses an isolated print frame and triggers the native print dialog.
  * The window and print dialog remain open until the user finishes printing (no auto-closing timeouts).
  */
 export function executePrint(targetElementId?: string, documentTitle?: string): void {
   const docTitle = documentTitle || 'Print Document - RSR Vai Vai Enterprise';
   const elementId = targetElementId || 'printable-area';
   const targetEl = document.getElementById(elementId);
+  const continuous = !isChallanPrint(elementId);
 
   if (!targetEl) {
     console.warn(`executePrint: Target element "${elementId}" not found`);
@@ -73,6 +75,7 @@ html, body { font-size: 16px !important; }
 @media print {
   html, body { font-size: 16px !important; width: 198mm !important; height: 284mm !important; overflow: hidden !important; }
 }
+${continuous ? continuousPrintStyles() : ''}
 </style>
 </head>
 <body>
@@ -81,6 +84,7 @@ html, body { font-size: 16px !important; }
 (function(){
   var PAGE_W=748, PAGE_H=1070; /* A4 (210x297mm) minus 6mm margins, in CSS px, with a small safety gap */
   function fit(){
+    if (${continuous}) return;
     var w=document.querySelector('.print-page-wrapper'); if(!w) return;
     document.documentElement.style.setProperty('--one-page-fit','1');
     var h=w.scrollHeight, sw=Math.max(w.scrollWidth, PAGE_W);
@@ -130,7 +134,7 @@ html, body { font-size: 16px !important; }
       document.title = docTitle;
       const fallbackStyle = document.createElement('style');
       fallbackStyle.id = '__rsr_print_fallback__';
-      fallbackStyle.innerHTML = `@media print{body *{visibility:hidden!important}#${elementId},#${elementId} *{visibility:visible!important}#${elementId}{position:absolute!important;left:0!important;top:0!important;width:100%!important}}`;
+      fallbackStyle.innerHTML = `@media print{body *{visibility:hidden!important}#${elementId},#${elementId} *{visibility:visible!important}#${elementId}{position:absolute!important;left:0!important;top:0!important;width:100%!important}${continuous ? continuousPrintStyles() : ''}}`;
       document.head.appendChild(fallbackStyle);
       window.print();
       setTimeout(() => {
@@ -152,7 +156,7 @@ html, body { font-size: 16px !important; }
     frameDoc.close();
 
     // Wait for iframe to load, then auto-trigger print
-    // Wait until fonts/images are ready and the 1-page fit is computed, then print
+    // Wait until fonts/images and the selected layout are ready, then print
     const started = Date.now();
     const waitAndPrint = () => {
       const ready = (printFrame.contentWindow as any)?.__rsrReady;

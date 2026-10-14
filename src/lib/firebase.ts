@@ -203,6 +203,25 @@ export async function joinWithKey(key: string): Promise<boolean> {
   return ensureCloudAccess(true);
 }
 
+// ---------------------------------------------------------------------------
+// SYNC STATUS NOTIFIER
+// Cloud write failures used to disappear silently (every caller swallows the
+// error with .catch(() => {})). Now the app can show a visible warning so a
+// device that is offline / not joined never loses an entry unnoticed.
+// ---------------------------------------------------------------------------
+export type SyncIssue = { message: string; at: number } | null;
+const syncIssueListeners = new Set<(issue: SyncIssue) => void>();
+let lastIssue: SyncIssue = null;
+export function onSyncIssue(cb: (issue: SyncIssue) => void): () => void {
+  syncIssueListeners.add(cb);
+  cb(lastIssue);
+  return () => syncIssueListeners.delete(cb);
+}
+export function reportSyncIssue(message: string | null) {
+  lastIssue = message ? { message, at: Date.now() } : null;
+  syncIssueListeners.forEach((cb) => cb(lastIssue));
+}
+
 // Firestore document hard limit is 1 MiB. Drop huge embedded images (data URLs)
 // so a big logo/signature can never make the company upload fail.
 export function shrinkForFirestore<T>(obj: T, maxField = 700_000): T {
@@ -402,21 +421,42 @@ export const cloudDbService = {
     item: T
   ): Promise<void> => {
     const docPath = `${collectionName}/${item.id}`;
-    try {
-      const sanitized = sanitizeForFirestore(item);
-      await setDoc(doc(db, collectionName, item.id), sanitized, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, docPath);
+    const sanitized = sanitizeForFirestore(item);
+    // Make sure this device is signed in + joined BEFORE writing, so an entry
+    // saved right after app start is not rejected and silently dropped.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await ensureCloudAccess(attempt > 0);
+        await setDoc(doc(db, collectionName, item.id), sanitized, { merge: true });
+        reportSyncIssue(null);
+        return;
+      } catch (error: any) {
+        const code = error?.code || '';
+        if (code === 'permission-denied' && attempt === 0) continue; // re-join once, then retry
+        reportSyncIssue(
+          code === 'permission-denied'
+            ? 'এই ডিভাইসটির ক্লাউড অনুমতি নেই — Sync Access Key দিয়ে যুক্ত করুন, নাহলে এন্ট্রি অন্য ডিভাইসে যাবে না।'
+            : 'ইন্টারনেট সংযোগ না থাকায় এন্ট্রিটি ক্লাউডে যায়নি — সংযোগ ফিরলে আবার সেভ করুন।'
+        );
+        handleFirestoreError(error, OperationType.WRITE, docPath);
+      }
     }
   },
 
   // Generic document deleter with spec-compliant error handler
   deleteDocument: async (collectionName: string, id: string): Promise<void> => {
     const docPath = `${collectionName}/${id}`;
-    try {
-      await deleteDoc(doc(db, collectionName, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, docPath);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await ensureCloudAccess(attempt > 0);
+        await deleteDoc(doc(db, collectionName, id));
+        return;
+      } catch (error: any) {
+        const code = error?.code || '';
+        if (code === 'permission-denied' && attempt === 0) continue;
+        reportSyncIssue('একটি আইটেম মুছে ফেলা ক্লাউডে পৌঁছায়নি — সংযোগ ও সিঙ্ক কী পরীক্ষা করুন।');
+        handleFirestoreError(error, OperationType.DELETE, docPath);
+      }
     }
   },
 

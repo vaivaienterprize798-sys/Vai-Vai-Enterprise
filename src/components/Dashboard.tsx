@@ -206,6 +206,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       { key: 'android', label: t.androidItem, color: 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' },
       { key: 'kg', label: t.kgItem, color: 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400' },
       { key: 'pcs_blank', label: t.pcsBlankItem, color: 'border-purple-500 bg-purple-50/50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-400' },
+      { key: 'laptop', label: t.laptopItem, color: 'border-sky-500 bg-sky-50/50 dark:bg-sky-950/20 text-sky-700 dark:text-sky-400' },
+      { key: 'computer', label: t.computerItem, color: 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400' },
     ];
 
     return categories.map((cat) => {

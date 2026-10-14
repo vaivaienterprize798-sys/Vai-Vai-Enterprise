@@ -23,7 +23,7 @@ import { StatementSelectorModal } from './components/StatementSelectorModal';
 import { SecurityComplianceModal } from './components/SecurityComplianceModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { AuthScreen } from './components/AuthScreen';
-import { auth, cloudDbService, ensureCloudAccess, onAccessChanged } from './lib/firebase';
+import { auth, cloudDbService, ensureCloudAccess, onAccessChanged, onSyncIssue, hasCloudAccess } from './lib/firebase';
 import { User } from 'firebase/auth';
 import { RefreshCw, X as CloseIcon } from 'lucide-react';
 import { CURRENT_APP_VERSION, forceUpdateAndReloadApp } from './lib/appUpdate';
@@ -236,6 +236,7 @@ export default function App() {
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   // Cloud Sync Modal
   const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
+  const [syncIssue, setSyncIssue] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
   const [showUpdateBanner, setShowUpdateBanner] = useState(() => {
     // Show update notification if new version or user hasn't seen it yet
@@ -505,6 +506,20 @@ export default function App() {
       unsubAuth();
       unsubs.forEach(unsub => unsub());
     };
+  }, []);
+
+  // Visible cloud-sync warning: if a write fails or this device is not joined,
+  // show a banner (with a button to open the Sync panel) and keep retrying access.
+  useEffect(() => {
+    const unsubIssue = onSyncIssue((issue) => setSyncIssue(issue ? issue.message : null));
+    const retry = window.setInterval(() => {
+      if (!hasCloudAccess()) {
+        ensureCloudAccess(true).catch(() => {
+          setSyncIssue((prev) => prev || 'এই ডিভাইসটি ক্লাউডে যুক্ত নয় — Sync Access Key দিয়ে যুক্ত করুন, নাহলে এন্ট্রি অন্য ডিভাইসে যাবে না।');
+        });
+      }
+    }, 30000);
+    return () => { unsubIssue(); window.clearInterval(retry); };
   }, []);
 
   // Universal Table & Form UX Improvements: Zero-Clear & Enter Auto-Advance
@@ -1040,6 +1055,27 @@ export default function App() {
         userSession={userSession}
         onLogout={handleLogout}
       />
+
+      {/* Cloud Sync Warning Bar — shown when entries are NOT reaching other devices */}
+      {syncIssue && (
+        <div className="bg-red-600 text-white px-3 sm:px-6 py-2 text-xs font-semibold flex items-center justify-between shadow-md z-30">
+          <div className="flex items-center gap-2">
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-white animate-pulse"></span>
+            <span>{syncIssue}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsCloudSyncModalOpen(true)}
+              className="px-3 py-1 bg-white text-red-700 hover:bg-slate-100 rounded-lg font-bold text-[11px] shadow-sm cursor-pointer"
+            >
+              {lang === 'bn' ? 'সিঙ্ক ঠিক করুন' : 'Fix Sync'}
+            </button>
+            <button onClick={() => setSyncIssue(null)} className="p-1 text-white/80 hover:text-white cursor-pointer">
+              <CloseIcon className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* App Update Notification Bar */}
       {showUpdateBanner && (

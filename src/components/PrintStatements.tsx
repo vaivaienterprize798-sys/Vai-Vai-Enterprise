@@ -173,6 +173,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
     android: t.androidItem,
     kg: t.kgItem,
     pcs_blank: t.pcsBlankItem,
+    laptop: t.laptopItem,
+    computer: t.computerItem,
   };
   const stockView = stockPanel === 'all' ? stock : stock.filter((s) => s.category === stockPanel);
 
