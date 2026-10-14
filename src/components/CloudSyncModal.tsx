@@ -48,6 +48,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
   const [hasOverride, setHasOverride] = useState(!!getConfigOverride());
@@ -116,7 +117,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       const ok = await joinWithKey(keyInput.trim());
       if (ok) setSuccessMessage(lang === 'bn' ? 'এই ডিভাইস নিরাপদে যুক্ত হয়েছে। লাইভ সিঙ্ক চালু!' : 'Device joined securely. Live sync is on!');
     } catch (e: any) {
-      setErrorMessage(e?.message === 'INVALID_KEY'
+      setErrorMessage(e?.message === 'LINK_WITHOUT_KEY'
+        ? (lang === 'bn' ? 'এটি শুধু ওয়েবসাইটের ঠিকানা, এতে কী নেই। এখানে RSR-XXXX-XXXX-XXXX ধরনের অ্যাক্সেস কী লিখুন।' : 'That is only the website address. Type the RSR-XXXX-XXXX-XXXX access key here.')
+        : e?.message === 'INVALID_KEY'
         ? (lang === 'bn' ? 'ভুল অ্যাক্সেস কী। সঠিক কী দিন।' : 'Wrong access key.')
         : (lang === 'bn' ? 'সংযোগ হয়নি। ইন্টারনেট চেক করে আবার চেষ্টা করুন।' : 'Could not connect. Check internet and retry.'));
     } finally { setJoining(false); }
@@ -437,18 +440,35 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
               {lang === 'bn' ? 'নিরাপদ অ্যাক্সেস (লগইন ছাড়া)' : 'Secure Access (no login)'}
             </h3>
-            {hasAccess ? (
+            {hasAccess && (
               <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
                 {lang === 'bn' ? 'এই ডিভাইস অনুমোদিত। অন্য কেউ কী ছাড়া ডাটা পড়তে বা লিখতে পারবে না।' : 'This device is approved. Nobody without the key can read or write data.'}
               </p>
-            ) : (
+            )}
+            {hasAccess && getSyncKey() && (
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-white dark:bg-slate-950 border border-emerald-300 dark:border-emerald-800">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-bold text-slate-500">{lang === 'bn' ? 'আপনার শপ অ্যাক্সেস কী (লিখে রাখুন)' : 'Your shop access key (write it down)'}</div>
+                  <div className="font-mono text-sm font-bold tracking-wider text-slate-900 dark:text-slate-100 break-all select-all">{getSyncKey()}</div>
+                </div>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(getSyncKey()); setCopiedKey(true); setTimeout(() => setCopiedKey(false), 2000); }}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiedKey ? (lang === 'bn' ? 'কপি হয়েছে!' : 'Copied!') : (lang === 'bn' ? 'কী কপি' : 'Copy key')}</span>
+                </button>
+              </div>
+            )}
+            {(!hasAccess || !getSyncKey()) && (
               <div className="flex items-center gap-2">
                 <input
-                  type="password"
+                  type="text"
+                  autoCapitalize="characters"
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder={lang === 'bn' ? 'শপ অ্যাক্সেস কী (যেমন VV-XXXX...)' : 'Shop access key (e.g. VV-XXXX...)'}
+                  placeholder={lang === 'bn' ? 'শপ অ্যাক্সেস কী (যেমন RSR-XXXX-XXXX-XXXX)' : 'Shop access key (e.g. RSR-XXXX-XXXX-XXXX)'}
                   className="flex-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs px-3 py-2 rounded-lg font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-400"
                 />
                 <button
@@ -457,7 +477,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
                 >
                   {joining ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
-                  <span>{joining ? (lang === 'bn' ? 'যাচাই হচ্ছে...' : 'Checking...') : (lang === 'bn' ? 'যুক্ত করুন' : 'Join')}</span>
+                  <span>{joining ? (lang === 'bn' ? 'যাচাই হচ্ছে...' : 'Checking...') : hasAccess ? (lang === 'bn' ? 'কী সেভ করুন' : 'Save key') : (lang === 'bn' ? 'যুক্ত করুন' : 'Join')}</span>
                 </button>
               </div>
             )}

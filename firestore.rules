@@ -26,8 +26,10 @@ service cloud.firestore {
 
     function validKey(k) {
       return k is string && k.size() < 100
-        && hashing.sha256(k).toHexString().lower()
-           == '7693c0c201c4b24027c4099b6133f495ff242b8c84bf485f177997985d89d8d7';
+        && (hashing.sha256(k).toHexString().lower()
+              == 'a7224bc4a49894befca00d7c49fecf53dce374f4ffb1fea3c41f76f14f1ceb82'
+            || hashing.sha256(k).toHexString().lower()
+              == '7693c0c201c4b24027c4099b6133f495ff242b8c84bf485f177997985d89d8d7');
     }
 
     // Device membership: a device can only create ITS OWN entry, only with the right key.

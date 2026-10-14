@@ -1,6 +1,6 @@
 // App Version and Auto-Update Management
-export const CURRENT_APP_VERSION = 'v4.3.1';
-export const BUILD_TIMESTAMP = '2026-10-13-v4.3.1';
+export const CURRENT_APP_VERSION = 'v4.4.1';
+export const BUILD_TIMESTAMP = '2026-10-13-v4.4.0';
 
 /**
  * Force clean all browser caches, service workers, and reload the application
@@ -105,4 +105,28 @@ export function initAutoUpdateListener(onUpdateAvailable?: () => void) {
 
   // Attach to window for emergency access
   (window as unknown as { __rsr_force_update: () => void }).__rsr_force_update = forceUpdateAndReloadApp;
+}
+
+/**
+ * Live update for every device: checks the published site every minute (and when
+ * the app comes back to the screen). If a new version was published, reloads.
+ */
+export function initLiveVersionWatcher() {
+  if (typeof window === 'undefined' || !import.meta.env.PROD) return;
+  const sig = (html: string) => (html.match(/\/assets\/[^"']+\.js/g) || []).sort().join('|');
+  let current = '';
+  const check = async () => {
+    try {
+      const res = await fetch('/index.html?v=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return;
+      const s = sig(await res.text());
+      if (!s) return;
+      if (!current) { current = s; return; }
+      if (s !== current) forceUpdateAndReloadApp();
+    } catch {}
+  };
+  check();
+  setInterval(check, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  window.addEventListener('online', check);
 }

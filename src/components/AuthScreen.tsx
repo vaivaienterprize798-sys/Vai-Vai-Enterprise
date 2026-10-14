@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { hasCloudAccess, onAccessChanged, joinWithKey, getSyncKey, isFirebaseConfigured } from '../lib/firebase';
 import {
   ShieldCheck,
   Lock,
@@ -31,6 +32,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // Cloud access key (new device must join before staff/data can sync)
+  const [cloudOk, setCloudOk] = useState<boolean>(hasCloudAccess());
+  const [keyInput, setKeyInput] = useState<string>(getSyncKey());
+  const [joining, setJoining] = useState(false);
+  const [keyMsg, setKeyMsg] = useState('');
+  useEffect(() => onAccessChanged(setCloudOk), []);
+  const handleJoin = async () => {
+    if (!keyInput.trim()) return;
+    setJoining(true); setKeyMsg('');
+    try {
+      const ok = await joinWithKey(keyInput.trim());
+      setKeyMsg(ok ? '' : 'যুক্ত করা যায়নি, আবার চেষ্টা করুন।');
+    } catch (e: any) {
+      setKeyMsg(e?.message === 'LINK_WITHOUT_KEY' ? 'এটি শুধু ওয়েবসাইটের ঠিকানা। এখানে RSR-XXXX-XXXX-XXXX ধরনের অ্যাক্সেস কী লিখুন।' : e?.message === 'INVALID_KEY' ? 'ভুল অ্যাক্সেস কী। সঠিক কী দিন।' : 'ইন্টারনেট/ক্লাউড সমস্যা: ' + (e?.code || e?.message || ''));
+    } finally { setJoining(false); }
+  };
 
   // Switch Role Handler
   const handleRoleSwitch = (role: 'admin' | 'staff') => {
@@ -152,6 +170,39 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Cloud Sync Access Key */}
+        {isFirebaseConfigured && (
+          cloudOk ? (
+            <div className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-[11px] font-bold text-center">
+              ✓ ক্লাউড সিঙ্ক চালু — সব ডিভাইসে লাইভ আপডেট হবে
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-amber-950/60 border border-amber-700 space-y-2">
+              <p className="text-[11px] font-bold text-amber-200">
+                নতুন ডিভাইস? প্রথমে শপ অ্যাক্সেস কী দিয়ে যুক্ত করুন, তাহলে সব ডাটা ও আপডেট এই ডিভাইসে আসবে।
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder="Sync Access Key"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-amber-700 bg-slate-950 text-white font-mono text-xs focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleJoin}
+                  disabled={joining || !keyInput.trim()}
+                  className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {joining ? '...' : 'যুক্ত করুন'}
+                </button>
+              </div>
+              {keyMsg && <p className="text-[11px] text-rose-300">{keyMsg}</p>}
+            </div>
+          )
+        )}
 
         {/* Role Selector Tabs */}
         <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800">

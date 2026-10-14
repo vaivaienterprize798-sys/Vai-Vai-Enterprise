@@ -120,8 +120,19 @@ const SYNC_KEY_STORAGE = 'rsr_sync_access_key';
 export function getSyncKey(): string {
   try { return localStorage.getItem(SYNC_KEY_STORAGE) || ''; } catch { return ''; }
 }
+/** Accepts a plain key OR a full share link (https://site/#key=XXXX) pasted by mistake. */
+export function normalizeSyncKey(input: string): string {
+  let v = (input || '').trim();
+  const m = v.match(/[#?&]key=([^&\s]+)/i);
+  if (m) { try { v = decodeURIComponent(m[1]); } catch { v = m[1]; } }
+  return v.trim();
+}
+export function looksLikeLinkWithoutKey(input: string): boolean {
+  const v = (input || '').trim();
+  return /^(https?:\/\/|www\.)|\.(app|com|net|dev|io)(\/|$)/i.test(v) && !/[#?&]key=/i.test(v);
+}
 export function setSyncKey(key: string): void {
-  try { localStorage.setItem(SYNC_KEY_STORAGE, key.trim()); } catch {}
+  try { localStorage.setItem(SYNC_KEY_STORAGE, normalizeSyncKey(key)); } catch {}
 }
 
 // Accept key from share link: https://app/#key=XXXX (then remove it from the address bar)
@@ -216,6 +227,7 @@ export function ensureCloudAccess(force = false): Promise<boolean> {
 
 /** Joins this device with a key typed by the user. */
 export async function joinWithKey(key: string): Promise<boolean> {
+  if (looksLikeLinkWithoutKey(key)) throw new Error('LINK_WITHOUT_KEY');
   setSyncKey(key);
   return ensureCloudAccess(true);
 }
@@ -417,36 +429,88 @@ function pendingFor(col: string): PendingWrite[] {
 }
 
 let flushing: Promise<number> | null = null;
+// Errors that will NEVER succeed on retry (bad data). Such an item is moved out
+// of the queue so it cannot block every other entry or keep the red bar alive.
+const PERMANENT_CODES = new Set(['invalid-argument', 'out-of-range', 'failed-precondition', 'already-exists', 'not-found', 'data-loss']);
+const FAILED_KEY = 'rsr_failed_cloud_writes_v1';
+function rememberFailed(k: string, w: PendingWrite, code: string) {
+  try {
+    const f = JSON.parse(localStorage.getItem(FAILED_KEY) || '{}') || {};
+    f[k] = { col: w.col, id: w.id, code, at: Date.now() };
+    localStorage.setItem(FAILED_KEY, JSON.stringify(f));
+  } catch {}
+}
+function isPermanent(e: any): boolean {
+  const code = String(e?.code || '');
+  if (PERMANENT_CODES.has(code)) return true;
+  // Synchronous SDK validation errors (bad document id, nested arrays, too large)
+  return !code && !(e instanceof TimeoutError) && /invalid|unsupported|nested|exceeds|too large|must be/i.test(String(e?.message || ''));
+}
+function buildRef(w: PendingWrite) {
+  const id = String(w.id).replace(/\//g, '_').trim() || 'item';
+  return doc(db, w.col, id);
+}
+async function writeOne(w: PendingWrite) {
+  const r = buildRef(w);
+  if (w.data === null) await withTimeout(deleteDoc(r), 20000, 'Upload');
+  else await withTimeout(setDoc(r, shrinkForFirestore(sanitizeForFirestore(w.data)), { merge: true }), 20000, 'Upload');
+}
+
 /** Upload everything still waiting. Safe to call often. Returns items left. */
 export function flushPendingWrites(): Promise<number> {
   if (flushing) return flushing;
   flushing = (async () => {
     if (!accessGranted || (typeof navigator !== 'undefined' && navigator.onLine === false)) return pendingCount();
     const all = Object.entries(readPending());
-    const CHUNK = 400;
+    const CHUNK = 200;
+    let lastErr: any = null;
     for (let i = 0; i < all.length; i += CHUNK) {
       const part = all.slice(i, i + CHUNK);
-      const batch = writeBatch(db);
-      for (const [, w] of part) {
-        const r = doc(db, w.col, w.id);
-        if (w.data === null) batch.delete(r);
-        else batch.set(r, shrinkForFirestore(sanitizeForFirestore(w.data)), { merge: true });
-      }
+      // 1) fast path: one batch
       try {
+        const batch = writeBatch(db);
+        for (const [, w] of part) {
+          const r = buildRef(w);
+          if (w.data === null) batch.delete(r);
+          else batch.set(r, shrinkForFirestore(sanitizeForFirestore(w.data)), { merge: true });
+        }
         await withTimeout(batch.commit(), 30000, 'Upload');
         clearPending(part.map(([k, w]) => ({ k, at: w.at })));
+        continue;
       } catch (e: any) {
-        console.warn('[Pending] flush notice:', e?.code || e?.message);
-        reportSyncIssue(
-          e?.code === 'permission-denied'
-            ? 'এই ডিভাইসটির ক্লাউড অনুমতি নেই — Sync Access Key দিয়ে যুক্ত করুন।'
-            : 'কিছু এন্ট্রি এখনো ক্লাউডে যায়নি — ইন্টারনেট ফিরলে নিজে থেকেই যাবে।'
-        );
-        break;
+        console.warn('[Pending] batch notice, retrying one by one:', e?.code || e?.message);
+        if (e?.code === 'permission-denied') { lastErr = e; break; }
       }
+      // 2) slow path: item by item, so one bad entry can't block the rest
+      for (const [k, w] of part) {
+        try {
+          await writeOne(w);
+          clearPending([{ k, at: w.at }]);
+        } catch (e: any) {
+          if (isPermanent(e)) {
+            console.warn('[Pending] dropped bad entry', k, e?.code || e?.message);
+            rememberFailed(k, w, String(e?.code || e?.message || 'error'));
+            clearPending([{ k, at: w.at }]);
+          } else {
+            lastErr = e;
+            if (e?.code === 'permission-denied' || e?.code === 'resource-exhausted' || e instanceof TimeoutError || e?.code === 'unavailable') break;
+          }
+        }
+      }
+      if (lastErr) break;
     }
     const left = pendingCount();
     if (left === 0) reportSyncIssue(null);
+    else if (lastErr) {
+      const code = lastErr?.code || (lastErr instanceof TimeoutError ? 'timeout' : 'error');
+      reportSyncIssue(
+        code === 'permission-denied'
+          ? 'এই ডিভাইসটির ক্লাউড অনুমতি নেই — Sync Access Key দিয়ে যুক্ত করুন।'
+          : code === 'resource-exhausted'
+            ? `ক্লাউডের আজকের ফ্রি লিমিট শেষ — ${left}টি এন্ট্রি অপেক্ষায় আছে, লিমিট রিসেট হলে নিজেই যাবে।`
+            : `${left}টি এন্ট্রি এখনো ক্লাউডে যায়নি — নিজে থেকেই আবার চেষ্টা করছে। (${code})`
+      );
+    }
     return left;
   })().finally(() => { flushing = null; });
   return flushing;

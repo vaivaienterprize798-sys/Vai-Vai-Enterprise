@@ -236,7 +236,20 @@ export default function App() {
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   // Cloud Sync Modal
   const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
-  const [syncIssue, setSyncIssue] = useState<string | null>(null);
+  const [syncIssue, setSyncIssueRaw] = useState<string | null>(null);
+  // "X" hides the red bar for 30 minutes (survives refresh) instead of popping back in seconds.
+  const SYNC_SNOOZE_KEY = 'rsr_sync_bar_snooze_until';
+  const setSyncIssue = (v: string | null | ((prev: string | null) => string | null)) => {
+    setSyncIssueRaw((prev) => {
+      const next = typeof v === 'function' ? (v as (p: string | null) => string | null)(prev) : v;
+      if (next && Number(localStorage.getItem(SYNC_SNOOZE_KEY) || 0) > Date.now()) return null;
+      return next;
+    });
+  };
+  const dismissSyncIssue = () => {
+    try { localStorage.setItem(SYNC_SNOOZE_KEY, String(Date.now() + 30 * 60 * 1000)); } catch {}
+    setSyncIssueRaw(null);
+  };
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
   const [showUpdateBanner, setShowUpdateBanner] = useState(() => {
     // Show update notification if new version or user hasn't seen it yet
@@ -1070,7 +1083,7 @@ export default function App() {
             >
               {lang === 'bn' ? 'সিঙ্ক ঠিক করুন' : 'Fix Sync'}
             </button>
-            <button onClick={() => setSyncIssue(null)} className="p-1 text-white/80 hover:text-white cursor-pointer">
+            <button onClick={dismissSyncIssue} className="p-1 text-white/80 hover:text-white cursor-pointer">
               <CloseIcon className="w-4 h-4" />
             </button>
           </div>
