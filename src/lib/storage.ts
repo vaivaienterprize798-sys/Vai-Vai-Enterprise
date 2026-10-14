@@ -25,7 +25,7 @@ import {
   ChinaDirectPayment,
 } from '../types';
 import { withComputedBalance, withComputedBalances } from './ledger';
-import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout } from './firebase';
+import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites } from './firebase';
 import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
@@ -859,6 +859,12 @@ export const storageService = {
   restoreBackup: (jsonContent: string): boolean => {
     try {
       const parsed = JSON.parse(jsonContent);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+      const known = ['company','invoices','stock','parties','staff','attendance','pettyCash','carExpenses','dokanPayments'];
+      if (!known.some((k) => k in parsed)) return false;
+      for (const k of Object.keys(parsed)) {
+        if (k !== 'company' && known.includes(k) && !Array.isArray(parsed[k])) return false;
+      }
       if (parsed.company) saveToStorage(STORAGE_KEYS.COMPANY, parsed.company);
       if (parsed.invoices) saveToStorage(STORAGE_KEYS.INVOICES, parsed.invoices);
       if (parsed.stock) saveToStorage(STORAGE_KEYS.STOCK, parsed.stock);
@@ -877,6 +883,10 @@ export const storageService = {
       if (parsed.workerConversions) saveToStorage(STORAGE_KEYS.WORKER_CONVERSIONS, parsed.workerConversions);
       if (parsed.thirdParties) saveToStorage(STORAGE_KEYS.THIRD_PARTIES, parsed.thirdParties);
       if (parsed.chinaDirectPayments) saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, parsed.chinaDirectPayments);
+      // Push the restored data to the cloud so every other device receives it.
+      // Queued first, so live sync can never overwrite it with older cloud data.
+      storageService.queueAllForCloud();
+      ensureCloudAccess().catch(() => {}).finally(() => { flushPendingWrites().catch(() => {}); });
       return true;
     } catch (e) {
       return false;
@@ -1047,45 +1057,55 @@ export const storageService = {
     await storageService.wipeAllDataClean(true);
   },
 
+  collectAllForCloud: (): { col: string; id: string; data: any }[] => {
+    const sources: { key: string; data: any[] }[] = [
+      { key: 'invoices', data: storageService.getInvoices() },
+      { key: 'stock', data: storageService.getStock() },
+      { key: 'parties', data: storageService.getParties() },
+      { key: 'staff', data: storageService.getStaff() },
+      { key: 'attendance', data: storageService.getAttendance() },
+      { key: 'pettyCash', data: storageService.getPettyCash() },
+      { key: 'carExpenses', data: storageService.getCarExpenses() },
+      { key: 'dokanPayments', data: storageService.getDokanPayments() },
+      { key: 'workerTasks', data: storageService.getWorkerTasks() },
+      { key: 'punchRequests', data: storageService.getPunchRequests() },
+      { key: 'branchConsignments', data: storageService.getBranchConsignments() },
+      { key: 'branchRemittances', data: storageService.getBranchRemittances() },
+      { key: 'rmbConversions', data: storageService.getRmbConversions() },
+      { key: 'priceLists', data: storageService.getPriceLists() },
+      { key: 'workerConversions', data: storageService.getWorkerConversions() },
+      { key: 'thirdParties', data: storageService.getThirdParties() },
+      { key: 'chinaDirectPayments', data: storageService.getChinaDirectPayments() },
+    ];
+    const items: { col: string; id: string; data: any }[] = [
+      { col: 'company', id: 'main', data: storageService.getCompanyInfo() },
+    ];
+    for (const s of sources) {
+      for (const it of s.data || []) {
+        if (it && it.id) items.push({ col: s.key, id: String(it.id), data: it });
+      }
+    }
+    return items;
+  },
+
+  queueAllForCloud: (): number => {
+    const items = storageService.collectAllForCloud();
+    queuePendingWrites(items);
+    return items.length;
+  },
+
   uploadAllToCloud: async (
     onProgress?: (msg: string, percent?: number) => void
   ): Promise<{ success: boolean; count: number; queued?: number; error?: string }> => {
     try {
       onProgress?.('ক্লাউড অ্যাক্সেস যাচাই হচ্ছে...', 0);
+      const count = storageService.queueAllForCloud();
       const ok = await ensureCloudAccess();
       if (!ok) return { success: false, count: 0, error: 'NO_ACCESS' };
-      const sources: { key: string; data: any[] }[] = [
-        { key: 'invoices', data: storageService.getInvoices() },
-        { key: 'stock', data: storageService.getStock() },
-        { key: 'parties', data: storageService.getParties() },
-        { key: 'staff', data: storageService.getStaff() },
-        { key: 'attendance', data: storageService.getAttendance() },
-        { key: 'pettyCash', data: storageService.getPettyCash() },
-        { key: 'carExpenses', data: storageService.getCarExpenses() },
-        { key: 'dokanPayments', data: storageService.getDokanPayments() },
-        { key: 'workerTasks', data: storageService.getWorkerTasks() },
-        { key: 'punchRequests', data: storageService.getPunchRequests() },
-        { key: 'branchConsignments', data: storageService.getBranchConsignments() },
-        { key: 'branchRemittances', data: storageService.getBranchRemittances() },
-        { key: 'rmbConversions', data: storageService.getRmbConversions() },
-        { key: 'priceLists', data: storageService.getPriceLists() },
-        { key: 'workerConversions', data: storageService.getWorkerConversions() },
-        { key: 'thirdParties', data: storageService.getThirdParties() },
-        { key: 'chinaDirectPayments', data: storageService.getChinaDirectPayments() },
-      ];
-      const items: { col: string; id: string; data: any }[] = [
-        { col: 'company', id: 'main', data: storageService.getCompanyInfo() },
-      ];
-      for (const s of sources) {
-        for (const it of s.data || []) {
-          if (it && it.id) items.push({ col: s.key, id: String(it.id), data: it });
-        }
-      }
-      onProgress?.(`মোট ${items.length} টি রেকর্ড আপলোড হচ্ছে...`, 1);
-      const res = await cloudDbService.saveBatch(items, (done, total) => {
-        onProgress?.(`আপলোড হচ্ছে... ${done}/${total}`, Math.round((done / total) * 100));
-      });
-      return { success: true, count: items.length, queued: res.queued };
+      onProgress?.(`মোট ${count} টি রেকর্ড আপলোড হচ্ছে...`, 1);
+      const left = await flushPendingWrites();
+      onProgress?.('আপলোড সম্পন্ন', 100);
+      return { success: left === 0, count, queued: left, error: left ? 'কিছু রেকর্ড এখনো অপেক্ষায় — ইন্টারনেট ফিরলে নিজে থেকেই যাবে' : undefined };
     } catch (err: any) {
       return { success: false, count: 0, error: err?.message };
     }
