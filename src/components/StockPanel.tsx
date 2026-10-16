@@ -133,6 +133,10 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     switch (cat) {
       case 'android':
         return 'AND';
+      case 'laptop':
+        return 'LAP';
+      case 'computer':
+        return 'CMP';
       case 'pcs_blank':
         return 'BTN'; // বাটন সেট / বাটন বোর্ড
       case 'code':
@@ -224,7 +228,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     setFormOpeningQty(item.openingQty || 0);
     setFormQuantity(item.quantity);
     setFormUnit(item.unit);
-    setFormPurchaseRate(item.purchaseAvgRate || item.purchaseRate || 0);
+    setFormPurchaseRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0);
     setFormMinAlert(item.minAlertQty);
     setIsModalOpen(true);
   };
@@ -270,7 +274,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
   // Overall totals based on Purchase Rate
   const totalValuation = useMemo(() => {
     return stock.reduce(
-      (acc, it) => acc + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
+      (acc, it) => acc + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
       0
     );
   }, [stock]);
@@ -307,7 +311,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             getText={() => {
               const totalQty = stock.reduce((s, it) => s + it.quantity, 0);
               const totalVal = stock.reduce(
-                (s, it) => s + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
+                (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
                 0
               );
               return `*${companyInfo.name} - স্টক রিপোর্ট*\n📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}\n────────────────────────\n📦 মোট পণ্য: ${stock.length} টি\n🔢 মোট স্টক কোয়ান্টিটি: ${totalQty}\n💰 মোট মজুদ মূল্য: ৳${totalVal.toLocaleString()}\n────────────────────────\n_RSR Enterprise_`;
@@ -325,6 +329,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             <option value="android">{t.androidItem}</option>
             <option value="kg">{t.kgItem}</option>
             <option value="pcs_blank">{t.pcsBlankItem}</option>
+            <option value="laptop">{t.laptopItem}</option>
+            <option value="computer">{t.computerItem}</option>
           </select>
 
           {activeCategory !== 'all' && (
@@ -358,7 +364,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
       </div>
 
       {/* 4 Category Tabs Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
         <button
           onClick={() => setActiveCategory('all')}
           className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
@@ -426,6 +432,32 @@ export const StockPanel: React.FC<StockPanelProps> = ({
           <div className="text-xs font-semibold">{t.pcsBlankItem}</div>
           <div className="text-lg font-bold font-mono mt-0.5">
             {formatNumber(stock.filter((s) => s.category === 'pcs_blank').length, lang)}
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveCategory('laptop')}
+          className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
+            activeCategory === 'laptop'
+              ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <div className="text-xs font-semibold">{t.laptopItem}</div>
+          <div className="text-lg font-bold font-mono mt-0.5">
+            {formatNumber(stock.filter((s) => s.category === 'laptop').length, lang)}
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveCategory('computer')}
+          className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
+            activeCategory === 'computer'
+              ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <div className="text-xs font-semibold">{t.computerItem}</div>
+          <div className="text-lg font-bold font-mono mt-0.5">
+            {formatNumber(stock.filter((s) => s.category === 'computer').length, lang)}
           </div>
         </button>
       </div>
@@ -588,7 +620,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredStock.map((it, idx) => {
                 const isLow = it.quantity <= it.minAlertQty;
-                const effectiveAvgRate = it.purchaseAvgRate || it.purchaseRate || 0;
+                const effectiveAvgRate = it.purchaseAvgRate ?? it.purchaseRate ?? 0;
                 const rowValuation = it.quantity * effectiveAvgRate;
                 const { stockIn, stockOut } = getItemStats(it.code, it.nameBn, it.nameEn);
 
@@ -620,6 +652,10 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                             ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
                             : it.category === 'android'
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            : it.category === 'laptop'
+                            ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
+                            : it.category === 'computer'
+                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                             : it.category === 'kg'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                             : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
@@ -629,6 +665,10 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                           ? t.codeItem
                           : it.category === 'android'
                           ? t.androidItem
+                          : it.category === 'laptop'
+                          ? t.laptopItem
+                          : it.category === 'computer'
+                          ? t.computerItem
                           : it.category === 'kg'
                           ? t.kgItem
                           : t.pcsBlankItem}
@@ -664,7 +704,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                       )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono text-slate-800 dark:text-slate-200">
-                      {formatCurrency(it.purchaseRate || 0, lang)}
+                      {formatCurrency(it.purchaseAvgRate ?? it.purchaseRate ?? 0, lang)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
                       {formatCurrency(rowValuation, lang)}
@@ -819,6 +859,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                     <option value="pcs_blank">{t.pcsBlankItem} (BTN)</option>
                     <option value="code">{t.codeItem} (COD)</option>
                     <option value="kg">{t.kgItem} (KG)</option>
+                    <option value="laptop">{t.laptopItem} (LAP)</option>
+                    <option value="computer">{t.computerItem} (CMP)</option>
                   </select>
                 </div>
 

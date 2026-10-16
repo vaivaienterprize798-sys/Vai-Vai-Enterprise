@@ -1,11 +1,12 @@
 /**
  * Robust cross-browser and iframe-safe printing and PDF export utility for RSR Vai Vai Enterprise
  * Uses modern html-to-image rasterization to support all CSS features (including OKLCH, Tailwind v4, Flexbox, Grid)
- * with zero parser errors and exact 1-Page A4 print-layout fidelity.
+ * with fixed A4 challans and continuous full-width report printing.
  */
 
 import { toBlob, toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import { isChallanPrint, continuousPrintStyles } from './printLayout';
 
 /**
  * WhatsApp phone targets
@@ -18,14 +19,15 @@ export const WHATSAPP_NUMBERS = {
 };
 
 /**
- * Execute 1-Page A4 Print seamlessly across all browsers and preview environments.
- * Opens a dedicated full-page print window with all A4 CSS styles and triggers the native print dialog.
+ * Print challans with their original A4 fit; other documents use normal full-width flow.
+ * Uses an isolated print frame and triggers the native print dialog.
  * The window and print dialog remain open until the user finishes printing (no auto-closing timeouts).
  */
 export function executePrint(targetElementId?: string, documentTitle?: string): void {
   const docTitle = documentTitle || 'Print Document - RSR Vai Vai Enterprise';
   const elementId = targetElementId || 'printable-area';
   const targetEl = document.getElementById(elementId);
+  const continuous = !isChallanPrint(elementId);
 
   if (!targetEl) {
     console.warn(`executePrint: Target element "${elementId}" not found`);
@@ -53,23 +55,51 @@ export function executePrint(targetElementId?: string, documentTitle?: string): 
 <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 ${styleTags}
 <style>
-@page { size: A4 portrait !important; margin: 6mm 8mm !important; }
+@page { size: A4 portrait; margin: 6mm; }
 *, *::before, *::after { box-sizing: border-box !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; color: #0f172a !important; font-family: 'Hind Siliguri', 'Outfit', system-ui, sans-serif !important; }
-.print-page-wrapper { max-width: 210mm; margin: 0 auto; padding: 0; background: #ffffff; }
-.one-page-sheet { width: 100% !important; max-width: 100% !important; margin: 0 auto !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: #ffffff !important; }
-table { width: 100% !important; border-collapse: collapse !important; page-break-inside: avoid !important; }
-tr { page-break-inside: avoid !important; }
-@media print { .no-print { display: none !important; } }
-</style>
-<style>
-@media print { .print-page-wrapper { zoom: var(--one-page-fit, 1); } tr, .rounded-xl, .rounded-lg { break-inside: avoid; } }
+.print-page-wrapper { width: 748px; max-width: none; margin: 0 auto; padding: 0; background: #ffffff; zoom: var(--one-page-fit, 1); }
+.one-page-sheet { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; background: #ffffff !important; }
+/* Same layout on screen-measure and on paper: remove scroll boxes, sticky headers and forced breaks */
+.print-page-wrapper .sheet-freeze-wrapper, .print-page-wrapper .overflow-x-auto, .print-page-wrapper .overflow-y-auto,
+.print-page-wrapper .overflow-auto, .print-page-wrapper [class*="max-h-"] { max-height: none !important; overflow: visible !important; }
+.print-page-wrapper thead, .print-page-wrapper th { position: static !important; box-shadow: none !important; }
+.print-page-wrapper, .print-page-wrapper * { break-before: auto !important; break-after: auto !important; break-inside: auto !important; page-break-before: auto !important; page-break-after: auto !important; page-break-inside: auto !important; }
+.print-page-wrapper table { width: 100% !important; border-collapse: collapse !important; }
+.print-page-wrapper thead { display: table-header-group; }
+.no-print, .no-capture { display: none !important; }
+.print-page-wrapper .print-only { display: block !important; }
+/* Keep print metrics identical to the measured layout so the fit is exact */
+html, body { font-size: 16px !important; }
+.print-page-wrapper .print-compact td, .print-page-wrapper .print-compact th { padding: 2px 4px !important; font-size: 10px !important; line-height: 1.3 !important; }
+@media print {
+  html, body { font-size: 16px !important; width: 198mm !important; height: 284mm !important; overflow: hidden !important; }
+}
+${continuous ? continuousPrintStyles() : ''}
 </style>
 </head>
 <body>
 <div class="print-page-wrapper">${clonedContent.outerHTML}</div>
 <script>
-(function(){function fit(){var w=document.querySelector('.print-page-wrapper');if(!w)return;var A4_W=733,A4_H=1070;var prev={w:w.style.width,p:w.style.padding,m:w.style.maxWidth};w.style.width=A4_W+'px';w.style.maxWidth=A4_W+'px';w.style.padding='0';var h=w.scrollHeight,sw=w.scrollWidth;w.style.width=prev.w;w.style.maxWidth=prev.m;w.style.padding=prev.p;var byW=A4_W/Math.max(1,sw);var byH=A4_H/Math.max(1,h);var scale=Math.min(byW,byH);scale=Math.max(0.35,Math.min(1.3,scale*0.98));document.documentElement.style.setProperty('--one-page-fit',String(scale));}window.addEventListener('load',function(){fit();setTimeout(function(){try{window.focus();window.print();}catch(e){}},200);});window.addEventListener('beforeprint',fit);setTimeout(fit,300);})();
+(function(){
+  var PAGE_W=748, PAGE_H=1070; /* A4 (210x297mm) minus 6mm margins, in CSS px, with a small safety gap */
+  function fit(){
+    if (${continuous}) return;
+    var w=document.querySelector('.print-page-wrapper'); if(!w) return;
+    document.documentElement.style.setProperty('--one-page-fit','1');
+    var h=w.scrollHeight, sw=Math.max(w.scrollWidth, PAGE_W);
+    var scale=Math.min(PAGE_W/sw, PAGE_H/Math.max(1,h));
+    scale=Math.max(0.2, Math.min(1.35, scale*0.985));
+    document.documentElement.style.setProperty('--one-page-fit', String(scale));
+  }
+  window.__rsrFit=fit;
+  window.addEventListener('beforeprint', fit);
+  var ready=[];
+  try{ if(document.fonts&&document.fonts.ready) ready.push(document.fonts.ready); }catch(e){}
+  Array.prototype.forEach.call(document.images,function(img){ if(!img.complete) ready.push(new Promise(function(r){img.onload=img.onerror=r;})); });
+  Promise.race([Promise.all(ready), new Promise(function(r){setTimeout(r,1500);})]).then(function(){ fit(); window.__rsrReady=true; });
+  fit();
+})();
 </script>
 </body>
 </html>`;
@@ -82,7 +112,8 @@ tr { page-break-inside: avoid !important; }
 
   const printFrame = document.createElement('iframe');
   printFrame.id = '__rsr_print_frame__';
-  printFrame.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0;border:0;display:none;';
+  // Real A4-sized (offscreen) frame so responsive layout while measuring matches the printed page
+  printFrame.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;opacity:0;pointer-events:none;';
   document.body.appendChild(printFrame);
 
   let printed = false;
@@ -92,6 +123,7 @@ tr { page-break-inside: avoid !important; }
     try {
       const frameWindow = printFrame.contentWindow;
       if (frameWindow) {
+        try { (frameWindow as any).__rsrFit && (frameWindow as any).__rsrFit(); } catch (_) {}
         frameWindow.focus();
         frameWindow.print();
       }
@@ -102,7 +134,7 @@ tr { page-break-inside: avoid !important; }
       document.title = docTitle;
       const fallbackStyle = document.createElement('style');
       fallbackStyle.id = '__rsr_print_fallback__';
-      fallbackStyle.innerHTML = `@media print{body *{visibility:hidden!important}#${elementId},#${elementId} *{visibility:visible!important}#${elementId}{position:absolute!important;left:0!important;top:0!important;width:100%!important}}`;
+      fallbackStyle.innerHTML = `@media print{body *{visibility:hidden!important}#${elementId},#${elementId} *{visibility:visible!important}#${elementId}{position:absolute!important;left:0!important;top:0!important;width:100%!important}${continuous ? continuousPrintStyles() : ''}}`;
       document.head.appendChild(fallbackStyle);
       window.print();
       setTimeout(() => {
@@ -124,11 +156,14 @@ tr { page-break-inside: avoid !important; }
     frameDoc.close();
 
     // Wait for iframe to load, then auto-trigger print
-    printFrame.onload = () => {
-      setTimeout(doPrint, 400);
+    // Wait until fonts/images and the selected layout are ready, then print
+    const started = Date.now();
+    const waitAndPrint = () => {
+      const ready = (printFrame.contentWindow as any)?.__rsrReady;
+      if (ready || Date.now() - started > 2500) doPrint();
+      else setTimeout(waitAndPrint, 100);
     };
-    // Fallback if onload doesn't fire (some browsers)
-    setTimeout(doPrint, 1500);
+    setTimeout(waitAndPrint, 300);
   } catch (err) {
     console.warn('Iframe write failed, using direct fallback:', err);
     doPrint();

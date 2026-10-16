@@ -1,4 +1,3 @@
-import { getFullAddress } from './types';
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
@@ -126,7 +125,7 @@ export default function App() {
       if (existingInvoices.length === 0 && existingStock.length === 0) {
         try {
           const seedJson = JSON.stringify(seedData);
-          storageService.restoreBackup(seedJson, false);
+          storageService.restoreBackup(seedJson);
         } catch (e) {
           console.warn('Seed restore failed:', e);
         }
@@ -493,23 +492,15 @@ export default function App() {
       const AUTO_UPLOAD_KEY = 'rsr_auto_uploaded_v1';
       if (!localStorage.getItem(AUTO_UPLOAD_KEY)) {
         try {
-          // First attempt to download latest data from cloud for new device
-          const dlRes = await storageService.downloadAllFromCloud();
-          if (dlRes.success && dlRes.count > 0) {
-            refreshAllData();
-            localStorage.setItem(AUTO_UPLOAD_KEY, new Date().toISOString());
+          const hasLocal = storageService.getInvoices().length + storageService.getStock().length + storageService.getParties().length > 0;
+          if (hasLocal) {
+            const res = await storageService.uploadAllToCloud();
+            if (res.success) localStorage.setItem(AUTO_UPLOAD_KEY, new Date().toISOString());
           } else {
-            // If cloud is empty or new setup, upload existing local data
-            const hasLocal = storageService.getInvoices().length + storageService.getStock().length + storageService.getParties().length > 0;
-            if (hasLocal) {
-              const res = await storageService.uploadAllToCloud();
-              if (res.success) localStorage.setItem(AUTO_UPLOAD_KEY, new Date().toISOString());
-            } else {
-              localStorage.setItem(AUTO_UPLOAD_KEY, 'empty-device');
-            }
+            localStorage.setItem(AUTO_UPLOAD_KEY, 'empty-device');
           }
         } catch (err) {
-          console.warn('[AutoSync] initial sync notice:', err);
+          console.warn('[AutoSync] background upload notice:', err);
         }
       }
       if (!cancelled) setupListeners();
@@ -640,16 +631,11 @@ export default function App() {
     type: 'success' | 'info' | 'error';
   } | null>(null);
 
-  const toastTimerRef = React.useRef<any>(null);
-  const lastToastRef = React.useRef<{ m: string; t: number }>({ m: '', t: 0 });
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
-    // Same message within 4s is ignored -> no repeated "saved" popups
-    const now = Date.now();
-    if (lastToastRef.current.m === message && now - lastToastRef.current.t < 4000) return;
-    lastToastRef.current = { m: message, t: now };
     setToastNotification({ message, type });
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToastNotification(null), 3000);
+    setTimeout(() => {
+      setToastNotification((prev) => (prev?.message === message ? null : prev));
+    }, 3500);
   };
 
   // Invoice Handlers
@@ -1515,7 +1501,7 @@ export default function App() {
             <strong>{companyInfo.name}</strong> &bull; {companyInfo.processingName}
           </div>
           <div className="text-[11px]">
-            {getFullAddress(companyInfo)} | {companyInfo.phones.join(', ')}
+            {companyInfo.address} | {companyInfo.phones.join(', ')}
           </div>
         </div>
       </footer>

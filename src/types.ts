@@ -40,7 +40,7 @@ export type InvoiceMode = 'purchase' | 'sales';
 export type PaymentStatus = 'paid' | 'unpaid' | 'partial';
 export type PaymentMethod = 'cash' | 'bKash' | 'nagad' | 'rocket' | 'mfs' | 'bank' | 'courier_cod';
 
-export type StockCategory = 'code' | 'android' | 'kg' | 'pcs_blank';
+export type StockCategory = 'code' | 'android' | 'kg' | 'pcs_blank' | 'laptop' | 'computer';
 
 export interface InvoiceItem {
   id: string;
@@ -574,7 +574,3 @@ export interface ChinaDirectPayment {
   updatedAt?: string;
 }
 
-
-export function getFullAddress(info: { address?: string } | null | undefined): string {
-  return (info?.address || '').trim();
-}

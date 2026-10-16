@@ -24,6 +24,8 @@ import {
   onSnapshot,
   Unsubscribe,
   enableIndexedDbPersistence,
+  writeBatch,
+  serverTimestamp,
 } from 'firebase/firestore';
 import fileConfig from '../../firebase-applet-config.json';
 
@@ -108,14 +110,160 @@ if (typeof window !== 'undefined') {
 }
 export const googleProvider = new GoogleAuthProvider();
 
-// Silent automatic sign-in: no Google login needed. Failure is harmless —
-// with open Firestore rules, sync works without any sign-in at all.
+// ---------------------------------------------------------------------------
+// SECURE NO-LOGIN ACCESS
+// Each device signs in silently (anonymous) and joins with the shop's private
+// Sync Access Key. Firestore rules only allow joined devices (see firestore.rules).
+// ---------------------------------------------------------------------------
+const SYNC_KEY_STORAGE = 'rsr_sync_access_key';
+
+export function getSyncKey(): string {
+  try { return localStorage.getItem(SYNC_KEY_STORAGE) || ''; } catch { return ''; }
+}
+/** Accepts a plain key OR a full share link (https://site/#key=XXXX) pasted by mistake. */
+export function normalizeSyncKey(input: string): string {
+  let v = (input || '').trim();
+  const m = v.match(/[#?&]key=([^&\s]+)/i);
+  if (m) { try { v = decodeURIComponent(m[1]); } catch { v = m[1]; } }
+  return v.trim();
+}
+export function looksLikeLinkWithoutKey(input: string): boolean {
+  const v = (input || '').trim();
+  return /^(https?:\/\/|www\.)|\.(app|com|net|dev|io)(\/|$)/i.test(v) && !/[#?&]key=/i.test(v);
+}
+export function setSyncKey(key: string): void {
+  try { localStorage.setItem(SYNC_KEY_STORAGE, normalizeSyncKey(key)); } catch {}
+}
+
+// Accept key from share link: https://app/#key=XXXX (then remove it from the address bar)
 if (typeof window !== 'undefined') {
-  auth.authStateReady().then(() => {
-    if (!auth.currentUser) {
-      signInAnonymously(auth).catch((err) => console.warn('[Auth] auto sign-in skipped:', err?.code));
-    }
+  const m = window.location.hash.match(/key=([^&]+)/);
+  if (m) {
+    setSyncKey(decodeURIComponent(m[1]));
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
+
+export class TimeoutError extends Error {
+  constructor(label: string) { super(`${label} timed out`); this.name = 'TimeoutError'; }
+}
+export function withTimeout<T>(p: Promise<T>, ms: number, label = 'Operation'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new TimeoutError(label)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
+}
+
+let accessGranted = false;
+let accessPromise: Promise<boolean> | null = null;
+const accessListeners = new Set<(ok: boolean) => void>();
+export const hasCloudAccess = () => accessGranted;
+export function onAccessChanged(cb: (ok: boolean) => void): () => void {
+  accessListeners.add(cb);
+  return () => accessListeners.delete(cb);
+}
+function setAccess(ok: boolean) {
+  accessGranted = ok;
+  if (ok) setTimeout(() => { flushPendingWrites().catch(() => {}); }, 0);
+  accessListeners.forEach((cb) => cb(ok));
+}
+
+async function doEnsureAccess(): Promise<boolean> {
+  if (!isFirebaseConfigured) return false;
+  await withTimeout(auth.authStateReady(), 10000, 'Auth');
+  if (!auth.currentUser) await withTimeout(signInAnonymously(auth), 15000, 'Sign-in');
+  const u = auth.currentUser;
+  if (!u) return false;
+  if (u.email === 'vaivaienterprize798@gmail.com' && u.emailVerified) return true;
+  const ref = doc(db, 'members', u.uid);
+  // 1) Ask the server; 2) if offline, trust the device cache (already joined earlier)
+  try {
+    const snap = await withTimeout(getDocFromServer(ref), 12000, 'Access check');
+    if (snap.exists()) return true;
+  } catch (e) {
+    console.warn('[Access] server check notice:', (e as any)?.code || e);
+    try {
+      const cached = await withTimeout(getDoc(ref), 5000, 'Access cache');
+      if (cached.exists()) return true;
+    } catch {}
+  }
+  const key = getSyncKey();
+  if (!key) return false;
+  try {
+    await withTimeout(
+      setDoc(ref, { key, createdAt: serverTimestamp(), device: navigator.userAgent.slice(0, 150) }),
+      15000,
+      'Join'
+    );
+  } catch (e: any) {
+    // The member doc may already exist (create allowed, update forbidden) -> re-check
+    if (e?.code === 'permission-denied') {
+      try {
+        const again = await withTimeout(getDocFromServer(ref), 12000, 'Access recheck');
+        if (again.exists()) return true;
+      } catch {}
+    }
+    throw e;
+  }
+  return true;
+}
+
+/** Signs in silently and joins this device. Never hangs (all steps time out). */
+export function ensureCloudAccess(force = false): Promise<boolean> {
+  if (accessGranted && !force) return Promise.resolve(true);
+  if (!accessPromise || force) {
+    accessPromise = doEnsureAccess()
+      .then((ok) => { setAccess(ok); return ok; })
+      .catch((err) => {
+        console.warn('[Access] denied:', err?.code || err?.message);
+        setAccess(false);
+        if (err?.code === 'permission-denied') throw new Error('INVALID_KEY');
+        throw err;
+      })
+      .finally(() => { accessPromise = null; });
+  }
+  return accessPromise;
+}
+
+/** Joins this device with a key typed by the user. */
+export async function joinWithKey(key: string): Promise<boolean> {
+  if (looksLikeLinkWithoutKey(key)) throw new Error('LINK_WITHOUT_KEY');
+  setSyncKey(key);
+  return ensureCloudAccess(true);
+}
+
+// ---------------------------------------------------------------------------
+// SYNC STATUS NOTIFIER
+// Cloud write failures used to disappear silently (every caller swallows the
+// error with .catch(() => {})). Now the app can show a visible warning so a
+// device that is offline / not joined never loses an entry unnoticed.
+// ---------------------------------------------------------------------------
+export type SyncIssue = { message: string; at: number } | null;
+const syncIssueListeners = new Set<(issue: SyncIssue) => void>();
+let lastIssue: SyncIssue = null;
+export function onSyncIssue(cb: (issue: SyncIssue) => void): () => void {
+  syncIssueListeners.add(cb);
+  cb(lastIssue);
+  return () => syncIssueListeners.delete(cb);
+}
+export function reportSyncIssue(message: string | null) {
+  lastIssue = message ? { message, at: Date.now() } : null;
+  syncIssueListeners.forEach((cb) => cb(lastIssue));
+}
+
+// Firestore document hard limit is 1 MiB. Drop huge embedded images (data URLs)
+// so a big logo/signature can never make the company upload fail.
+export function shrinkForFirestore<T>(obj: T, maxField = 700_000): T {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out: any = Array.isArray(obj) ? [] : {};
+  for (const [k, v] of Object.entries(obj as any)) {
+    if (typeof v === 'string' && v.length > maxField) {
+      console.warn(`[Firestore] field "${k}" too large (${v.length}), skipped for cloud`);
+      continue;
+    }
+    out[k] = v && typeof v === 'object' ? shrinkForFirestore(v, maxField) : v;
+  }
+  return out;
 }
 
 // Standard Firestore error handling specification
@@ -249,6 +397,129 @@ function hasLocalData(collectionName: string): boolean {
   } catch { return false; }
 }
 
+// ---------------------------------------------------------------------------
+// PENDING WRITE QUEUE (survives reloads)
+// Every local change is stored here until the cloud confirms it. Live listeners
+// overlay these pending items on top of cloud data, so a restored backup or an
+// offline entry is NEVER wiped by an older cloud snapshot, and it is uploaded
+// automatically as soon as this device is online + joined.
+// ---------------------------------------------------------------------------
+const PENDING_KEY = 'rsr_pending_cloud_writes_v1';
+type PendingWrite = { col: string; id: string; data: any | null; at: number };
+function readPending(): Record<string, PendingWrite> {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}') || {}; } catch { return {}; }
+}
+function writePending(p: Record<string, PendingWrite>) {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch (e) { console.warn('[Pending] save failed', e); }
+}
+export function queuePendingWrites(items: { col: string; id: string; data: any | null }[]) {
+  const p = readPending();
+  const at = Date.now();
+  for (const it of items) if (it && it.col && it.id) p[`${it.col}/${it.id}`] = { col: it.col, id: String(it.id), data: it.data, at };
+  writePending(p);
+}
+function clearPending(keys: { k: string; at: number }[]) {
+  const p = readPending();
+  for (const { k, at } of keys) if (p[k] && p[k].at <= at) delete p[k];
+  writePending(p);
+}
+export function pendingCount(): number { return Object.keys(readPending()).length; }
+function pendingFor(col: string): PendingWrite[] {
+  return Object.values(readPending()).filter((w) => w.col === col);
+}
+
+let flushing: Promise<number> | null = null;
+// Errors that will NEVER succeed on retry (bad data). Such an item is moved out
+// of the queue so it cannot block every other entry or keep the red bar alive.
+const PERMANENT_CODES = new Set(['invalid-argument', 'out-of-range', 'failed-precondition', 'already-exists', 'not-found', 'data-loss']);
+const FAILED_KEY = 'rsr_failed_cloud_writes_v1';
+function rememberFailed(k: string, w: PendingWrite, code: string) {
+  try {
+    const f = JSON.parse(localStorage.getItem(FAILED_KEY) || '{}') || {};
+    f[k] = { col: w.col, id: w.id, code, at: Date.now() };
+    localStorage.setItem(FAILED_KEY, JSON.stringify(f));
+  } catch {}
+}
+function isPermanent(e: any): boolean {
+  const code = String(e?.code || '');
+  if (PERMANENT_CODES.has(code)) return true;
+  // Synchronous SDK validation errors (bad document id, nested arrays, too large)
+  return !code && !(e instanceof TimeoutError) && /invalid|unsupported|nested|exceeds|too large|must be/i.test(String(e?.message || ''));
+}
+function buildRef(w: PendingWrite) {
+  const id = String(w.id).replace(/\//g, '_').trim() || 'item';
+  return doc(db, w.col, id);
+}
+async function writeOne(w: PendingWrite) {
+  const r = buildRef(w);
+  if (w.data === null) await withTimeout(deleteDoc(r), 20000, 'Upload');
+  else await withTimeout(setDoc(r, shrinkForFirestore(sanitizeForFirestore(w.data)), { merge: true }), 20000, 'Upload');
+}
+
+/** Upload everything still waiting. Safe to call often. Returns items left. */
+export function flushPendingWrites(): Promise<number> {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    if (!accessGranted || (typeof navigator !== 'undefined' && navigator.onLine === false)) return pendingCount();
+    const all = Object.entries(readPending());
+    const CHUNK = 200;
+    let lastErr: any = null;
+    for (let i = 0; i < all.length; i += CHUNK) {
+      const part = all.slice(i, i + CHUNK);
+      // 1) fast path: one batch
+      try {
+        const batch = writeBatch(db);
+        for (const [, w] of part) {
+          const r = buildRef(w);
+          if (w.data === null) batch.delete(r);
+          else batch.set(r, shrinkForFirestore(sanitizeForFirestore(w.data)), { merge: true });
+        }
+        await withTimeout(batch.commit(), 30000, 'Upload');
+        clearPending(part.map(([k, w]) => ({ k, at: w.at })));
+        continue;
+      } catch (e: any) {
+        console.warn('[Pending] batch notice, retrying one by one:', e?.code || e?.message);
+        if (e?.code === 'permission-denied') { lastErr = e; break; }
+      }
+      // 2) slow path: item by item, so one bad entry can't block the rest
+      for (const [k, w] of part) {
+        try {
+          await writeOne(w);
+          clearPending([{ k, at: w.at }]);
+        } catch (e: any) {
+          if (isPermanent(e)) {
+            console.warn('[Pending] dropped bad entry', k, e?.code || e?.message);
+            rememberFailed(k, w, String(e?.code || e?.message || 'error'));
+            clearPending([{ k, at: w.at }]);
+          } else {
+            lastErr = e;
+            if (e?.code === 'permission-denied' || e?.code === 'resource-exhausted' || e instanceof TimeoutError || e?.code === 'unavailable') break;
+          }
+        }
+      }
+      if (lastErr) break;
+    }
+    const left = pendingCount();
+    if (left === 0) reportSyncIssue(null);
+    else if (lastErr) {
+      const code = lastErr?.code || (lastErr instanceof TimeoutError ? 'timeout' : 'error');
+      reportSyncIssue(
+        code === 'permission-denied'
+          ? 'এই ডিভাইসটির ক্লাউড অনুমতি নেই — Sync Access Key দিয়ে যুক্ত করুন।'
+          : code === 'resource-exhausted'
+            ? `ক্লাউডের আজকের ফ্রি লিমিট শেষ — ${left}টি এন্ট্রি অপেক্ষায় আছে, লিমিট রিসেট হলে নিজেই যাবে।`
+            : `${left}টি এন্ট্রি এখনো ক্লাউডে যায়নি — নিজে থেকেই আবার চেষ্টা করছে। (${code})`
+      );
+    }
+    return left;
+  })().finally(() => { flushing = null; });
+  return flushing;
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { flushPendingWrites().catch(() => {}); });
+  setInterval(() => { if (pendingCount()) flushPendingWrites().catch(() => {}); }, 20000);
+}
+
 // Cloud Database API service for multi-device sync
 export const cloudDbService = {
   // Authentication
@@ -301,30 +572,27 @@ export const cloudDbService = {
     collectionName: string,
     item: T
   ): Promise<void> => {
-    const docPath = `${collectionName}/${item.id}`;
-    try {
-      const sanitized = sanitizeForFirestore(item);
-      await setDoc(doc(db, collectionName, item.id), sanitized, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, docPath);
+    if (!item || !item.id) return;
+    queuePendingWrites([{ col: collectionName, id: String(item.id), data: sanitizeForFirestore(item) }]);
+    try { await ensureCloudAccess(); } catch {}
+    const left = await flushPendingWrites();
+    if (left && !hasCloudAccess()) {
+      reportSyncIssue('এই ডিভাইসটি ক্লাউডে যুক্ত নয় — Sync Access Key দিয়ে যুক্ত করুন। এন্ট্রি ডিভাইসে নিরাপদে রাখা আছে।');
     }
   },
 
-  // Generic document deleter with spec-compliant error handler
   deleteDocument: async (collectionName: string, id: string): Promise<void> => {
-    const docPath = `${collectionName}/${id}`;
-    try {
-      await deleteDoc(doc(db, collectionName, id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, docPath);
-    }
+    if (!id) return;
+    queuePendingWrites([{ col: collectionName, id: String(id), data: null }]);
+    try { await ensureCloudAccess(); } catch {}
+    await flushPendingWrites();
   },
 
   // Get all documents from a collection
   getCollectionDocs: async <T>(collectionName: string): Promise<T[]> => {
     try {
       const colRef = collection(db, collectionName);
-      const snap = await getDocs(colRef);
+      const snap = await withTimeout(getDocs(colRef), 30000, 'Download');
       const items: T[] = [];
       snap.forEach((d) => items.push(d.data() as T));
       return items;
@@ -333,15 +601,42 @@ export const cloudDbService = {
     }
   },
 
+  /**
+   * Fast, non-hanging bulk upload: groups writes into batches (max 400 docs),
+   * each commit has a timeout. If the network is slow the writes stay queued
+   * on the device and finish automatically later (status 'queued').
+   */
+  saveBatch: async (
+    items: { col: string; id: string; data: any }[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<{ done: number; queued: number }> => {
+    let done = 0, queued = 0;
+    const CHUNK = 400;
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const part = items.slice(i, i + CHUNK);
+      const batch = writeBatch(db);
+      for (const it of part) {
+        batch.set(doc(db, it.col, it.id), shrinkForFirestore(sanitizeForFirestore(it.data)), { merge: true });
+      }
+      try {
+        await withTimeout(batch.commit(), 30000, 'Upload');
+      } catch (e) {
+        if (e instanceof TimeoutError) queued += part.length;
+        else handleFirestoreError(e, OperationType.WRITE, part[0]?.col || null);
+      }
+      done += part.length;
+      onProgress?.(done, items.length);
+      // let the UI breathe between batches
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    return { done, queued };
+  },
+
   // Save Company Profile
   saveCompany: async (company: CompanyInfo): Promise<void> => {
-    const docPath = 'company/main';
-    try {
-      const sanitized = sanitizeForFirestore(company);
-      await setDoc(doc(db, 'company', 'main'), sanitized, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, docPath);
-    }
+    queuePendingWrites([{ col: 'company', id: 'main', data: sanitizeForFirestore(company) }]);
+    try { await ensureCloudAccess(); } catch {}
+    await flushPendingWrites();
   },
 
   // Real-time synchronization listeners for multi-device collaboration
@@ -351,28 +646,42 @@ export const cloudDbService = {
     onError?: (err: Error) => void
   ): Unsubscribe => {
     const colRef = collection(db, collectionName);
-    return onSnapshot(
-      colRef,
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        // Never overwrite local data with an empty offline-cache snapshot
-        // (happens on a new device / fresh refresh before the server responds).
-        if (snapshot.empty && (snapshot.metadata.fromCache || hasLocalData(collectionName))) return;
-        const items: T[] = [];
-        snapshot.forEach((docSnap) => {
-          items.push(docSnap.data() as T);
-        });
-        onData(items);
-      },
-      (error) => {
-        if (onError) onError(error);
-        try {
-          handleFirestoreError(error, OperationType.GET, collectionName);
-        } catch (e) {
-          console.warn(`[Firestore Real-time] Listener notice for ${collectionName}:`, e);
+    let unsub: Unsubscribe = () => {};
+    let stopped = false;
+    let retryTimer: any = null;
+    const listen = () => {
+      unsub = onSnapshot(
+        colRef,
+        { includeMetadataChanges: true },
+        (snapshot) => {
+          const pending = pendingFor(collectionName);
+          // Never overwrite local data with an empty offline-cache snapshot
+          if (snapshot.empty && !pending.length && (snapshot.metadata.fromCache || hasLocalData(collectionName))) return;
+          const map = new Map<string, any>();
+          snapshot.forEach((d) => { map.set(d.id, d.data()); });
+          // Local changes not yet confirmed by the cloud win over cloud copies
+          for (const w of pending) {
+            if (w.data === null) map.delete(w.id);
+            else map.set(w.id, w.data);
+          }
+          if (!map.size && snapshot.metadata.fromCache) return;
+          onData(Array.from(map.values()) as T[]);
+        },
+        (error) => {
+          if (onError) onError(error);
+          console.warn(`[Firestore Real-time] ${collectionName} listener stopped:`, error?.code);
+          // A stopped listener never restarts by itself -> retry automatically
+          if (!stopped) {
+            retryTimer = setTimeout(async () => {
+              try { await ensureCloudAccess(true); } catch {}
+              if (!stopped) listen();
+            }, 15000);
+          }
         }
-      }
-    );
+      );
+    };
+    listen();
+    return () => { stopped = true; clearTimeout(retryTimer); unsub(); };
   },
 
   // Subscribe to single Company doc
@@ -384,6 +693,8 @@ export const cloudDbService = {
     return onSnapshot(
       docRef,
       (docSnap) => {
+        const pend = pendingFor('company').find((w) => w.id === 'main');
+        if (pend && pend.data) { onData(pend.data as CompanyInfo); return; }
         if (docSnap.exists()) {
           onData(docSnap.data() as CompanyInfo);
         }
@@ -399,87 +710,3 @@ export const cloudDbService = {
     );
   },
 };
-
-// ===== Auto-sync helpers (access, pending-write queue, sync key) =====
-import { doc as _doc, writeBatch as _writeBatch } from 'firebase/firestore';
-
-export function withTimeout<T>(p: Promise<T>, ms: number, label = 'Operation'): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
-    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
-  });
-}
-
-let _access = false;
-const _accessListeners = new Set<(ok: boolean) => void>();
-const _setAccess = (ok: boolean) => { _access = ok; _accessListeners.forEach((l) => { try { l(ok); } catch {} }); };
-export const hasCloudAccess = () => _access;
-export function onAccessChanged(cb: (ok: boolean) => void): () => void {
-  _accessListeners.add(cb); return () => { _accessListeners.delete(cb); };
-}
-
-type SyncIssue = { message: string } | null;
-const _issueListeners = new Set<(i: SyncIssue) => void>();
-const _setIssue = (i: SyncIssue) => _issueListeners.forEach((l) => { try { l(i); } catch {} });
-export function onSyncIssue(cb: (i: SyncIssue) => void): () => void {
-  _issueListeners.add(cb); return () => { _issueListeners.delete(cb); };
-}
-
-const SYNC_KEY = 'vv_sync_key';
-export const getSyncKey = (): string => (typeof localStorage !== 'undefined' && localStorage.getItem(SYNC_KEY)) || '';
-
-export async function ensureCloudAccess(force = false): Promise<boolean> {
-  if (_access && !force) return true;
-  if (!isFirebaseConfigured) return false;
-  try {
-    await auth.authStateReady();
-    if (!auth.currentUser) { try { await signInAnonymously(auth); } catch {} }
-    _setAccess(true); _setIssue(null);
-    return true;
-  } catch (e: any) {
-    _setIssue({ message: 'ক্লাউডে সংযোগ হচ্ছে না: ' + (e?.message || '') });
-    _setAccess(false); return false;
-  }
-}
-
-export async function joinWithKey(key: string): Promise<boolean> {
-  try { localStorage.setItem(SYNC_KEY, key); } catch {}
-  return ensureCloudAccess(true);
-}
-
-type PendingItem = { col: string; id: string; data: any };
-const PENDING_KEY = 'vv_pending_writes';
-const _readPending = (): Record<string, PendingItem> => { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}'); } catch { return {}; } };
-const _savePending = (m: Record<string, PendingItem>) => { try { localStorage.setItem(PENDING_KEY, JSON.stringify(m)); } catch {} };
-
-export function queuePendingWrites(items: PendingItem[]): void {
-  const m = _readPending();
-  for (const it of items) m[`${it.col}/${it.id}`] = it;
-  _savePending(m);
-}
-
-let _flushing: Promise<number> | null = null;
-export function flushPendingWrites(): Promise<number> {
-  if (_flushing) return _flushing;
-  _flushing = (async () => {
-    const m = _readPending();
-    const keys = Object.keys(m);
-    for (let i = 0; i < keys.length; i += 400) {
-      const chunk = keys.slice(i, i + 400);
-      const batch = _writeBatch(db);
-      chunk.forEach((k) => batch.set(_doc(db, m[k].col, m[k].id), sanitizeForFirestore(m[k].data), { merge: true }));
-      try {
-        await withTimeout(batch.commit(), 30000, 'Upload');
-        const cur = _readPending(); chunk.forEach((k) => delete cur[k]); _savePending(cur);
-      } catch (e: any) {
-        _setIssue({ message: 'কিছু ডেটা এখনো ক্লাউডে যায়নি, ইন্টারনেট ফিরলে যাবে' });
-        break;
-      }
-    }
-    const left = Object.keys(_readPending()).length;
-    if (!left) _setIssue(null);
-    return left;
-  })().finally(() => { _flushing = null; });
-  return _flushing;
-}
-if (typeof window !== 'undefined') window.addEventListener('online', () => { flushPendingWrites().catch(() => {}); });
