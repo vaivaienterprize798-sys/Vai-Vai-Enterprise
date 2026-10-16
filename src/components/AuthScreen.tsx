@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { hasCloudAccess, onAccessChanged, joinWithKey, getSyncKey, isFirebaseConfigured } from '../lib/firebase';
+import { storageService } from '../lib/storage';
 import {
   ShieldCheck,
   Lock,
@@ -44,7 +45,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setJoining(true); setKeyMsg('');
     try {
       const ok = await joinWithKey(keyInput.trim());
-      setKeyMsg(ok ? '' : 'যুক্ত করা যায়নি, আবার চেষ্টা করুন।');
+      if (ok) {
+        setKeyMsg('অ্যাক্সেস কী যুক্ত হয়েছে! ক্লাউড থেকে তথ্য নামানো হচ্ছে...');
+        try {
+          const res = await storageService.downloadAllFromCloud();
+          if (res.success && res.count > 0) {
+            window.location.reload();
+            return;
+          }
+        } catch (dlErr) {
+          console.warn('[AuthScreen] initial download notice:', dlErr);
+        }
+        setKeyMsg('যুক্ত করা হয়েছে! লাইভ সিঙ্ক চালু।');
+      } else {
+        setKeyMsg('যুক্ত করা যায়নি, আবার চেষ্টা করুন।');
+      }
     } catch (e: any) {
       setKeyMsg(e?.message === 'LINK_WITHOUT_KEY' ? 'এটি শুধু ওয়েবসাইটের ঠিকানা। এখানে RSR-XXXX-XXXX-XXXX ধরনের অ্যাক্সেস কী লিখুন।' : e?.message === 'INVALID_KEY' ? 'ভুল অ্যাক্সেস কী। সঠিক কী দিন।' : 'ইন্টারনেট/ক্লাউড সমস্যা: ' + (e?.code || e?.message || ''));
     } finally { setJoining(false); }
