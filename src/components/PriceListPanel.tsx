@@ -1,3 +1,4 @@
+import { getFullAddress } from '../types';
 import React, { useState, useMemo, useRef } from 'react';
 import {
   Tag,
@@ -75,7 +76,7 @@ export const PriceListPanel: React.FC<PriceListPanelProps> = ({
       title: lang === 'bn' ? 'আজকের বাজার দর তালিকা' : "Today's Market Price List",
       date: todayStr,
       companyName: companyInfo.name,
-      companyAddress: companyInfo.address,
+      companyAddress: getFullAddress(companyInfo),
       companyPhones: companyInfo.phones || [],
       companyLogoUrl: companyInfo.logoUrl,
       status: 'active' as const,
@@ -142,7 +143,7 @@ export const PriceListPanel: React.FC<PriceListPanelProps> = ({
 
   // Company Details Edit for Active Price List
   const [compName, setCompName] = useState(activeList.companyName || companyInfo.name);
-  const [compAddress, setCompAddress] = useState(activeList.companyAddress || companyInfo.address);
+  const [compAddress, setCompAddress] = useState(activeList.companyAddress || getFullAddress(companyInfo));
   const [compPhones, setCompPhones] = useState(activeList.companyPhones?.join(', ') || companyInfo.phones?.join(', ') || '');
   const [compLogoUrl, setCompLogoUrl] = useState(activeList.companyLogoUrl || companyInfo.logoUrl || '');
   const [listNotes, setListNotes] = useState(activeList.notes || '');
@@ -176,7 +177,7 @@ export const PriceListPanel: React.FC<PriceListPanelProps> = ({
       title: newListTitle.trim() || (lang === 'bn' ? 'নতুন দর তালিকা' : 'New Price List'),
       date: newListDate || todayStr,
       companyName: companyInfo.name,
-      companyAddress: companyInfo.address,
+      companyAddress: getFullAddress(companyInfo),
       companyPhones: companyInfo.phones || [],
       companyLogoUrl: companyInfo.logoUrl,
       items: activeList.items.map((it) => ({
@@ -321,7 +322,7 @@ export const PriceListPanel: React.FC<PriceListPanelProps> = ({
     const updated: PriceList = {
       ...activeList,
       companyName: compName.trim() || companyInfo.name,
-      companyAddress: compAddress.trim() || companyInfo.address,
+      companyAddress: compAddress.trim() || getFullAddress(companyInfo),
       companyPhones: compPhones
         .split(',')
         .map((p) => p.trim())
@@ -339,7 +340,7 @@ export const PriceListPanel: React.FC<PriceListPanelProps> = ({
     const header = `*${activeList.companyName || companyInfo.name}*
 📋 *${activeList.title}*
 📅 তারিখ: ${activeList.date}
-📍 ${activeList.companyAddress || companyInfo.address}
+📍 ${activeList.companyAddress || getFullAddress(companyInfo)}
 📞 মোবাইল: ${(activeList.companyPhones || companyInfo.phones || []).join(', ')}
 ━━━━━━━━━━━━━━━━━━━━
 *পণ্যের বাজার দর তালিকা (৩ ধরনের মূল্য):*`;
@@ -400,7 +401,7 @@ ${activeList.companyName || companyInfo.name}`;
           <button
             onClick={() => {
               setCompName(activeList.companyName || companyInfo.name);
-              setCompAddress(activeList.companyAddress || companyInfo.address);
+              setCompAddress(activeList.companyAddress || getFullAddress(companyInfo));
               setCompPhones(activeList.companyPhones?.join(', ') || companyInfo.phones?.join(', ') || '');
               setCompLogoUrl(activeList.companyLogoUrl || companyInfo.logoUrl || '');
               setListNotes(activeList.notes || '');
@@ -693,7 +694,7 @@ ${activeList.companyName || companyInfo.name}`;
                   {companyInfo.businessTypeBn}
                 </p>
                 <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
-                  {activeList.companyAddress || companyInfo.address}
+                  {activeList.companyAddress || getFullAddress(companyInfo)}
                 </p>
                 <p style={{ margin: '2px 0 0 0', fontSize: '11px', fontWeight: 600, color: '#0369a1' }}>
                   মোবাইল: {(activeList.companyPhones || companyInfo.phones || []).join(', ')}

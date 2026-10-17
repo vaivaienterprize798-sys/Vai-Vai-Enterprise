@@ -26,7 +26,7 @@ import {
 } from '../types';
 import { withComputedBalance, withComputedBalances } from './ledger';
 import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites } from './firebase';
-import { collection, getDocs, getDoc, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
   COMPANY: 'rsr_company_v2',
@@ -856,7 +856,7 @@ export const storageService = {
     URL.revokeObjectURL(url);
   },
 
-  restoreBackup: (jsonContent: string, syncToCloud: boolean = true): boolean => {
+  restoreBackup: (jsonContent: string): boolean => {
     try {
       const parsed = JSON.parse(jsonContent);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
@@ -883,11 +883,10 @@ export const storageService = {
       if (parsed.workerConversions) saveToStorage(STORAGE_KEYS.WORKER_CONVERSIONS, parsed.workerConversions);
       if (parsed.thirdParties) saveToStorage(STORAGE_KEYS.THIRD_PARTIES, parsed.thirdParties);
       if (parsed.chinaDirectPayments) saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, parsed.chinaDirectPayments);
-      // Push the restored data to the cloud only if syncToCloud is true
-      if (syncToCloud) {
-        storageService.queueAllForCloud();
-        ensureCloudAccess().catch(() => {}).finally(() => { flushPendingWrites().catch(() => {}); });
-      }
+      // Push the restored data to the cloud so every other device receives it.
+      // Queued first, so live sync can never overwrite it with older cloud data.
+      storageService.queueAllForCloud();
+      ensureCloudAccess().catch(() => {}).finally(() => { flushPendingWrites().catch(() => {}); });
       return true;
     } catch (e) {
       return false;
@@ -1147,16 +1146,6 @@ export const storageService = {
           total += snap.size;
         }
       }
-      try {
-        const compDoc = await withTimeout(getDoc(doc(db, 'company', 'main')), 15000, 'Company Download');
-        if (compDoc.exists()) {
-          saveToStorage(STORAGE_KEYS.COMPANY, compDoc.data());
-          total += 1;
-        }
-      } catch (e) {
-        console.warn('[Download] company profile notice:', e);
-      }
-
       return { success: true, count: total };
     } catch (err: any) {
       return { success: false, count: 0, error: err?.message };

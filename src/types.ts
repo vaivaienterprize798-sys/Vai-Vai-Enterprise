@@ -6,7 +6,8 @@ export interface CompanyInfo {
   name: string;
   processingName: string;
   email: string;
-  address: string;
+  address: string; // Corporate Office address
+  shopAddress?: string; // Dokan (shop) address
   phones: string[];
   businessTypeBn: string;
   businessTypeEn: string;
@@ -24,6 +25,7 @@ export const DEFAULT_COMPANY: CompanyInfo = {
   processingName: 'Vai Vai Trades 5G',
   email: 'vaivaienterpeize798@gmail.com',
   address: 'Shakib-Siyam Super Market, 14 No. Lane, Puran Potti Road, Hiraabil, Siddhirganj, Narayanganj',
+  shopAddress: 'Shakib-Siyam Super Market, 14 No. Lane, Puran Potti Road, Hiraabil, Siddhirganj, Narayanganj',
   phones: ['01725-550002', '01746-383825'],
   businessTypeBn: 'পুরাতন নষ্ট মোবাইল সার্কিট ও মাদারবোর্ড ক্রয়-বিক্রয়',
   businessTypeEn: 'Scrap & Used Mobile Circuit & Motherboard Trading',
@@ -40,7 +42,7 @@ export type InvoiceMode = 'purchase' | 'sales';
 export type PaymentStatus = 'paid' | 'unpaid' | 'partial';
 export type PaymentMethod = 'cash' | 'bKash' | 'nagad' | 'rocket' | 'mfs' | 'bank' | 'courier_cod';
 
-export type StockCategory = 'code' | 'android' | 'kg' | 'pcs_blank';
+export type StockCategory = 'code' | 'android' | 'kg' | 'pcs_blank' | 'laptop' | 'computer';
 
 export interface InvoiceItem {
   id: string;
@@ -575,6 +577,20 @@ export interface ChinaDirectPayment {
 }
 
 
-export function getFullAddress(info: { address?: string } | null | undefined): string {
-  return (info?.address || '').trim();
-}
+/** Corporate Office + Dokan address as one line (for print headers). */
+export const getFullAddress = (c?: Partial<CompanyInfo> | null): string => {
+  const corp = (c?.address || '').trim();
+  const shop = (c?.shopAddress || '').trim();
+  if (corp && shop) return `Corporate Office: ${corp} | Dokan: ${shop}`;
+  return corp || shop;
+};
+
+/** Address block for WhatsApp / WeChat / text shares. */
+export const getAddressShareBlock = (c?: Partial<CompanyInfo> | null): string => {
+  const corp = (c?.address || '').trim();
+  const shop = (c?.shopAddress || '').trim();
+  const lines: string[] = [];
+  if (corp) lines.push(`🏢 Corporate Office: ${corp}`);
+  if (shop) lines.push(`🏪 Dokan: ${shop}`);
+  return lines.join('\n');
+};

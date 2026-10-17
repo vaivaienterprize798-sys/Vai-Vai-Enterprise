@@ -1,3 +1,4 @@
+import { withCompanyAddress } from '../lib/printUtils';
 import React, { useState, useMemo } from 'react';
 import {
   FileText,
@@ -109,8 +110,8 @@ Due: ৳${inv.remainingDue ?? 0}
 Status: ${(inv.paymentStatus || 'unpaid').toUpperCase()}`;
 
     const url = inv.partyPhone
-      ? `https://wa.me/88${inv.partyPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      ? `https://wa.me/88${inv.partyPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(withCompanyAddress(text))}`
+      : `https://wa.me/?text=${encodeURIComponent(withCompanyAddress(text))}`;
     window.open(url, '_blank');
   };
 

@@ -1,3 +1,4 @@
+import { getFullAddress } from '../types';
 import React, { useState, useMemo } from 'react';
 import {
   Globe,
@@ -2928,7 +2929,7 @@ _${companyInfo.name}_`;
             <div className="flex justify-between items-start border-b pb-4">
               <div>
                 <h1 className="text-xl font-black uppercase tracking-wider">{companyInfo.name}</h1>
-                <p className="text-xs text-slate-500">{companyInfo.address}</p>
+                <p className="text-xs text-slate-500">{getFullAddress(companyInfo)}</p>
                 <p className="text-xs text-slate-500">{companyInfo.phones?.join(', ')}</p>
               </div>
               <div className="text-right">
@@ -3016,7 +3017,7 @@ _${companyInfo.name}_`;
                 <CompanyLogo customLogoUrl={companyInfo.logoUrl} className="w-12 h-12" />
                 <div>
                   <h1 className="text-xl font-black uppercase tracking-tight">{companyInfo.name}</h1>
-                  <p className="text-xs text-slate-500">{companyInfo.address} • {companyInfo.phones?.join(', ')}</p>
+                  <p className="text-xs text-slate-500">{getFullAddress(companyInfo)} • {companyInfo.phones?.join(', ')}</p>
                   <p className="text-xs font-semibold text-blue-700 mt-0.5">
                     {lang === 'bn' ? 'শাখা ও আরএমবি পৃথক বিবরণী প্রিন্ট ও শেয়ার সেন্টার' : 'Branch Office & RMB Statement Center'}
                   </p>
@@ -3534,7 +3535,7 @@ _${companyInfo.name}_`;
                   {companyInfo.businessTypeBn}
                 </p>
                 <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>
-                  {companyInfo.address} • মোবা: {(companyInfo.phones || []).join(', ')}
+                  {getFullAddress(companyInfo)} • মোবা: {(companyInfo.phones || []).join(', ')}
                 </p>
               </div>
             </div>
@@ -3661,7 +3662,7 @@ _${companyInfo.name}_`;
               <div>
                 <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{companyInfo.name}</h1>
                 <p style={{ margin: '1px 0', fontSize: '11px', color: '#475569' }}>{companyInfo.businessTypeBn}</p>
-                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>{companyInfo.address}</p>
+                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>{getFullAddress(companyInfo)}</p>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -3806,7 +3807,7 @@ _${companyInfo.name}_`;
                   {companyInfo.businessTypeBn}
                 </p>
                 <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>
-                  {companyInfo.address} • মোবা: {(companyInfo.phones || []).join(', ')}
+                  {getFullAddress(companyInfo)} • মোবা: {(companyInfo.phones || []).join(', ')}
                 </p>
               </div>
             </div>

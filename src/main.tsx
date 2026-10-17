@@ -3,10 +3,11 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
-import { initAutoUpdateListener, forceUpdateAndReloadApp } from './lib/appUpdate';
+import { initAutoUpdateListener, forceUpdateAndReloadApp, initLiveVersionWatcher } from './lib/appUpdate';
 
 // Initialize Auto-Update Listener
 initAutoUpdateListener();
+initLiveVersionWatcher();
 
 // Remove any old service worker + caches so every device always loads the latest version
 if ('serviceWorker' in navigator) {

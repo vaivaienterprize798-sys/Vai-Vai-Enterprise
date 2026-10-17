@@ -126,7 +126,7 @@ export default function App() {
       if (existingInvoices.length === 0 && existingStock.length === 0) {
         try {
           const seedJson = JSON.stringify(seedData);
-          storageService.restoreBackup(seedJson, false);
+          storageService.restoreBackup(seedJson);
         } catch (e) {
           console.warn('Seed restore failed:', e);
         }
@@ -493,23 +493,15 @@ export default function App() {
       const AUTO_UPLOAD_KEY = 'rsr_auto_uploaded_v1';
       if (!localStorage.getItem(AUTO_UPLOAD_KEY)) {
         try {
-          // First attempt to download latest data from cloud for new device
-          const dlRes = await storageService.downloadAllFromCloud();
-          if (dlRes.success && dlRes.count > 0) {
-            refreshAllData();
-            localStorage.setItem(AUTO_UPLOAD_KEY, new Date().toISOString());
+          const hasLocal = storageService.getInvoices().length + storageService.getStock().length + storageService.getParties().length > 0;
+          if (hasLocal) {
+            const res = await storageService.uploadAllToCloud();
+            if (res.success) localStorage.setItem(AUTO_UPLOAD_KEY, new Date().toISOString());
           } else {
-            // If cloud is empty or new setup, upload existing local data
-            const hasLocal = storageService.getInvoices().length + storageService.getStock().length + storageService.getParties().length > 0;
-            if (hasLocal) {
-              const res = await storageService.uploadAllToCloud();
-              if (res.success) localStorage.setItem(AUTO_UPLOAD_KEY, new Date().toISOString());
-            } else {
-              localStorage.setItem(AUTO_UPLOAD_KEY, 'empty-device');
-            }
+            localStorage.setItem(AUTO_UPLOAD_KEY, 'empty-device');
           }
         } catch (err) {
-          console.warn('[AutoSync] initial sync notice:', err);
+          console.warn('[AutoSync] background upload notice:', err);
         }
       }
       if (!cancelled) setupListeners();

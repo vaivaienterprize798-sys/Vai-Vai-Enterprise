@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { compressImageFile } from '../lib/imageUtils';
 import {
   Settings,
   Building,
@@ -56,6 +57,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [processingName, setProcessingName] = useState(currentCompany.processingName);
   const [email, setEmail] = useState(currentCompany.email);
   const [address, setAddress] = useState(currentCompany.address);
+  const [shopAddress, setShopAddress] = useState(currentCompany.shopAddress || '');
   const [phone1, setPhone1] = useState(currentCompany.phones[0] || '01725-550002');
   const [phone2, setPhone2] = useState(currentCompany.phones[1] || '01746-383825');
   const [businessTypeBn, setBusinessTypeBn] = useState(currentCompany.businessTypeBn);
@@ -67,32 +69,46 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [logoUrl, setLogoUrl] = useState(currentCompany.logoUrl || '');
   const [isSavedAlert, setIsSavedAlert] = useState(false);
 
-  // Logo file upload handler
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        alert(lang === 'bn' ? 'লোগো ফাইলের সাইজ সর্বোচ্চ ২ মেগাবাইট হতে হবে' : 'Logo size must be under 2MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setLogoUrl(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+  // Logo file upload handler (compressed, with loading state, never hangs)
+  const [isLogoUploading, setIsLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState('');
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file || isLogoUploading) return;
+    setLogoError('');
+    if (file.size > 10 * 1024 * 1024) {
+      setLogoError(lang === 'bn' ? 'ছবির সাইজ সর্বোচ্চ ১০ মেগাবাইট হতে পারবে' : 'Image must be under 10MB');
+      input.value = '';
+      return;
+    }
+    setIsLogoUploading(true);
+    try {
+      const url = await compressImageFile(file);
+      setLogoUrl(url);
+    } catch (err: any) {
+      const m = err?.message;
+      setLogoError(
+        lang === 'bn'
+          ? m === 'TIMEOUT' ? 'ছবি প্রসেস করতে অনেক সময় লাগছে, আবার চেষ্টা করুন' : 'ছবিটি পড়া যায়নি, অন্য ছবি দিন (JPG/PNG)'
+          : m === 'TIMEOUT' ? 'Image took too long, please try again' : 'Could not read this image, try a JPG/PNG'
+      );
+    } finally {
+      setIsLogoUploading(false);
+      input.value = '';
     }
   };
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLogoUploading) return;
 
     const updated: CompanyInfo = {
       name: name.trim(),
       processingName: processingName.trim(),
       email: email.trim(),
       address: address.trim(),
+      shopAddress: shopAddress.trim(),
       phones: [phone1.trim(), phone2.trim()].filter(Boolean),
       businessTypeBn: businessTypeBn.trim(),
       businessTypeEn: businessTypeEn.trim(),
@@ -313,7 +329,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <div className="md:col-span-2">
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                {lang === 'bn' ? 'কোম্পানি ঠিকানা (Full Address)' : 'Official Address'} <span className="text-red-500">*</span>
+                {lang === 'bn' ? 'কর্পোরেট অফিস ঠিকানা (Corporate Office)' : 'Corporate Office Address'} <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -322,6 +338,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 placeholder="Shakib-Siyam Super Market, 14 No. Lane, Puran Potti Road, Hiraabil, Siddhirganj, Narayanganj"
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 required
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'দোকানের ঠিকানা (Dokan Address)' : 'Dokan / Shop Address'}
+              </label>
+              <input
+                type="text"
+                value={shopAddress}
+                onChange={(e) => setShopAddress(e.target.value)}
+                placeholder="Dokan address"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
               />
             </div>
 
@@ -417,8 +446,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   type="file"
                   accept="image/*"
                   onChange={handleLogoUpload}
-                  className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
+                  disabled={isLogoUploading}
+                  className="disabled:opacity-50 block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
                 />
+                {isLogoUploading && (
+                  <p className="mt-1 flex items-center gap-2 text-emerald-600 font-semibold">
+                    <span className="inline-block w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                    {lang === 'bn' ? 'ছবি প্রস্তুত হচ্ছে...' : 'Preparing image...'}
+                  </p>
+                )}
+                {logoError && <p className="mt-1 text-red-600 font-semibold">{logoError}</p>}
               </div>
 
               <div>

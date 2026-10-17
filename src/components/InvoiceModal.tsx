@@ -1,3 +1,4 @@
+import { withCompanyAddress } from '../lib/printUtils';
 import React, { useState, useEffect } from 'react';
 import {
   X,
@@ -389,7 +390,7 @@ ${previousBalance !== 0 ? `Previous Balance: ৳${previousBalance}\n` : ''}Grand
 ---------------------------
 Thank you for doing business with us!`;
 
-    const encoded = encodeURIComponent(message);
+    const encoded = encodeURIComponent(withCompanyAddress(message));
     const url = partyPhone
       ? `https://wa.me/88${partyPhone.replace(/[^0-9]/g, '')}?text=${encoded}`
       : `https://wa.me/?text=${encoded}`;
@@ -756,6 +757,8 @@ Thank you for doing business with us!`;
                             <option value="android">{t.androidItem}</option>
                             <option value="kg">{t.kgItem}</option>
                             <option value="pcs_blank">{t.pcsBlankItem}</option>
+                            <option value="laptop">{t.laptopItem}</option>
+                            <option value="computer">{t.computerItem}</option>
                           </select>
                         </td>
                         {/* Quantity - Cell 2 */}

@@ -1,3 +1,4 @@
+import { withCompanyAddress } from '../lib/printUtils';
 import React, { useState, useMemo } from 'react';
 import {
   Users,
@@ -240,8 +241,8 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
 ${DEFAULT_COMPANY.name}`;
 
     const url = party.phone
-      ? `https://wa.me/88${party.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      ? `https://wa.me/88${party.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(withCompanyAddress(text))}`
+      : `https://wa.me/?text=${encodeURIComponent(withCompanyAddress(text))}`;
     window.open(url, '_blank');
   };
 

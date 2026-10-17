@@ -1,3 +1,4 @@
+import { getFullAddress } from '../types';
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Phone, Mail, MapPin, Download } from 'lucide-react';
 import { Invoice, Language } from '../types';
@@ -130,7 +131,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
           <div className="text-[11px] text-slate-600 mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5">
             <span className="flex items-center gap-1">
               <MapPin className="w-3 h-3 shrink-0" />
-              {company.address}
+              {getFullAddress(company)}
             </span>
             <span className="flex items-center gap-1 font-mono font-semibold">
               <Phone className="w-3 h-3 shrink-0" />
@@ -226,7 +227,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
                     {formatCurrency(it.unitPrice, lang)}
                   </td>
                   <td className="py-1.5 px-2 text-right font-mono font-bold">
-                    {formatCurrency(it.total, lang)}
+                    {formatCurrency(Number(it.total) || (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), lang)}
                   </td>
                 </tr>
               ))}
@@ -235,7 +236,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
         </div>
 
         {/* Totals & Party Summary — Clean Two-Column Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+        <div className="grid grid-cols-2 gap-4 text-xs">
           {/* Left: Party Account Summary */}
           <div className="space-y-2">
             <div className="border border-slate-400 text-[11px] leading-tight print-compact">
