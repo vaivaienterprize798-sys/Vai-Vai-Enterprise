@@ -208,27 +208,3 @@
 .capture-mode [style*="font-size: 7px"], .capture-mode [style*="font-size: 8px"],
 .capture-mode [style*="font-size: 9px"], .capture-mode [style*="font-size: 10px"] { font-size: 12px !important; }
 .capture-mode [style*="font-size: 11px"] { font-size: 13px !important; }
-
-/* Normal full-width statement previews. Challan containers are intentionally excluded. */
-@media screen {
-  :is(#statement-print-area, #payment-voucher-print-area, #dokan-sheet-print,
-      #rsr-daily-cashbook-print, #rsr-price-list-print, #worker-conversions-print,
-      #party-ledger-print, #cash-book-print, #rsr-3rd-party-rmb-statement,
-      #rsr-china-consignments-statement, #rsr-china-remittances-statement,
-      #rsr-branch-office-statement, #rsr-branch-office-ledger) {
-    width: 100% !important;
-    max-width: none !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-  }
-  :is(#statement-print-area, #payment-voucher-print-area, #dokan-sheet-print,
-      #rsr-daily-cashbook-print, #rsr-price-list-print, #worker-conversions-print,
-      #party-ledger-print, #cash-book-print, #rsr-3rd-party-rmb-statement,
-      #rsr-china-consignments-statement, #rsr-china-remittances-statement,
-      #rsr-branch-office-statement, #rsr-branch-office-ledger)
-      :is(.sheet-freeze-wrapper, .overflow-auto, .overflow-y-auto, .overflow-x-auto) {
-    max-height: none !important;
-    overflow-y: visible !important;
-  }
-}
