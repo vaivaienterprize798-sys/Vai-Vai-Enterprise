@@ -1,4 +1,3 @@
-import { withCompanyAddress } from '../lib/printUtils';
 import React, { useState } from 'react';
 import {
   Download,
@@ -115,7 +114,7 @@ export const WhatsAppImageShareModal: React.FC<WhatsAppImageShareModalProps> = (
         await navigator.share({
           files: [file],
           title: fileName,
-          text: withCompanyAddress(captionText),
+          text: captionText,
         });
         onClose();
       } catch (err: any) {

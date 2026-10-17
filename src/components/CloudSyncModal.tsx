@@ -16,7 +16,7 @@ import {
   Copy,
   ExternalLink,
 } from 'lucide-react';
-import { auth, cloudDbService, isFirebaseConfigured, hasCloudAccess, onAccessChanged, ensureCloudAccess, joinWithKey, getSyncKey, saveConfigOverride, clearConfigOverride, getConfigOverride } from '../lib/firebase';
+import { auth, cloudDbService, isFirebaseConfigured, saveConfigOverride, clearConfigOverride, getConfigOverride } from '../lib/firebase';
 import { storageService } from '../lib/storage';
 import { Language } from '../types';
 import { User } from 'firebase/auth';
@@ -41,14 +41,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [progress, setProgress] = useState<number | null>(null);
-  const [hasAccess, setHasAccess] = useState<boolean>(hasCloudAccess());
-  const [keyInput, setKeyInput] = useState<string>(getSyncKey());
-  const [joining, setJoining] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [copiedKey, setCopiedKey] = useState(false);
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
   const [hasOverride, setHasOverride] = useState(!!getConfigOverride());
@@ -102,35 +97,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     const unsub = cloudDbService.onAuthChanged((user) => {
       setCurrentUser(user);
     });
-    const unsubA = onAccessChanged(setHasAccess);
-    return () => { unsub(); unsubA(); };
+    return () => unsub();
   }, []);
-
-  useEffect(() => {
-    if (isOpen && !hasCloudAccess()) ensureCloudAccess().catch(() => {});
-  }, [isOpen]);
-
-  const handleJoin = async () => {
-    if (!keyInput.trim()) return;
-    setJoining(true); setErrorMessage(null); setSuccessMessage(null);
-    try {
-      const ok = await joinWithKey(keyInput.trim());
-      if (ok) setSuccessMessage(lang === 'bn' ? 'এই ডিভাইস নিরাপদে যুক্ত হয়েছে। লাইভ সিঙ্ক চালু!' : 'Device joined securely. Live sync is on!');
-    } catch (e: any) {
-      setErrorMessage(e?.message === 'LINK_WITHOUT_KEY'
-        ? (lang === 'bn' ? 'এটি শুধু ওয়েবসাইটের ঠিকানা, এতে কী নেই। এখানে RSR-XXXX-XXXX-XXXX ধরনের অ্যাক্সেস কী লিখুন।' : 'That is only the website address. Type the RSR-XXXX-XXXX-XXXX access key here.')
-        : e?.message === 'INVALID_KEY'
-        ? (lang === 'bn' ? 'ভুল অ্যাক্সেস কী। সঠিক কী দিন।' : 'Wrong access key.')
-        : (lang === 'bn' ? 'সংযোগ হয়নি। ইন্টারনেট চেক করে আবার চেষ্টা করুন।' : 'Could not connect. Check internet and retry.'));
-    } finally { setJoining(false); }
-  };
-
-  const describeError = (e?: string) => {
-    if (e === 'NO_ACCESS') return lang === 'bn' ? 'আগে নিচে শপ অ্যাক্সেস কী দিয়ে ডিভাইস যুক্ত করুন।' : 'Join this device with the shop access key first.';
-    if (e && /timed out/i.test(e)) return lang === 'bn' ? 'নেটওয়ার্ক ধীর — আবার চেষ্টা করুন।' : 'Network is slow — please retry.';
-    if (e && /permission/i.test(e)) return lang === 'bn' ? 'অনুমতি নেই — অ্যাক্সেস কী যাচাই করুন।' : 'Permission denied — check the access key.';
-    return e || 'Failed';
-  };
 
   if (!isOpen) return null;
 
@@ -173,8 +141,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   };
 
   const handleUploadAll = async () => {
-    if (isProcessing) return;
-    setProgress(0);
+    if (!currentUser) {
+      setErrorMessage(
+        lang === 'bn'
+          ? 'অনুগ্রহ করে প্রথমে গুগল দিয়ে সাইন-ইন করুন।'
+          : 'Please sign in with Google first.'
+      );
+      return;
+    }
     setIsProcessing(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -199,22 +173,26 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     } finally {
       setIsProcessing(false);
       setStatusMessage('');
-      setProgress(null);
     }
   };
 
   const handleDownloadAll = async () => {
-    if (isProcessing) return;
-    setProgress(0);
+    if (!currentUser) {
+      setErrorMessage(
+        lang === 'bn'
+          ? 'অনুগ্রহ করে প্রথমে গুগল দিয়ে সাইন-ইন করুন।'
+          : 'Please sign in with Google first.'
+      );
+      return;
+    }
     setIsProcessing(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     setStatusMessage(lang === 'bn' ? 'ক্লাউড থেকে তথ্য নামানো হচ্ছে...' : 'Fetching from cloud...');
 
     try {
-      const res = await storageService.downloadAllFromCloud((msg, pct) => {
+      const res = await storageService.downloadAllFromCloud((msg) => {
         setStatusMessage(msg);
-        if (pct !== undefined) setProgress(pct);
       });
       if (res.success) {
         setSuccessMessage(
@@ -224,14 +202,13 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
         );
         onDataRefreshed();
       } else {
-        setErrorMessage(describeError(res.error));
+        setErrorMessage(res.error || 'Download failed');
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Download failed');
     } finally {
       setIsProcessing(false);
       setStatusMessage('');
-      setProgress(null);
     }
   };
 
@@ -248,8 +225,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     return origin;
   };
 
-  const baseShareUrl = getPublicShareUrl();
-  const publicShareUrl = hasAccess && getSyncKey() ? `${baseShareUrl}/#key=${encodeURIComponent(getSyncKey())}` : baseShareUrl;
+  const publicShareUrl = getPublicShareUrl();
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(publicShareUrl);
@@ -303,12 +279,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           
           {/* Real-time Status Card */}
           <div className={`p-4 rounded-xl border flex items-start gap-3.5 ${
-            hasAccess
+            currentUser
               ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
               : 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
           }`}>
             <div className="shrink-0 mt-0.5">
-              {hasAccess ? (
+              {currentUser ? (
                 <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
@@ -322,21 +298,22 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider">
-                  {hasAccess
+                  {currentUser
                     ? lang === 'bn' ? 'রিয়েলটাইম ক্লাউড সিঙ্ক সক্রিয়' : 'Real-time Cloud Sync Active'
                     : lang === 'bn' ? 'ক্লাউড সিঙ্ক সংযোগ প্রয়োজন' : 'Cloud Sync Sign-in Needed'}
                 </span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                  hasAccess ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300' : 'bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-300'
+                  currentUser ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300' : 'bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-300'
                 }`}>
-                  {hasAccess ? 'SECURE SYNC' : 'LOCAL ONLY'}
+                  {currentUser ? 'LIVE SYNC' : 'OFFLINE LOCAL'}
                 </span>
               </div>
 
-              {hasAccess ? (
+              {currentUser ? (
                 <div className="mt-1">
                   <p className="text-xs font-medium truncate">
-                    {lang === 'bn' ? 'লগইন ছাড়াই নিরাপদ সিঙ্ক — শুধু অনুমোদিত ডিভাইস ডাটা দেখতে পারে।' : 'No-login secure sync — only approved devices can access data.'}
+                    {lang === 'bn' ? 'সংযুক্ত একাউন্ট:' : 'Connected account:'}{' '}
+                    <span className="font-bold underline">{currentUser.email}</span>
                   </p>
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
                     {lang === 'bn'
@@ -360,15 +337,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           {statusMessage && (
             <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-blue-800 dark:text-blue-300 text-xs flex items-center gap-2">
               <RefreshCw className="w-4 h-4 animate-spin shrink-0 text-blue-600" />
-              <div className="flex-1 min-w-0">
-                <span>{statusMessage}</span>
-                {progress !== null && (
-                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-blue-100 dark:bg-blue-900 overflow-hidden">
-                    <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${Math.max(3, progress)}%` }} />
-                  </div>
-                )}
-              </div>
-              {progress !== null && <span className="font-bold tabular-nums">{progress}%</span>}
+              <span>{statusMessage}</span>
             </div>
           )}
 
@@ -434,64 +403,51 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             </div>
           )}
 
-          {/* Secure Access Key (no login) */}
+          {/* Auth Action Buttons */}
           <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
             <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
-              {lang === 'bn' ? 'নিরাপদ অ্যাক্সেস (লগইন ছাড়া)' : 'Secure Access (no login)'}
+              {lang === 'bn' ? 'ক্লাউড নিরাপত্তা ও গুগল অথেন্টিকেশন' : 'Cloud Security & Google Authentication'}
             </h3>
-            {hasAccess && (
-              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                {lang === 'bn' ? 'এই ডিভাইস অনুমোদিত। অন্য কেউ কী ছাড়া ডাটা পড়তে বা লিখতে পারবে না।' : 'This device is approved. Nobody without the key can read or write data.'}
-              </p>
-            )}
-            {hasAccess && getSyncKey() && (
-              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-white dark:bg-slate-950 border border-emerald-300 dark:border-emerald-800">
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10px] font-bold text-slate-500">{lang === 'bn' ? 'আপনার শপ অ্যাক্সেস কী (লিখে রাখুন)' : 'Your shop access key (write it down)'}</div>
-                  <div className="font-mono text-sm font-bold tracking-wider text-slate-900 dark:text-slate-100 break-all select-all">{getSyncKey()}</div>
+
+            {!currentUser ? (
+              <button
+                onClick={handleSignIn}
+                disabled={isProcessing}
+                className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>{lang === 'bn' ? 'গুগল দিয়ে ক্লাউড কানেক্ট করুন' : 'Sign in with Google to Enable Sync'}</span>
+              </button>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs truncate">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                  <span className="text-slate-600 dark:text-slate-300 font-mono text-[11px] truncate">
+                    {currentUser.email}
+                  </span>
                 </div>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(getSyncKey()); setCopiedKey(true); setTimeout(() => setCopiedKey(false), 2000); }}
-                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+                  onClick={handleSignOut}
+                  disabled={isProcessing}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-rose-600 hover:text-white text-slate-700 dark:text-slate-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>{copiedKey ? (lang === 'bn' ? 'কপি হয়েছে!' : 'Copied!') : (lang === 'bn' ? 'কী কপি' : 'Copy key')}</span>
-                </button>
-              </div>
-            )}
-            {(!hasAccess || !getSyncKey()) && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  autoCapitalize="characters"
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder={lang === 'bn' ? 'শপ অ্যাক্সেস কী (যেমন RSR-XXXX-XXXX-XXXX)' : 'Shop access key (e.g. RSR-XXXX-XXXX-XXXX)'}
-                  className="flex-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs px-3 py-2 rounded-lg font-mono focus:outline-hidden focus:ring-2 focus:ring-emerald-400"
-                />
-                <button
-                  onClick={handleJoin}
-                  disabled={joining || !keyInput.trim()}
-                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
-                >
-                  {joining ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
-                  <span>{joining ? (lang === 'bn' ? 'যাচাই হচ্ছে...' : 'Checking...') : hasAccess ? (lang === 'bn' ? 'কী সেভ করুন' : 'Save key') : (lang === 'bn' ? 'যুক্ত করুন' : 'Join')}</span>
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{lang === 'bn' ? 'লগ-আউট' : 'Sign Out'}</span>
                 </button>
               </div>
             )}
           </div>
 
           {/* Cloud Action Hub */}
-          {hasAccess && (
+          {currentUser && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 onClick={handleUploadAll}
                 disabled={isProcessing}
                 className="flex items-center justify-center gap-2 p-3 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 rounded-xl font-bold text-xs transition-all cursor-pointer disabled:opacity-50"
               >
-                {isProcessing ? <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin" /> : <UploadCloud className="w-4 h-4 text-emerald-600" />}
+                <UploadCloud className="w-4 h-4 text-emerald-600" />
                 <div className="text-left">
                   <div>{lang === 'bn' ? 'সকল ডাটা ক্লাউডে আপলোড করুন' : 'Upload Local Data to Cloud'}</div>
                   <div className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
@@ -505,7 +461,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 disabled={isProcessing}
                 className="flex items-center justify-center gap-2 p-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800 rounded-xl font-bold text-xs transition-all cursor-pointer disabled:opacity-50"
               >
-                {isProcessing ? <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" /> : <DownloadCloud className="w-4 h-4 text-blue-600" />}
+                <DownloadCloud className="w-4 h-4 text-blue-600" />
                 <div className="text-left">
                   <div>{lang === 'bn' ? 'ক্লাউড থেকে ডাটা নামান' : 'Pull / Restore from Cloud'}</div>
                   <div className="text-[10px] font-normal text-blue-600 dark:text-blue-400">

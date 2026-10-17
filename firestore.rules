@@ -1,50 +1,9 @@
 rules_version = '2';
-// SECURE ACCESS CONTROL (no Google login needed)
-// - Every device signs in silently (anonymous) and must join with the shop's
-//   private Sync Access Key. Only joined devices can read/write any data.
-// - The key itself is NOT stored in these rules, only its SHA-256 hash.
-// - The owner Google account always has access.
-// To change the key: put the SHA-256 (hex, lowercase) of the new key below,
-// then publish the rules. Old devices must re-join with the new key.
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function signedIn() { return request.auth != null; }
-
-    function isOwner() {
-      return signedIn()
-        && request.auth.token.email == 'vaivaienterprize798@gmail.com'
-        && request.auth.token.email_verified == true;
-    }
-
-    function isMember() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/members/$(request.auth.uid));
-    }
-
-    function hasAccess() { return isOwner() || isMember(); }
-
-    function validKey(k) {
-      return k is string && k.size() < 100
-        && (hashing.sha256(k).toHexString().lower()
-              == 'a7224bc4a49894befca00d7c49fecf53dce374f4ffb1fea3c41f76f14f1ceb82'
-            || hashing.sha256(k).toHexString().lower()
-              == '7693c0c201c4b24027c4099b6133f495ff242b8c84bf485f177997985d89d8d7');
-    }
-
-    // Device membership: a device can only create ITS OWN entry, only with the right key.
-    match /members/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isOwner());
-      allow create: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['key', 'createdAt', 'device'])
-        && validKey(request.resource.data.key);
-      allow update: if false;
-      allow delete: if isOwner();
-    }
-
-    // All business data (invoices, stock, parties, company, ...)
-    match /{col}/{rest=**} {
-      allow read, write: if col != 'members' && hasAccess();
+    // Open access so every device syncs automatically without login.
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }

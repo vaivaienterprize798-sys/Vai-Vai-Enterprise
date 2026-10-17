@@ -354,7 +354,7 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
   const totalInvestmentOutflow = totalPartyBillPayments + totalOperationalExpenses + totalPaidStaffSalary;
   const currentStockValuation = useMemo(() => {
     return stock.reduce((sum, item) => {
-      const rate = item.purchaseAvgRate ?? item.purchaseRate ?? 0;
+      const rate = item.purchaseRate || item.purchaseAvgRate || 0;
       return sum + item.quantity * rate;
     }, 0);
   }, [stock]);
@@ -378,8 +378,6 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
       android: { code: 'android', labelBn: 'অ্যান্ড্রয়েড লট পিসিবি', labelEn: 'Android Lot PCB', sales: 0, purchase: 0 },
       kg: { code: 'kg', labelBn: 'কেজি ওজন সার্কিট', labelEn: 'KG Weight Circuit', sales: 0, purchase: 0 },
       pcs_blank: { code: 'pcs_blank', labelBn: 'পিস ও ব্ল্যাঙ্ক বোর্ড', labelEn: 'Pcs & Blank Board', sales: 0, purchase: 0 },
-      laptop: { code: 'laptop', labelBn: 'ল্যাপটপ', labelEn: 'Laptop', sales: 0, purchase: 0 },
-      computer: { code: 'computer', labelBn: 'কম্পিউটার', labelEn: 'Computer', sales: 0, purchase: 0 },
     };
 
     filteredInvoices.forEach((inv) => {
