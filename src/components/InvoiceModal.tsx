@@ -28,6 +28,7 @@ import {
 import { storageService } from '../lib/storage';
 import { generateNextInvoiceNo, isInvoiceNoTaken } from '../lib/invoiceUtils';
 import { CompanyLogo } from './CompanyLogo';
+import { addAddressToShareText } from '../lib/printUtils';
 
 interface InvoiceModalProps {
   lang: Language;
@@ -391,8 +392,8 @@ Thank you for doing business with us!`;
 
     const encoded = encodeURIComponent(message);
     const url = partyPhone
-      ? `https://wa.me/88${partyPhone.replace(/[^0-9]/g, '')}?text=${encoded}`
-      : `https://wa.me/?text=${encoded}`;
+      ? `https://wa.me/88${partyPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(addAddressToShareText(decodeURIComponent(encoded)))}`
+      : `https://wa.me/?text=${encodeURIComponent(addAddressToShareText(decodeURIComponent(encoded)))}`;
     window.open(url, '_blank');
   };
 

@@ -56,6 +56,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [processingName, setProcessingName] = useState(currentCompany.processingName);
   const [email, setEmail] = useState(currentCompany.email);
   const [address, setAddress] = useState(currentCompany.address);
+  const [shopAddress, setShopAddress] = useState(currentCompany.shopAddress || '');
   const [phone1, setPhone1] = useState(currentCompany.phones[0] || '01725-550002');
   const [phone2, setPhone2] = useState(currentCompany.phones[1] || '01746-383825');
   const [businessTypeBn, setBusinessTypeBn] = useState(currentCompany.businessTypeBn);
@@ -93,6 +94,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       processingName: processingName.trim(),
       email: email.trim(),
       address: address.trim(),
+      shopAddress: shopAddress.trim(),
       phones: [phone1.trim(), phone2.trim()].filter(Boolean),
       businessTypeBn: businessTypeBn.trim(),
       businessTypeEn: businessTypeEn.trim(),
@@ -313,7 +315,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <div className="md:col-span-2">
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                {lang === 'bn' ? 'কোম্পানি ঠিকানা (Full Address)' : 'Official Address'} <span className="text-red-500">*</span>
+                {lang === 'bn' ? 'কর্পোরেট অফিসের ঠিকানা (Corporate Office)' : 'Corporate Office Address'} <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -323,6 +325,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 required
               />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'দোকানের ঠিকানা (Dokan Address)' : 'Shop (Dokan) Address'}
+              </label>
+              <input
+                type="text"
+                value={shopAddress}
+                onChange={(e) => setShopAddress(e.target.value)}
+                placeholder={lang === 'bn' ? 'দোকানের পূর্ণ ঠিকানা লিখুন' : 'Enter full shop address'}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                {lang === 'bn' ? 'দুইটি ঠিকানাই প্রিন্ট, PDF, WhatsApp ও WeChat শেয়ারে দেখাবে' : 'Both addresses appear on print, PDF, WhatsApp & WeChat shares'}
+              </p>
             </div>
 
             <div>

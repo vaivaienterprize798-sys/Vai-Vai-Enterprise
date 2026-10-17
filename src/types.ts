@@ -6,7 +6,8 @@ export interface CompanyInfo {
   name: string;
   processingName: string;
   email: string;
-  address: string;
+  address: string; // Corporate Office address
+  shopAddress?: string; // Dokan (shop) address
   phones: string[];
   businessTypeBn: string;
   businessTypeEn: string;
@@ -24,6 +25,7 @@ export const DEFAULT_COMPANY: CompanyInfo = {
   processingName: 'Vai Vai Trades 5G',
   email: 'vaivaienterpeize798@gmail.com',
   address: 'Shakib-Siyam Super Market, 14 No. Lane, Puran Potti Road, Hiraabil, Siddhirganj, Narayanganj',
+  shopAddress: '',
   phones: ['01725-550002', '01746-383825'],
   businessTypeBn: 'পুরাতন নষ্ট মোবাইল সার্কিট ও মাদারবোর্ড ক্রয়-বিক্রয়',
   businessTypeEn: 'Scrap & Used Mobile Circuit & Motherboard Trading',
@@ -575,6 +577,28 @@ export interface ChinaDirectPayment {
 }
 
 
-export function getFullAddress(info: { address?: string } | null | undefined): string {
-  return (info?.address || '').trim();
+export const ADDRESS_LABELS = {
+  corporate: 'কর্পোরেট অফিস',
+  shop: 'দোকান',
+};
+
+/** Returns both company addresses (Corporate Office + Dokan) as labelled lines. */
+export function getCompanyAddressLines(info: { address?: string; shopAddress?: string } | null | undefined): string[] {
+  const lines: string[] = [];
+  const corp = (info?.address || '').trim();
+  const shop = (info?.shopAddress || '').trim();
+  if (corp) lines.push(`${ADDRESS_LABELS.corporate}: ${corp}`);
+  if (shop) lines.push(`${ADDRESS_LABELS.shop}: ${shop}`);
+  return lines;
+}
+
+export function getFullAddress(info: { address?: string; shopAddress?: string } | null | undefined): string {
+  return getCompanyAddressLines(info).join(' | ');
+}
+
+/** Appends both company addresses to a WhatsApp / WeChat share text (once). */
+export function withAddressFooter(text: string, info: { address?: string; shopAddress?: string } | null | undefined): string {
+  const lines = getCompanyAddressLines(info);
+  if (!lines.length || text.includes(ADDRESS_LABELS.corporate)) return text;
+  return `${text}\n\n${lines.map((l) => `📍 ${l}`).join('\n')}`;
 }

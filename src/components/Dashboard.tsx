@@ -1,3 +1,4 @@
+import { CompanyAddresses } from './CompanyAddresses';
 import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
@@ -970,7 +971,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
-              {companyInfo.address}
+              <CompanyAddresses info={companyInfo} />
             </p>
           </div>
         </div>

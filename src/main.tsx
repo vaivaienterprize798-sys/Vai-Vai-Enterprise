@@ -8,10 +8,12 @@ import { initAutoUpdateListener, forceUpdateAndReloadApp } from './lib/appUpdate
 // Initialize Auto-Update Listener
 initAutoUpdateListener();
 
-// Remove any old service worker + caches so every device always loads the latest version
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
-  if ('caches' in window) caches.keys().then((names) => names.forEach((n) => caches.delete(n)));
+// Register the service worker so the app can be installed on mobile (Add to Home Screen).
+// It is network-first, so every device still loads the latest version when online.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => console.warn('SW register failed:', err));
+  });
 }
 
 // Self-healing handler for desktop PWA stale chunks or dynamic import failures

@@ -175,6 +175,7 @@
         "processingName": { "type": "string", "maxLength": 200 },
         "email": { "type": "string", "maxLength": 100 },
         "address": { "type": "string", "maxLength": 500 },
+        "shopAddress": { "type": "string", "maxLength": 500 },
         "phones": { "type": "array" },
         "businessTypeBn": { "type": "string", "maxLength": 300 },
         "businessTypeEn": { "type": "string", "maxLength": 300 },

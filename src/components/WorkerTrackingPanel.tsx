@@ -47,6 +47,7 @@ import {
 import { storageService } from '../lib/storage';
 import { executePrint } from '../lib/printUtils';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
+import { addAddressToShareText } from '../lib/printUtils';
 
 interface WorkerTrackingPanelProps {
   staff: Staff[];
@@ -1408,7 +1409,7 @@ export const WorkerTrackingPanel: React.FC<WorkerTrackingPanelProps> = ({
                           <button
                             onClick={() => {
                               const shareText = `*${DEFAULT_COMPANY.name} - পণ্য রূপান্তর ভাউচার*\n📅 তারিখ: ${conv.date}\n👤 কারিগর: ${conv.workerName}\n📥 ইনপুট: ${conv.inputProduct} (${conv.inputQty} ${conv.inputUnit})\n📤 নতুন আউটপুট: ${conv.outputProduct} (${conv.outputQty} ${conv.outputUnit})\n⚙️ অতিরিক্ত উপাদান: ${conv.extractedPartsSummary || 'N/A'}\n⚠️ অপচয়: ${conv.wastageOrLoss || 0} ${conv.outputUnit}\n${conv.notes ? `📝 মন্তব্য: ${conv.notes}\n` : ''}────────────────────────\n_${DEFAULT_COMPANY.name}_`;
-                              const url = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+                              const url = `https://wa.me/?text=${encodeURIComponent(addAddressToShareText(shareText))}`;
                               window.open(url, '_blank');
                             }}
                             title={t.shareWhatsApp}

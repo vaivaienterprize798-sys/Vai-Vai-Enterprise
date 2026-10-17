@@ -1,3 +1,5 @@
+import { CompanyAddresses } from './CompanyAddresses';
+import { getCompanyAddressLines } from '../types';
 import React, { useState, useMemo, useRef } from 'react';
 import {
   Tag,
@@ -339,7 +341,7 @@ export const PriceListPanel: React.FC<PriceListPanelProps> = ({
     const header = `*${activeList.companyName || companyInfo.name}*
 📋 *${activeList.title}*
 📅 তারিখ: ${activeList.date}
-📍 ${activeList.companyAddress || companyInfo.address}
+${getCompanyAddressLines({ ...companyInfo, address: activeList.companyAddress || companyInfo.address }).map((l) => '📍 ' + l).join('\n')}
 📞 মোবাইল: ${(activeList.companyPhones || companyInfo.phones || []).join(', ')}
 ━━━━━━━━━━━━━━━━━━━━
 *পণ্যের বাজার দর তালিকা (৩ ধরনের মূল্য):*`;
@@ -693,7 +695,7 @@ ${activeList.companyName || companyInfo.name}`;
                   {companyInfo.businessTypeBn}
                 </p>
                 <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
-                  {activeList.companyAddress || companyInfo.address}
+                  <CompanyAddresses info={{ ...companyInfo, address: activeList.companyAddress || companyInfo.address }} />
                 </p>
                 <p style={{ margin: '2px 0 0 0', fontSize: '11px', fontWeight: 600, color: '#0369a1' }}>
                   মোবাইল: {(activeList.companyPhones || companyInfo.phones || []).join(', ')}

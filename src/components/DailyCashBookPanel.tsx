@@ -1,3 +1,4 @@
+import { CompanyAddresses } from './CompanyAddresses';
 import React, { useState, useMemo } from 'react';
 import {
   Wallet,
@@ -779,7 +780,7 @@ _${companyInfo.name}_`;
           <div className="border-b pb-3 flex justify-between items-start">
             <div>
               <h1 className="text-xl font-black text-slate-900">{companyInfo.name}</h1>
-              <p className="text-xs text-slate-600">{companyInfo.address} | ফোন: {companyInfo.phones?.join(', ') || ''}</p>
+              <p className="text-xs text-slate-600"><CompanyAddresses info={companyInfo} /> | ফোন: {companyInfo.phones?.join(', ') || ''}</p>
               <h2 className="text-sm font-bold text-emerald-800 mt-1">দৈনিক ক্যাশ বুক স্টেটমেন্ট (Daily Cash Book)</h2>
             </div>
             <div className="text-right font-mono text-xs space-y-0.5">

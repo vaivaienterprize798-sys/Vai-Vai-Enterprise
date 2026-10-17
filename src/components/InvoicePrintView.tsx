@@ -1,3 +1,4 @@
+import { CompanyAddresses } from './CompanyAddresses';
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Phone, Mail, MapPin, Download } from 'lucide-react';
 import { Invoice, Language } from '../types';
@@ -130,7 +131,7 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
           <div className="text-[11px] text-slate-600 mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5">
             <span className="flex items-center gap-1">
               <MapPin className="w-3 h-3 shrink-0" />
-              {company.address}
+              <CompanyAddresses info={company} />
             </span>
             <span className="flex items-center gap-1 font-mono font-semibold">
               <Phone className="w-3 h-3 shrink-0" />

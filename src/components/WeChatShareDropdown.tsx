@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { captureElementToBlob } from '../lib/printUtils';
 import { Language } from '../types';
+import { addAddressToShareText } from '../lib/printUtils';
 
 interface WeChatShareDropdownProps {
   getText?: () => string;
@@ -123,7 +124,7 @@ export const WeChatShareDropdown: React.FC<WeChatShareDropdownProps> = ({
         const file = new File([blob], fileName, { type: blob.type });
         await navigator.share({
           title: 'RSR Vai Vai Enterprise - Statement',
-          text: getText ? getText() : 'RSR Vai Vai Enterprise Report',
+          text: addAddressToShareText(getText ? getText() : 'RSR Vai Vai Enterprise Report'),
           files: [file],
         });
         setFeedback(lang === 'bn' ? 'সফলভাবে শেয়ার করা হয়েছে' : 'Shared successfully');

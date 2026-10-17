@@ -1,4 +1,4 @@
-import { getFullAddress } from './types';
+import { CompanyAddresses } from './components/CompanyAddresses';
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
@@ -1515,7 +1515,7 @@ export default function App() {
             <strong>{companyInfo.name}</strong> &bull; {companyInfo.processingName}
           </div>
           <div className="text-[11px]">
-            {getFullAddress(companyInfo)} | {companyInfo.phones.join(', ')}
+            <CompanyAddresses info={companyInfo} /> {companyInfo.phones.join(', ')}
           </div>
         </div>
       </footer>

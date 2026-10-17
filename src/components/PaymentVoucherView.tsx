@@ -1,3 +1,4 @@
+import { CompanyAddresses } from './CompanyAddresses';
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Phone, Mail, MapPin, Download, CheckCircle2 } from 'lucide-react';
 import { Invoice, Language, PaymentMethod } from '../types';
@@ -219,7 +220,7 @@ _${company.name}_`;
             <div className="text-[11px] text-slate-200 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 pt-2.5 border-t border-slate-800/80 w-full font-medium z-10">
               <span className="flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>{company.address}</span>
+                <span><CompanyAddresses info={company} /></span>
               </span>
               <span className="flex items-center gap-1 font-mono text-cyan-300 font-bold">
                 <Phone className="w-3.5 h-3.5 text-cyan-400 shrink-0" />

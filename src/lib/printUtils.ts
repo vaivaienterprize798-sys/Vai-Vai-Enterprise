@@ -6,6 +6,19 @@
 
 import { toBlob, toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import { withAddressFooter, DEFAULT_COMPANY } from '../types';
+
+export function currentCompanyForShare() {
+  try {
+    const raw = localStorage.getItem('rsr_company_v2');
+    if (raw) return { ...DEFAULT_COMPANY, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return DEFAULT_COMPANY;
+}
+
+export function addAddressToShareText(text: string): string {
+  return withAddressFooter(text, currentCompanyForShare());
+}
 
 /**
  * WhatsApp phone targets
@@ -143,6 +156,7 @@ export function sendToWhatsApp(
   target: 'phone1' | 'phone2' | 'group' = 'group',
   customPhone?: string
 ): void {
+  text = addAddressToShareText(text);
   let phone = '';
   if (customPhone) {
     phone = customPhone.replace(/[^0-9]/g, '');

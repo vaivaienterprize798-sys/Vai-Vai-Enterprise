@@ -24,6 +24,7 @@ import {
   formatNumber,
   formatDate,
 } from '../lib/translations';
+import { addAddressToShareText } from '../lib/printUtils';
 
 interface InvoiceListProps {
   invoices: Invoice[];
@@ -109,8 +110,8 @@ Due: ৳${inv.remainingDue ?? 0}
 Status: ${(inv.paymentStatus || 'unpaid').toUpperCase()}`;
 
     const url = inv.partyPhone
-      ? `https://wa.me/88${inv.partyPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      ? `https://wa.me/88${inv.partyPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(addAddressToShareText(text))}`
+      : `https://wa.me/?text=${encodeURIComponent(addAddressToShareText(text))}`;
     window.open(url, '_blank');
   };
 
