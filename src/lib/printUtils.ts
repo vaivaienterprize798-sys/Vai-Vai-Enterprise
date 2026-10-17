@@ -6,6 +6,8 @@
 
 import { toBlob, toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import { storageService } from './storage';
+import { getAddressShareBlock } from '../types';
 import { isChallanPrint, continuousPrintStyles } from './printLayout';
 
 /**
@@ -173,11 +175,23 @@ ${continuous ? continuousPrintStyles() : ''}
 /**
  * Send text report directly to WhatsApp (Group, Phone 1, Phone 2, or custom phone)
  */
+/** Append Corporate Office + Dokan address to any shared text (once). */
+export function withCompanyAddress(text: string): string {
+  try {
+    const block = getAddressShareBlock(storageService.getCompanyInfo());
+    if (!block || text.includes('Corporate Office:')) return text;
+    return `${text}\n\n📍 *ঠিকানা / Address*\n${block}`;
+  } catch {
+    return text;
+  }
+}
+
 export function sendToWhatsApp(
   text: string,
   target: 'phone1' | 'phone2' | 'group' = 'group',
   customPhone?: string
 ): void {
+  text = withCompanyAddress(text);
   let phone = '';
   if (customPhone) {
     phone = customPhone.replace(/[^0-9]/g, '');

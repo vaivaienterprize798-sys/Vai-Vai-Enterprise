@@ -1,3 +1,4 @@
+import { getFullAddress } from '../types';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Building2,
@@ -271,7 +272,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
           <span className="text-slate-600 hidden sm:inline">&bull;</span>
           <span className="text-slate-400 hidden md:inline truncate max-w-sm">
-            {companyInfo.address}
+            {getFullAddress(companyInfo)}
           </span>
           <span className="text-slate-600 hidden lg:inline">&bull;</span>
           <span className="text-amber-300 font-mono hidden lg:flex items-center gap-1">

@@ -1,3 +1,4 @@
+import { getFullAddress } from './types';
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
@@ -631,11 +632,16 @@ export default function App() {
     type: 'success' | 'info' | 'error';
   } | null>(null);
 
+  const toastTimerRef = React.useRef<any>(null);
+  const lastToastRef = React.useRef<{ m: string; t: number }>({ m: '', t: 0 });
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    // Same message within 4s is ignored -> no repeated "saved" popups
+    const now = Date.now();
+    if (lastToastRef.current.m === message && now - lastToastRef.current.t < 4000) return;
+    lastToastRef.current = { m: message, t: now };
     setToastNotification({ message, type });
-    setTimeout(() => {
-      setToastNotification((prev) => (prev?.message === message ? null : prev));
-    }, 3500);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastNotification(null), 3000);
   };
 
   // Invoice Handlers
@@ -1501,7 +1507,7 @@ export default function App() {
             <strong>{companyInfo.name}</strong> &bull; {companyInfo.processingName}
           </div>
           <div className="text-[11px]">
-            {companyInfo.address} | {companyInfo.phones.join(', ')}
+            {getFullAddress(companyInfo)} | {companyInfo.phones.join(', ')}
           </div>
         </div>
       </footer>

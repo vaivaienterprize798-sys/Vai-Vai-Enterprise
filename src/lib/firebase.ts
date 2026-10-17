@@ -246,9 +246,30 @@ export function onSyncIssue(cb: (issue: SyncIssue) => void): () => void {
   cb(lastIssue);
   return () => syncIssueListeners.delete(cb);
 }
-export function reportSyncIssue(message: string | null) {
-  lastIssue = message ? { message, at: Date.now() } : null;
+// Calm notifier: a problem is shown only if it is still there after 45s
+// (short network blips no longer make the warning pop up again and again),
+// the same message is never re-sent, and "fixed" clears it instantly.
+let issueTimer: any = null;
+let queuedIssue: string | null = null;
+function emitIssue(issue: SyncIssue) {
+  if ((issue?.message || null) === (lastIssue?.message || null)) return;
+  lastIssue = issue;
   syncIssueListeners.forEach((cb) => cb(lastIssue));
+}
+export function reportSyncIssue(message: string | null) {
+  if (!message) {
+    queuedIssue = null;
+    if (issueTimer) { clearTimeout(issueTimer); issueTimer = null; }
+    emitIssue(null);
+    return;
+  }
+  queuedIssue = message;
+  if (lastIssue) { emitIssue({ message, at: Date.now() }); return; }
+  if (issueTimer) return;
+  issueTimer = setTimeout(() => {
+    issueTimer = null;
+    if (queuedIssue && pendingCount() > 0) emitIssue({ message: queuedIssue, at: Date.now() });
+  }, 45000);
 }
 
 // Firestore document hard limit is 1 MiB. Drop huge embedded images (data URLs)
@@ -649,28 +670,46 @@ export const cloudDbService = {
     let unsub: Unsubscribe = () => {};
     let stopped = false;
     let retryTimer: any = null;
-    const listen = () => {
-      unsub = onSnapshot(
-        colRef,
-        { includeMetadataChanges: true },
-        (snapshot) => {
+    // Smooth live sync: ignore our own local echo, merge bursts of changes
+    // (debounce), and skip updates whose data did not actually change.
+    // This stops the app from freezing for ~1s on every save.
+    let debounceTimer: any = null;
+    let latest: any = null;
+    let lastSig = '';
+    const deliver = () => {
+      debounceTimer = null;
+      const snapshot = latest;
+      if (!snapshot || stopped) return;
+      handle(snapshot);
+    };
+    const handle = (snapshot: any) => {
           const pending = pendingFor(collectionName);
-          // Never overwrite local data with an empty offline-cache snapshot
           if (snapshot.empty && !pending.length && (snapshot.metadata.fromCache || hasLocalData(collectionName))) return;
           const map = new Map<string, any>();
-          snapshot.forEach((d) => { map.set(d.id, d.data()); });
-          // Local changes not yet confirmed by the cloud win over cloud copies
+          snapshot.forEach((d: any) => { map.set(d.id, d.data()); });
           for (const w of pending) {
             if (w.data === null) map.delete(w.id);
             else map.set(w.id, w.data);
           }
           if (!map.size && snapshot.metadata.fromCache) return;
-          onData(Array.from(map.values()) as T[]);
+          const items = Array.from(map.values());
+          let sig = '';
+          try { sig = JSON.stringify(items); } catch { sig = String(Math.random()); }
+          if (sig === lastSig) return;
+          lastSig = sig;
+          onData(items as T[]);
+    };
+    const listen = () => {
+      unsub = onSnapshot(
+        colRef,
+        (snapshot) => {
+          latest = snapshot;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(deliver, snapshot.metadata.hasPendingWrites ? 1500 : 400);
         },
         (error) => {
           if (onError) onError(error);
           console.warn(`[Firestore Real-time] ${collectionName} listener stopped:`, error?.code);
-          // A stopped listener never restarts by itself -> retry automatically
           if (!stopped) {
             retryTimer = setTimeout(async () => {
               try { await ensureCloudAccess(true); } catch {}
@@ -681,7 +720,7 @@ export const cloudDbService = {
       );
     };
     listen();
-    return () => { stopped = true; clearTimeout(retryTimer); unsub(); };
+    return () => { stopped = true; clearTimeout(retryTimer); clearTimeout(debounceTimer); unsub(); };
   },
 
   // Subscribe to single Company doc

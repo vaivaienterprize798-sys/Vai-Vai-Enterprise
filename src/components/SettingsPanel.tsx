@@ -57,6 +57,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [processingName, setProcessingName] = useState(currentCompany.processingName);
   const [email, setEmail] = useState(currentCompany.email);
   const [address, setAddress] = useState(currentCompany.address);
+  const [shopAddress, setShopAddress] = useState(currentCompany.shopAddress || '');
   const [phone1, setPhone1] = useState(currentCompany.phones[0] || '01725-550002');
   const [phone2, setPhone2] = useState(currentCompany.phones[1] || '01746-383825');
   const [businessTypeBn, setBusinessTypeBn] = useState(currentCompany.businessTypeBn);
@@ -107,6 +108,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       processingName: processingName.trim(),
       email: email.trim(),
       address: address.trim(),
+      shopAddress: shopAddress.trim(),
       phones: [phone1.trim(), phone2.trim()].filter(Boolean),
       businessTypeBn: businessTypeBn.trim(),
       businessTypeEn: businessTypeEn.trim(),
@@ -327,7 +329,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <div className="md:col-span-2">
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                {lang === 'bn' ? 'কোম্পানি ঠিকানা (Full Address)' : 'Official Address'} <span className="text-red-500">*</span>
+                {lang === 'bn' ? 'কর্পোরেট অফিস ঠিকানা (Corporate Office)' : 'Corporate Office Address'} <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -336,6 +338,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 placeholder="Shakib-Siyam Super Market, 14 No. Lane, Puran Potti Road, Hiraabil, Siddhirganj, Narayanganj"
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                 required
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'দোকানের ঠিকানা (Dokan Address)' : 'Dokan / Shop Address'}
+              </label>
+              <input
+                type="text"
+                value={shopAddress}
+                onChange={(e) => setShopAddress(e.target.value)}
+                placeholder="Dokan address"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
               />
             </div>
 

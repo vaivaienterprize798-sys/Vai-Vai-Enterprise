@@ -1,3 +1,4 @@
+import { getFullAddress } from '../types';
 import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
@@ -972,7 +973,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
-              {companyInfo.address}
+              {getFullAddress(companyInfo)}
             </p>
           </div>
         </div>
