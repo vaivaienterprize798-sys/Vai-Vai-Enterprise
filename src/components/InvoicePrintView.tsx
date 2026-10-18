@@ -232,6 +232,26 @@ _আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="bg-slate-100 border-t-2 border-slate-400 font-black text-slate-900">
+                <td colSpan={3} className="py-1.5 px-2 border-r border-slate-400 text-right uppercase text-[10px]">
+                  {lang === 'bn' ? 'মোট পরিমাণ (Total Qty):' : 'Total Quantity:'}
+                </td>
+                <td className="py-1.5 px-2 border-r border-slate-400 text-center font-mono">
+                  {Object.entries(
+                    invoice.items.reduce<Record<string, number>>((acc, it) => {
+                      const u = it.unit === 'gm' ? (lang === 'bn' ? 'গ্রাম' : 'gm') : (it.unit || '');
+                      acc[u] = (acc[u] || 0) + (Number(it.quantity) || 0);
+                      return acc;
+                    }, {})
+                  ).map(([u, q]) => (
+                    <span key={u} className="block">{formatNumber(Math.round(q * 1000) / 1000, lang)} {u}</span>
+                  ))}
+                </td>
+                <td className="py-1.5 px-2 border-r border-slate-400" />
+                <td className="py-1.5 px-2 text-right font-mono">{formatCurrency(invoice.subtotal, lang)}</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
 

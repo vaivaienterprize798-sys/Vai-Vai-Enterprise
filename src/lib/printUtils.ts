@@ -71,12 +71,12 @@ ${styleTags}
 html, body { margin: 0 !important; padding: 0 !important; background: #ffffff !important; color: #0f172a !important; font-family: 'Hind Siliguri', 'Outfit', system-ui, sans-serif !important; }
 .print-page-wrapper { max-width: 210mm; margin: 0 auto; padding: 0; background: #ffffff; }
 .one-page-sheet { width: 100% !important; max-width: 100% !important; margin: 0 auto !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: #ffffff !important; }
-table { width: 100% !important; border-collapse: collapse !important; page-break-inside: avoid !important; }
+table { width: 100% !important; border-collapse: collapse !important; page-break-inside: auto !important; break-inside: auto !important; }
 tr { page-break-inside: avoid !important; }
 @media print { .no-print { display: none !important; } }
 </style>
 <style>
-@media print { .print-page-wrapper { zoom: var(--one-page-fit, 1); } tr, .rounded-xl, .rounded-lg { break-inside: avoid; } }
+@media print { .print-page-wrapper { zoom: var(--one-page-fit, 1); } tr { break-inside: avoid; } .rounded-xl, .rounded-lg, .rounded-2xl, .company-info-block { break-inside: auto !important; page-break-inside: auto !important; break-before: auto !important; page-break-before: auto !important; } }
 </style>
 </head>
 <body>

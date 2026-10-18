@@ -59,8 +59,8 @@ export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State
-  const [formVehicleNo, setFormVehicleNo] = useState('ঢাকা মেট্রো-ন ১১-২২৩৩');
-  const [formDriverName, setFormDriverName] = useState('রফিক ড্রাইভার');
+  const [formVehicleNo, setFormVehicleNo] = useState('Dhaka Matro Cha-19-6750');
+  const [formDriverName, setFormDriverName] = useState('Md. Shohag Driver');
   const [formCategory, setFormCategory] = useState<CarExpense['category']>('fuel');
   const [formTitle, setFormTitle] = useState('');
   const [formAmount, setFormAmount] = useState<number>(0);
@@ -71,8 +71,8 @@ export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
   const [formNotes, setFormNotes] = useState('');
 
   const openNewModal = () => {
-    setFormVehicleNo('ঢাকা মেট্রো-ন ১১-২২৩৩');
-    setFormDriverName('রফিক ড্রাইভার');
+    setFormVehicleNo('Dhaka Matro Cha-19-6750');
+    setFormDriverName('Md. Shohag Driver');
     setFormCategory('fuel');
     setFormTitle('');
     setFormAmount(0);
