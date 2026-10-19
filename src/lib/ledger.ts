@@ -67,11 +67,16 @@ export const signedToDueAdvance = (party: Pick<Party, 'type'>, signed: number) =
 export const signedToNatural = (party: Pick<Party, 'type'>, signed: number) =>
   round2(signed * partyDirection(party));
 
-export const invoiceEffect = (inv: Invoice) => {
+export const invoiceEffect = (inv: Invoice, party?: Pick<Party, 'type'>) => {
   const net = num(inv.netInvoiceAmount);
   const paid = num(inv.paidAmount);
   if (inv.mode === 'purchase') {
     return { debit: paid, credit: net };
+  }
+  // Sales to a party always REDUCES that party's due (for every party type).
+  // Supplier: sales already reduces what we owe them via the debit side.
+  if (party && partyDirection(party) === 1) {
+    return { debit: 0, credit: net + paid };
   }
   return { debit: net, credit: paid };
 };
@@ -93,7 +98,7 @@ export const computePartyLedger = (party: Party, invoices: Invoice[]): PartyLedg
   const list = (invoices || []).filter((inv) => invoiceBelongsToParty(inv, party)).sort(sortChronological);
   let running = openingSigned;
   const rows: LedgerRow[] = list.map((invoice) => {
-    const { debit, credit } = invoiceEffect(invoice);
+    const { debit, credit } = invoiceEffect(invoice, party);
     running = round2(running + debit - credit);
     return { invoice, debit, credit, balance: running };
   });
@@ -229,7 +234,7 @@ export const partyStatementEntries = (party: Party, invoices: Invoice[], lang: '
   return (invoices || [])
     .filter((inv) => invoiceBelongsToParty(inv, party))
     .map((inv) => {
-      const { debit, credit } = invoiceEffect(inv);
+      const { debit, credit } = invoiceEffect(inv, party);
       const dr = dir === 1 ? debit : credit;
       const cr = dir === 1 ? credit : debit;
       return {
