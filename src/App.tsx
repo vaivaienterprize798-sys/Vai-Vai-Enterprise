@@ -1,5 +1,5 @@
 import { CompanyAddresses } from './components/CompanyAddresses';
-import React, { useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
 import { InvoiceList } from './components/InvoiceList';
@@ -179,6 +179,59 @@ export default function App() {
 
   // Active Navigation Tab
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
+
+  // Show a lightweight welcome dialog on each fresh app launch.
+  const [showWelcomePopup, setShowWelcomePopup] = useState(true);
+
+  // Keep Android/PWA Back navigation inside the app and move through visited tabs.
+  const skipNextTabHistoryPush = useRef(false);
+  const currentTabRef = useRef(currentTab);
+  currentTabRef.current = currentTab;
+
+  useEffect(() => {
+    // Establish an in-app history entry so the first Back press does not immediately
+    // leave the installed PWA when there is no previous in-app page.
+    if (!window.history.state?.vaiVaiApp) {
+      window.history.replaceState(
+        { ...(window.history.state || {}), vaiVaiApp: true, appTab: currentTabRef.current },
+        '',
+        window.location.href
+      );
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state?.vaiVaiApp) {
+        const previousTab = typeof event.state.appTab === 'string' ? event.state.appTab : 'dashboard';
+        if (previousTab !== currentTabRef.current) {
+          skipNextTabHistoryPush.current = true;
+          setCurrentTab(previousTab);
+        }
+      } else {
+        // The user reached the edge of the app's history. Restore an app entry
+        // rather than allowing an accidental Back press to close the PWA.
+        window.history.pushState(
+          { vaiVaiApp: true, appTab: currentTabRef.current },
+          '',
+          window.location.href
+        );
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (skipNextTabHistoryPush.current) {
+      skipNextTabHistoryPush.current = false;
+      return;
+    }
+    window.history.pushState(
+      { vaiVaiApp: true, appTab: currentTab },
+      '',
+      window.location.href
+    );
+  }, [currentTab]);
 
   // Modals
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -1043,18 +1096,54 @@ export default function App() {
 
   const t = translations[lang];
 
+  const welcomePopup = showWelcomePopup ? (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vai-vai-welcome-title"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-amber-300/40 bg-white text-slate-900 shadow-2xl dark:bg-slate-900 dark:text-white"
+      >
+        <div className="bg-gradient-to-br from-slate-950 via-blue-950 to-slate-800 px-6 py-8 text-center text-white">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-amber-300/70 bg-white/10 text-2xl font-bold text-amber-300">
+            VV
+          </div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-amber-300">Welcome to</p>
+          <h2 id="vai-vai-welcome-title" className="text-2xl font-extrabold leading-tight">
+            Vai Vai Enterprize Family
+          </h2>
+          <p className="mt-3 text-sm text-slate-200">আপনাকে আমাদের পরিবারে স্বাগতম!</p>
+        </div>
+        <div className="p-5">
+          <button
+            type="button"
+            onClick={() => setShowWelcomePopup(false)}
+            className="w-full rounded-xl bg-amber-400 px-5 py-3 font-bold text-slate-950 shadow transition hover:bg-amber-300 active:scale-[0.99]"
+          >
+            {userSession ? 'অ্যাপে প্রবেশ করুন' : 'Login করতে এগিয়ে যান'}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!userSession) {
     return (
-      <AuthScreen
-        staffList={staff}
-        companyInfo={companyInfo}
-        lang={lang}
-        onLogin={handleLogin}
-      />
+      <>
+        <AuthScreen
+          staffList={staff}
+          companyInfo={companyInfo}
+          lang={lang}
+          onLogin={handleLogin}
+        />
+        {welcomePopup}
+      </>
     );
   }
 
   return (
+    <>
+    {welcomePopup}
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
       {/* Side-by-side Navigation Header */}
       <Navbar
@@ -1520,5 +1609,6 @@ export default function App() {
         </div>
       </footer>
     </div>
+    </>
   );
 }
