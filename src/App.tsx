@@ -182,6 +182,7 @@ export default function App() {
 
   // Show a lightweight welcome dialog on each fresh app launch.
   const [showWelcomePopup, setShowWelcomePopup] = useState(true);
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
 
   // Keep Android/PWA Back navigation inside the app and move through visited tabs.
   const skipNextTabHistoryPush = useRef(false);
@@ -207,8 +208,9 @@ export default function App() {
           setCurrentTab(previousTab);
         }
       } else {
-        // The user reached the edge of the app's history. Restore an app entry
-        // rather than allowing an accidental Back press to close the PWA.
+        // At the edge of in-app history, ask before leaving the installed PWA.
+        // Browsers do not allow web apps to close their own window directly.
+        setShowExitConfirmation(true);
         window.history.pushState(
           { vaiVaiApp: true, appTab: currentTabRef.current },
           '',
@@ -1127,6 +1129,19 @@ export default function App() {
     </div>
   ) : null;
 
+  const exitConfirmation = showExitConfirmation ? (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="presentation">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="exit-confirmation-title" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+        <h2 id="exit-confirmation-title" className="text-lg font-extrabold">অ্যাপ থেকে বের হতে চান?</h2>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">আপনি কি Vai Vai Enterprize Family অ্যাপটি বন্ধ করতে চান?</p>
+        <div className="mt-5 flex gap-3">
+          <button type="button" autoFocus onClick={() => setShowExitConfirmation(false)} className="flex-1 rounded-xl border border-slate-300 px-4 py-3 font-semibold dark:border-slate-600">অ্যাপে থাকুন</button>
+          <button type="button" onClick={() => { setShowExitConfirmation(false); window.history.go(-2); }} className="flex-1 rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950">বের হয়ে যান</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!userSession) {
     return (
       <>
@@ -1137,6 +1152,7 @@ export default function App() {
           onLogin={handleLogin}
         />
         {welcomePopup}
+        {exitConfirmation}
       </>
     );
   }
@@ -1144,6 +1160,7 @@ export default function App() {
   return (
     <>
     {welcomePopup}
+    {exitConfirmation}
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
       {/* Side-by-side Navigation Header */}
       <Navbar
