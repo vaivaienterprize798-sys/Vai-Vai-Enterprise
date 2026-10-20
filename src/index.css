@@ -208,3 +208,19 @@
 .capture-mode [style*="font-size: 7px"], .capture-mode [style*="font-size: 8px"],
 .capture-mode [style*="font-size: 9px"], .capture-mode [style*="font-size: 10px"] { font-size: 12px !important; }
 .capture-mode [style*="font-size: 11px"] { font-size: 13px !important; }
+
+/* Exit confirmation (mobile back button) */
+.rsr-exit-overlay{position:fixed;inset:0;z-index:99998;display:flex;align-items:flex-end;justify-content:center;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);animation:rsrFade .2s ease-out}
+.rsr-exit-card{width:100%;max-width:420px;margin:12px;padding:24px 20px 18px;border-radius:22px;background:#fff;color:#0f172a;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.3);animation:rsrUp .25s ease-out}
+.dark .rsr-exit-card{background:#1e293b;color:#f1f5f9}
+.rsr-exit-icon{width:52px;height:52px;margin:0 auto 10px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;background:#fee2e2;color:#dc2626}
+.rsr-exit-card h3{margin:0 0 6px;font-size:18px;font-weight:700}
+.rsr-exit-card p{margin:0 0 18px;font-size:14px;opacity:.75}
+.rsr-exit-actions{display:flex;gap:10px}
+.rsr-exit-actions button{flex:1;padding:12px;border-radius:12px;font-weight:600;font-size:15px;border:0;cursor:pointer}
+.rsr-exit-stay{background:#10b981;color:#fff}
+.rsr-exit-close{background:#f1f5f9;color:#dc2626}
+.dark .rsr-exit-close{background:#334155;color:#fca5a5}
+@media (min-width:640px){.rsr-exit-overlay{align-items:center}}
+@keyframes rsrFade{from{opacity:0}to{opacity:1}}
+@keyframes rsrUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
