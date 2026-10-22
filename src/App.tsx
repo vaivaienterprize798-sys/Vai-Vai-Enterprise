@@ -281,6 +281,9 @@ export default function App() {
             const cleanInvoices = storageService.getInvoices();
             setInvoices(cleanInvoices);
             setParties(storageService.getParties());
+            // Avg-rate guard: re-derive average purchase rates from the refreshed history
+            storageService.reconcileStockAvgRates();
+            setStock(storageService.getStock());
           }
         })
       );
@@ -291,6 +294,9 @@ export default function App() {
           if (Array.isArray(cloudStock)) {
             setStock(cloudStock);
             localStorage.setItem('rsr_stock_v1', JSON.stringify(cloudStock));
+            // Avg-rate guard: never let an older cloud copy bring a drifted rate back
+            storageService.reconcileStockAvgRates();
+            setStock(storageService.getStock());
           }
         })
       );
@@ -513,6 +519,12 @@ export default function App() {
         } catch (err) {
           console.warn('[AutoSync] initial sync notice:', err);
         }
+      }
+      // Permanent avg-rate guard: repair any drifted average purchase rates on startup
+      try {
+        storageService.reconcileStockAvgRates();
+      } catch (err) {
+        console.warn('[AvgRate] reconcile notice:', err);
       }
       if (!cancelled) setupListeners();
     };

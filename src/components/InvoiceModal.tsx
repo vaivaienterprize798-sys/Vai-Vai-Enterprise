@@ -728,8 +728,8 @@ Thank you for doing business with us!`;
                                 }`}
                                 title={
                                   lang === 'bn'
-                                    ? `গড় ক্রয় দর: ৳${matchedStock.purchaseAvgRate || matchedStock.purchaseRate}`
-                                    : `Avg Rate: ৳${matchedStock.purchaseAvgRate || matchedStock.purchaseRate}`
+                                    ? `গড় ক্রয় দর: ৳${matchedStock.purchaseAvgRate ?? matchedStock.purchaseRate}`
+                                    : `Avg Rate: ৳${matchedStock.purchaseAvgRate ?? matchedStock.purchaseRate}`
                                 }
                               >
                                 {formatNumber(matchedStock.quantity, lang)} {matchedStock.unit}

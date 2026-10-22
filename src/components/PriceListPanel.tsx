@@ -202,7 +202,7 @@ export const PriceListPanel: React.FC<PriceListPanelProps> = ({
       return;
     }
     const importedItems: PriceListItem[] = stock.map((stk) => {
-      const baseRate = stk.purchaseRate || stk.purchaseAvgRate || 200;
+      const baseRate = stk.purchaseAvgRate ?? stk.purchaseRate ?? 200;
       // Suggested baseline retail prices with 3 columns:
       const cash = Math.round(baseRate * 1.15); // +15% cash margin
       const daily = Math.round(baseRate * 1.25); // +25% daily installment

@@ -224,7 +224,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     setFormOpeningQty(item.openingQty || 0);
     setFormQuantity(item.quantity);
     setFormUnit(item.unit);
-    setFormPurchaseRate(item.purchaseAvgRate || item.purchaseRate || 0);
+    setFormPurchaseRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0);
     setFormMinAlert(item.minAlertQty);
     setIsModalOpen(true);
   };
@@ -270,7 +270,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
   // Overall totals based on Purchase Rate
   const totalValuation = useMemo(() => {
     return stock.reduce(
-      (acc, it) => acc + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
+      (acc, it) => acc + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
       0
     );
   }, [stock]);
@@ -307,7 +307,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             getText={() => {
               const totalQty = stock.reduce((s, it) => s + it.quantity, 0);
               const totalVal = stock.reduce(
-                (s, it) => s + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
+                (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
                 0
               );
               return `*${companyInfo.name} - স্টক রিপোর্ট*\n📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}\n────────────────────────\n📦 মোট পণ্য: ${stock.length} টি\n🔢 মোট স্টক কোয়ান্টিটি: ${totalQty}\n💰 মোট মজুদ মূল্য: ৳${totalVal.toLocaleString()}\n────────────────────────\n_RSR Enterprise_`;
@@ -588,7 +588,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredStock.map((it, idx) => {
                 const isLow = it.quantity <= it.minAlertQty;
-                const effectiveAvgRate = it.purchaseAvgRate || it.purchaseRate || 0;
+                const effectiveAvgRate = it.purchaseAvgRate ?? it.purchaseRate ?? 0;
                 const rowValuation = it.quantity * effectiveAvgRate;
                 const { stockIn, stockOut } = getItemStats(it.code, it.nameBn, it.nameEn);
 
@@ -664,7 +664,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                       )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono text-slate-800 dark:text-slate-200">
-                      {formatCurrency(it.purchaseRate || 0, lang)}
+                      {formatCurrency(it.purchaseAvgRate ?? it.purchaseRate ?? 0, lang)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
                       {formatCurrency(rowValuation, lang)}
@@ -929,6 +929,11 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs"
                     required
                   />
+                  <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                    {lang === 'bn'
+                      ? 'চালান থাকা মালের গড় ক্রয় দর কেনার চালান থেকে নিজে থেকেই হিসাব হয়'
+                      : 'For items with invoices, the avg rate is calculated automatically from purchase invoices'}
+                  </p>
                 </div>
 
                 <div>

@@ -116,6 +116,37 @@ const PARTY_RESET_KEY = 'rsr_party_reset_at_v1';
 const isPartyInvoice = (inv: Invoice) => inv.type !== 'processing' && !!(inv.partyId || inv.partyName);
 const FIRESTORE_BATCH_LIMIT = 450;
 
+/**
+ * All-time weighted average purchase rate for a stock item, derived from the FULL
+ * purchase invoice history: (sum of purchased qty * unit price) / (sum of purchased qty).
+ * Sales never affect it and an empty stock never resets it. This is the single source
+ * of truth for the average rate, so editing or deleting any invoice can never drift it.
+ * Returns null when the item has no purchase records, so manually set rates survive.
+ */
+const computeAllTimeAvgRateForItem = (stockItem: StockItem): number | null => {
+  const norm = (v?: string) => (v || '').trim().toLowerCase();
+  const c = norm(stockItem?.code);
+  const bn = norm(stockItem?.nameBn);
+  const en = norm(stockItem?.nameEn);
+  let qty = 0;
+  let value = 0;
+  for (const inv of storageService.getInvoices()) {
+    if (inv?.mode !== 'purchase' || !Array.isArray(inv.items)) continue;
+    for (const it of inv.items) {
+      if (!it) continue;
+      const ic = norm(it.code);
+      const inm = norm(it.name);
+      const matched = (!!c && !!ic && ic === c) || (!!inm && ((!!bn && inm === bn) || (!!en && inm === en)));
+      if (!matched) continue;
+      const q = Number(it.quantity) || 0;
+      qty += q;
+      value += q * (Number(it.unitPrice) || 0);
+    }
+  }
+  if (qty <= 0) return null;
+  return Math.round((value / qty) * 100) / 100;
+};
+
 // API Service Wrapper for Local Database
 export const storageService = {
   // Invoices
@@ -162,13 +193,15 @@ export const storageService = {
     const invoice = invoices.find((i) => i.id === id);
     if (!invoice) return;
 
-    // 1. Reverse Stock Adjustment (quantity AND weighted average rate)
-    storageService.applyInvoiceToStock(invoice, -1);
-
-    // 3. Final Delete from local list and Cloud
+    // 1. Remove the invoice from the list FIRST, so the history-based average
+    //    purchase rate recomputation below no longer counts it.
     const filtered = invoices.filter((i) => i.id !== id);
     saveToStorage(STORAGE_KEYS.INVOICES, filtered);
-    // Recalculate the party balance from its full chronological ledger
+
+    // 2. Reverse Stock Adjustment (quantity; average rate is re-derived from history)
+    storageService.applyInvoiceToStock(invoice, -1);
+
+    // 3. Recalculate the party balance from its full chronological ledger
     if (invoice.partyId || invoice.partyName) {
       storageService.applyInvoiceToParty(invoice);
     }
@@ -228,7 +261,10 @@ export const storageService = {
 
   /**
    * Apply (direction = 1) or reverse (direction = -1) an invoice on stock.
-   * Purchases update quantity + weighted average purchase rate; sales only reduce quantity.
+   * Quantity is adjusted incrementally (purchases add, sales subtract, clamped at 0).
+   * The average purchase rate is ALWAYS re-derived from the full purchase invoice
+   * history (all-time weighted average) instead of being carried forward, so it can
+   * never drift or reset when stock reaches zero. Sales only reduce quantity.
    * Multiple lines of the same product in one invoice are aggregated.
    */
   applyInvoiceToStock: (invoice: Invoice, direction: 1 | -1 = 1): void => {
@@ -248,36 +284,57 @@ export const storageService = {
       );
       if (lines.length === 0) return stockItem;
       const qty = lines.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-      const value = lines.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
       if (qty <= 0) return stockItem;
       modified.add(stockItem.id);
       const oldQty = Math.max(0, Number(stockItem.quantity) || 0);
       const oldAvg = Number(stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? 0) || 0;
       const lastUpdated = invoice.date || today;
 
+      // Average rate: all-time weighted average from the full purchase history
+      // (self-healing). Falls back to the existing rate for items without purchase
+      // records (e.g. manually added opening stock).
+      const historyAvg = computeAllTimeAvgRateForItem(stockItem);
+      const newAvg = historyAvg != null ? historyAvg : oldAvg;
+
       if (isPurchase) {
         if (direction === 1) {
           const newQty = oldQty + qty;
-          const newAvg = newQty > 0 ? r2((oldQty * oldAvg + value) / newQty) : r2(value / qty);
           return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
         }
-        // Reverse a purchase: remove its quantity and its value from the weighted average
+        // Reverse a purchase: only the quantity is removed; the average rate is
+        // history-based and therefore already excludes/keeps the right value.
         const newQty = Math.max(0, oldQty - qty);
-        let newAvg = oldAvg;
-        if (newQty > 0) {
-          const remainingValue = oldQty * oldAvg - value;
-          newAvg = remainingValue > 0 ? r2(remainingValue / newQty) : oldAvg;
-        }
         return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
       }
       // Sales never change the average purchase rate
       const newQty = direction === 1 ? Math.max(0, oldQty - qty) : oldQty + qty;
-      return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: oldAvg, purchaseRate: oldAvg, lastUpdated };
+      return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
     });
     saveToStorage(STORAGE_KEYS.STOCK, updatedStock);
     updatedStock.forEach((stk) => {
       if (modified.has(stk.id)) cloudDbService.saveDocument('stock', stk).catch(() => {});
     });
+  },
+
+  // Permanent avg-rate guard: re-derive every stock item's average purchase rate from
+  // the full invoice history and repair any drift (older versions, cloud copies, etc.).
+  reconcileStockAvgRates: (): number => {
+    const stock = storageService.getStock();
+    const fixed: StockItem[] = [];
+    const updated = stock.map((item) => {
+      const hist = computeAllTimeAvgRateForItem(item);
+      if (hist == null) return item;
+      const cur = Number(item.purchaseAvgRate ?? item.purchaseRate ?? 0) || 0;
+      if (Math.abs(cur - hist) <= 0.005) return item;
+      const next = { ...item, purchaseAvgRate: hist, purchaseRate: hist };
+      fixed.push(next);
+      return next;
+    });
+    if (fixed.length > 0) {
+      saveToStorage(STORAGE_KEYS.STOCK, updated);
+      fixed.forEach((stk) => cloudDbService.saveDocument('stock', stk).catch(() => {}));
+    }
+    return fixed.length;
   },
 
   // Parties

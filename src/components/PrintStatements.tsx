@@ -357,7 +357,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
     if (type === 'stock') {
       const totalQty = stockView.reduce((s, it) => s + it.quantity, 0);
       const totalVal = stockView.reduce(
-        (s, it) => s + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
+        (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
         0
       );
       summaryText += `📦 মোট পণ্য: ${stockView.length} টি\n🔢 মোট স্টক পরিমাণ: ${totalQty}\n💰 মোট মজুদ স্টক মূল্য: ৳${totalVal.toLocaleString()}\n`;
@@ -733,7 +733,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                 </thead>
                 <tbody>
                   {stockView.map((it, idx) => {
-                    const effectiveRate = it.purchaseRate || it.purchaseAvgRate || 0;
+                    const effectiveRate = it.purchaseAvgRate ?? it.purchaseRate ?? 0;
                     const { todayIn, todayOut } = getTodayItemStats(it.code, it.nameBn, it.nameEn);
                     return (
                       <tr key={it.id} className="border-b border-emerald-100 hover:bg-emerald-50/40">
@@ -786,7 +786,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     <td className="py-1.5 px-1.5 text-right font-mono text-emerald-950 text-sm font-black">
                       {formatCurrency(
                         stockView.reduce(
-                          (s, it) => s + it.quantity * (it.purchaseRate || it.purchaseAvgRate || 0),
+                          (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
                           0
                         ),
                         lang
@@ -1753,7 +1753,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
               const isProf = netProf >= 0;
               const roiPct = totalInvestmentOutflow > 0 ? (netProf / totalInvestmentOutflow) * 100 : 0;
               const profitMarginPct = totalSales > 0 ? (netProf / totalSales) * 100 : 0;
-              const stockValuation = stock.reduce((s, st) => s + st.quantity * (st.purchaseRate || st.purchaseAvgRate || 0), 0);
+              const stockValuation = stock.reduce((s, st) => s + st.quantity * (st.purchaseAvgRate ?? st.purchaseRate ?? 0), 0);
 
               return (
                 <div className="space-y-4">

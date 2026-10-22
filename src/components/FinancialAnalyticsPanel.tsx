@@ -354,7 +354,7 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
   const totalInvestmentOutflow = totalPartyBillPayments + totalOperationalExpenses + totalPaidStaffSalary;
   const currentStockValuation = useMemo(() => {
     return stock.reduce((sum, item) => {
-      const rate = item.purchaseRate || item.purchaseAvgRate || 0;
+      const rate = item.purchaseAvgRate ?? item.purchaseRate ?? 0;
       return sum + item.quantity * rate;
     }, 0);
   }, [stock]);
