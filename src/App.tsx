@@ -281,8 +281,9 @@ export default function App() {
             const cleanInvoices = storageService.getInvoices();
             setInvoices(cleanInvoices);
             setParties(storageService.getParties());
-            // Avg-rate guard: re-derive average purchase rates from the refreshed history
-            storageService.reconcileStockAvgRates();
+            // Avg-rate guard (local only: pushing from every snapshot caused devices to
+            // keep overwriting each other's stock docs and burn the cloud write quota)
+            storageService.reconcileStockAvgRates(false);
             setStock(storageService.getStock());
           }
         })
@@ -294,8 +295,8 @@ export default function App() {
           if (Array.isArray(cloudStock)) {
             setStock(cloudStock);
             localStorage.setItem('rsr_stock_v1', JSON.stringify(cloudStock));
-            // Avg-rate guard: never let an older cloud copy bring a drifted rate back
-            storageService.reconcileStockAvgRates();
+            // Avg-rate guard: local only (see above)
+            storageService.reconcileStockAvgRates(false);
             setStock(storageService.getStock());
           }
         })

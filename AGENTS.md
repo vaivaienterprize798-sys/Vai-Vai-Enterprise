@@ -6,3 +6,7 @@
 
 # Stock average purchase rate
 - `purchaseAvgRate` is always the all-time weighted average of purchase invoice lines (total purchase value / total purchased qty), derived from the full invoice history by `computeAllTimeAvgRateForItem` in `src/lib/storage.ts`. Sales never change it and an empty stock never resets it. `storageService.reconcileStockAvgRates()` repairs any drift and must stay wired on app startup and after cloud invoice/stock sync. Never replace this with incremental average-carry-forward math.
+
+# Stock quantity sync
+- Invoice stock movements are sent to Firestore only as atomic `increment()` deltas via `cloudDbService.incrementStockQuantity`, never as absolute quantities, so concurrent devices cannot overwrite each other. Only a manual stock edit (`saveStockItem`) writes an absolute quantity.
+- Failed cloud writes are kept in retry queues (`vv_pending_writes`, `vv_pending_increments`) and overlaid on incoming snapshots, so a snapshot never rolls local data back. Snapshot listeners must not push data back to the cloud (avoids device ping-pong and quota exhaustion).

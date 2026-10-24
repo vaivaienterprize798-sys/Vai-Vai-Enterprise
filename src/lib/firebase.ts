@@ -24,6 +24,7 @@ import {
   onSnapshot,
   Unsubscribe,
   enableIndexedDbPersistence,
+  increment,
 } from 'firebase/firestore';
 import fileConfig from '../../firebase-applet-config.json';
 
@@ -306,7 +307,25 @@ export const cloudDbService = {
       const sanitized = sanitizeForFirestore(item);
       await setDoc(doc(db, collectionName, item.id), sanitized, { merge: true });
     } catch (error) {
+      // Never lose a write: keep it in the retry queue until the cloud accepts it
+      queuePendingWrites([{ col: collectionName, id: String(item.id), data: item }]);
       handleFirestoreError(error, OperationType.WRITE, docPath);
+    }
+  },
+
+  /**
+   * Atomically change a stock item's quantity in the cloud (Firestore increment).
+   * Concurrent devices can never overwrite each other's stock movements this way.
+   * `fields` are the non-quantity fields (rate, lastUpdated) merged alongside.
+   */
+  incrementStockQuantity: async (id: string, delta: number, fields: Record<string, any> = {}): Promise<void> => {
+    const clean = sanitizeForFirestore({ ...fields });
+    delete (clean as any).quantity;
+    try {
+      await setDoc(doc(db, 'stock', id), { ...clean, quantity: increment(delta) }, { merge: true });
+    } catch (error) {
+      queuePendingIncrement('stock', id, delta, clean);
+      console.warn('[Cloud Sync] stock increment queued for retry:', error);
     }
   },
 
@@ -362,7 +381,7 @@ export const cloudDbService = {
         snapshot.forEach((docSnap) => {
           items.push(docSnap.data() as T);
         });
-        onData(items);
+        onData(overlayPending(collectionName, items) as T[]);
       },
       (error) => {
         if (onError) onError(error);
@@ -458,6 +477,52 @@ export function queuePendingWrites(items: PendingItem[]): void {
   _savePending(m);
 }
 
+// Pending atomic increments (e.g. stock quantity deltas) that failed to reach the cloud
+type PendingInc = { col: string; id: string; delta: number; fields: any };
+const PENDING_INC_KEY = 'vv_pending_increments';
+const _readInc = (): Record<string, PendingInc> => { try { return JSON.parse(localStorage.getItem(PENDING_INC_KEY) || '{}'); } catch { return {}; } };
+const _saveInc = (m: Record<string, PendingInc>) => { try { localStorage.setItem(PENDING_INC_KEY, JSON.stringify(m)); } catch {} };
+
+export function queuePendingIncrement(col: string, id: string, delta: number, fields: any = {}): void {
+  const m = _readInc();
+  const k = `${col}/${id}`;
+  const prev = m[k];
+  m[k] = { col, id, delta: (prev?.delta || 0) + delta, fields: { ...(prev?.fields || {}), ...fields } };
+  _saveInc(m);
+}
+
+/** Drop queued increments for a doc (used when the user sets an absolute quantity). */
+export function clearPendingIncrement(col: string, id: string): void {
+  const m = _readInc();
+  if (m[`${col}/${id}`]) { delete m[`${col}/${id}`]; _saveInc(m); }
+}
+
+/**
+ * Cloud snapshots do not yet contain writes still waiting in this device's retry
+ * queue. Overlay them so a snapshot never rolls local data (like stock qty) back.
+ */
+export function overlayPending(col: string, items: any[]): any[] {
+  const pend = _readPending();
+  const incs = _readInc();
+  const byId = new Map<string, any>();
+  items.forEach((it) => { if (it && it.id != null) byId.set(String(it.id), it); });
+  const extra: any[] = [];
+  for (const k of Object.keys(pend)) {
+    const p = pend[k];
+    if (p.col !== col) continue;
+    if (byId.has(p.id)) byId.set(p.id, { ...byId.get(p.id), ...p.data });
+    else extra.push(p.data);
+  }
+  for (const k of Object.keys(incs)) {
+    const p = incs[k];
+    if (p.col !== col || !byId.has(p.id)) continue;
+    const cur = byId.get(p.id);
+    byId.set(p.id, { ...cur, ...p.fields, quantity: Math.round(((Number(cur.quantity) || 0) + p.delta) * 100) / 100 });
+  }
+  const out = items.map((it) => (it && it.id != null ? byId.get(String(it.id)) : it));
+  return [...out, ...extra];
+}
+
 let _flushing: Promise<number> | null = null;
 export function flushPendingWrites(): Promise<number> {
   if (_flushing) return _flushing;
@@ -476,10 +541,32 @@ export function flushPendingWrites(): Promise<number> {
         break;
       }
     }
-    const left = Object.keys(_readPending()).length;
+    // Retry queued atomic increments one by one (each is merged into the doc)
+    const incs = _readInc();
+    for (const k of Object.keys(incs)) {
+      const it = incs[k];
+      try {
+        await withTimeout(setDoc(_doc(db, it.col, it.id), { ...sanitizeForFirestore(it.fields || {}), quantity: increment(it.delta) }, { merge: true }), 30000, 'Upload');
+        const cur = _readInc();
+        if (cur[k]) {
+          const rest = Math.round((cur[k].delta - it.delta) * 100) / 100;
+          if (Math.abs(rest) < 0.0001) delete cur[k]; else cur[k] = { ...cur[k], delta: rest };
+          _saveInc(cur);
+        }
+      } catch {
+        _setIssue({ message: 'কিছু ডেটা এখনো ক্লাউডে যায়নি, ইন্টারনেট ফিরলে যাবে' });
+        break;
+      }
+    }
+    const left = Object.keys(_readPending()).length + Object.keys(_readInc()).length;
     if (!left) _setIssue(null);
     return left;
   })().finally(() => { _flushing = null; });
   return _flushing;
 }
-if (typeof window !== 'undefined') window.addEventListener('online', () => { flushPendingWrites().catch(() => {}); });
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { flushPendingWrites().catch(() => {}); });
+  // Periodically retry anything still waiting so no entry is stuck on one device
+  window.setInterval(() => { if (navigator.onLine) flushPendingWrites().catch(() => {}); }, 60000);
+  setTimeout(() => { flushPendingWrites().catch(() => {}); }, 5000);
+}

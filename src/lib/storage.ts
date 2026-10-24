@@ -25,7 +25,7 @@ import {
   ChinaDirectPayment,
 } from '../types';
 import { withComputedBalance, withComputedBalances } from './ledger';
-import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites } from './firebase';
+import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites, clearPendingIncrement } from './firebase';
 import { collection, getDocs, getDoc, writeBatch, doc } from 'firebase/firestore';
 
 const STORAGE_KEYS = {
@@ -248,6 +248,8 @@ export const storageService = {
       updated = [...stock, itemWithAvg];
     }
     saveToStorage(STORAGE_KEYS.STOCK, updated);
+    // A manual save sets the absolute quantity, so drop any queued deltas for it
+    clearPendingIncrement('stock', itemWithAvg.id);
     cloudDbService.saveDocument('stock', itemWithAvg).catch((err) => {
       console.warn('[Cloud Sync] Stock push note:', err);
     });
@@ -261,10 +263,12 @@ export const storageService = {
 
   /**
    * Apply (direction = 1) or reverse (direction = -1) an invoice on stock.
-   * Quantity is adjusted incrementally (purchases add, sales subtract, clamped at 0).
-   * The average purchase rate is ALWAYS re-derived from the full purchase invoice
-   * history (all-time weighted average) instead of being carried forward, so it can
-   * never drift or reset when stock reaches zero. Sales only reduce quantity.
+   * Purchases add, sales subtract. The quantity change is sent to the cloud as an
+   * ATOMIC INCREMENT (never as an absolute number), so two devices saving at the same
+   * time - or a device with an older copy of the stock - can never overwrite each
+   * other's movements. Quantity is not clamped at 0: clamping made "delete/edit a sale"
+   * add back more than was removed, and cannot be combined with atomic increments.
+   * The average purchase rate is re-derived from the full purchase history.
    * Multiple lines of the same product in one invoice are aggregated.
    */
   applyInvoiceToStock: (invoice: Invoice, direction: 1 | -1 = 1): void => {
@@ -274,51 +278,53 @@ export const storageService = {
     const norm = (v?: string) => (v || '').trim().toLowerCase();
     const r2 = (n: number) => Math.round(n * 100) / 100;
     const stock = storageService.getStock();
-    const modified = new Set<string>();
+    const deltas = new Map<string, number>();
+    // Each invoice line is matched to exactly ONE stock item (code match first, then name),
+    // so a line can never move stock on two items that share a name.
+    const lineTarget = (it: any): StockItem | undefined => {
+      if (!it) return undefined;
+      const ic = norm(it.code);
+      const inm = norm(it.name);
+      if (ic) {
+        const byCode = stock.find((s) => norm(s.code) === ic);
+        if (byCode) return byCode;
+      }
+      if (inm) return stock.find((s) => norm(s.nameBn) === inm || norm(s.nameEn) === inm);
+      return undefined;
+    };
+    for (const it of invoice.items) {
+      const target = lineTarget(it);
+      if (!target) continue;
+      const q = Number(it.quantity) || 0;
+      if (q <= 0) continue;
+      deltas.set(target.id, (deltas.get(target.id) || 0) + q);
+    }
+    if (deltas.size === 0) return;
+    const sign = (isPurchase ? 1 : -1) * direction;
+    const lastUpdated = invoice.date || today;
+    const changes: { item: StockItem; delta: number }[] = [];
     const updatedStock = stock.map((stockItem) => {
-      const lines = invoice.items.filter(
-        (it) =>
-          it &&
-          ((it.code && norm(it.code) === norm(stockItem.code)) ||
-            (norm(it.name) && (norm(it.name) === norm(stockItem.nameBn) || norm(it.name) === norm(stockItem.nameEn))))
-      );
-      if (lines.length === 0) return stockItem;
-      const qty = lines.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-      if (qty <= 0) return stockItem;
-      modified.add(stockItem.id);
-      const oldQty = Math.max(0, Number(stockItem.quantity) || 0);
+      const qty = deltas.get(stockItem.id);
+      if (!qty) return stockItem;
+      const delta = r2(sign * qty);
+      const oldQty = Number(stockItem.quantity) || 0;
       const oldAvg = Number(stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? 0) || 0;
-      const lastUpdated = invoice.date || today;
-
-      // Average rate: all-time weighted average from the full purchase history
-      // (self-healing). Falls back to the existing rate for items without purchase
-      // records (e.g. manually added opening stock).
       const historyAvg = computeAllTimeAvgRateForItem(stockItem);
       const newAvg = historyAvg != null ? historyAvg : oldAvg;
-
-      if (isPurchase) {
-        if (direction === 1) {
-          const newQty = oldQty + qty;
-          return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
-        }
-        // Reverse a purchase: only the quantity is removed; the average rate is
-        // history-based and therefore already excludes/keeps the right value.
-        const newQty = Math.max(0, oldQty - qty);
-        return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
-      }
-      // Sales never change the average purchase rate
-      const newQty = direction === 1 ? Math.max(0, oldQty - qty) : oldQty + qty;
-      return { ...stockItem, quantity: r2(newQty), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
+      const next = { ...stockItem, quantity: r2(oldQty + delta), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
+      changes.push({ item: next, delta });
+      return next;
     });
     saveToStorage(STORAGE_KEYS.STOCK, updatedStock);
-    updatedStock.forEach((stk) => {
-      if (modified.has(stk.id)) cloudDbService.saveDocument('stock', stk).catch(() => {});
+    changes.forEach(({ item, delta }) => {
+      const { quantity: _q, ...fields } = item;
+      cloudDbService.incrementStockQuantity(item.id, delta, fields).catch(() => {});
     });
   },
 
   // Permanent avg-rate guard: re-derive every stock item's average purchase rate from
   // the full invoice history and repair any drift (older versions, cloud copies, etc.).
-  reconcileStockAvgRates: (): number => {
+  reconcileStockAvgRates: (pushToCloud: boolean = true): number => {
     const stock = storageService.getStock();
     const fixed: StockItem[] = [];
     const updated = stock.map((item) => {
@@ -332,7 +338,13 @@ export const storageService = {
     });
     if (fixed.length > 0) {
       saveToStorage(STORAGE_KEYS.STOCK, updated);
-      fixed.forEach((stk) => cloudDbService.saveDocument('stock', stk).catch(() => {}));
+      // Only the rate fields are pushed - never the quantity - so an older local
+      // quantity can never overwrite the real stock in the cloud.
+      if (pushToCloud) {
+        fixed.forEach((stk) =>
+          cloudDbService.saveDocument('stock', { id: stk.id, purchaseAvgRate: stk.purchaseAvgRate, purchaseRate: stk.purchaseRate } as any).catch(() => {})
+        );
+      }
     }
     return fixed.length;
   },
