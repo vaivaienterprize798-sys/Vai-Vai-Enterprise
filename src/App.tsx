@@ -57,6 +57,7 @@ import {
 import { storageService } from './lib/storage';
 import { translations } from './lib/translations';
 import seedData from './seed-data.json';
+import { isMainDevice } from './lib/deviceRole';
 import { PeriodFilterMode } from './components/PettyCashPanel';
 import { BackButtonGuard } from './components/BackButtonGuard';
 
@@ -122,6 +123,10 @@ export default function App() {
   // One-time auto-restore from bundled seed data if localStorage is empty
   const _seedRestored = (() => {
     const SEED_FLAG = 'rsr_seed_restored_v1';
+    // Secondary (newly logged-in) devices never load the bundled old data file
+    if (!localStorage.getItem(SEED_FLAG) && !isMainDevice()) {
+      localStorage.setItem(SEED_FLAG, 'skipped-secondary');
+    }
     if (!localStorage.getItem(SEED_FLAG)) {
       const existingInvoices = storageService.getInvoices();
       const existingStock = storageService.getStock();
@@ -500,6 +505,11 @@ export default function App() {
       if (started || cancelled) return;
       started = true;
       const AUTO_UPLOAD_KEY = 'rsr_auto_uploaded_v1';
+      // Secondary device: no bulk download of old data and no bulk upload over the main files.
+      // It only receives live updates written after it joined (see lib/deviceRole.ts).
+      if (!localStorage.getItem(AUTO_UPLOAD_KEY) && !isMainDevice()) {
+        localStorage.setItem(AUTO_UPLOAD_KEY, 'secondary-device');
+      }
       if (!localStorage.getItem(AUTO_UPLOAD_KEY)) {
         try {
           // First attempt to download latest data from cloud for new device

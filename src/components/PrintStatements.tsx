@@ -39,6 +39,7 @@ import {
 } from '../lib/translations';
 import { computeStaffPayroll } from '../lib/payrollCalc';
 import { storageService } from '../lib/storage';
+import { partiesWithBalance } from '../lib/partyPrint';
 import { computePartyLedger, signedToNatural, partyNaturalOpening, balanceBefore } from '../lib/ledger';
 import { executePrint, exportElementToPdf } from '../lib/printUtils';
 import { CompanyLogo } from './CompanyLogo';
@@ -388,7 +389,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       } else {
         const totalDue = parties.reduce((s, p) => s + p.currentDue, 0);
         const totalAdv = parties.reduce((s, p) => s + p.currentAdvance, 0);
-        summaryText += `👥 মোট পার্টি: ${parties.length} জন\n🔴 মোট পাওনা বকেয়া (Receivable Due): ৳${totalDue.toLocaleString()}\n🟢 মোট অগ্রিম জমা (Party Advance): ৳${totalAdv.toLocaleString()}\n`;
+        summaryText += `👥 মোট পার্টি: ${partiesWithBalance(parties).length} জন\n🔴 মোট পাওনা বকেয়া (Receivable Due): ৳${totalDue.toLocaleString()}\n🟢 মোট অগ্রিম জমা (Party Advance): ৳${totalAdv.toLocaleString()}\n`;
       }
     } else if (type === 'financial') {
       const monthLabel = formatMonthDisplay(selectedMonth);
@@ -1050,7 +1051,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {parties.map((p, idx) => (
+                    {partiesWithBalance(parties).map((p, idx) => (
                       <tr key={p.id} className="border-b border-blue-100 hover:bg-blue-50/40">
                         <td className="py-1.5 px-2 border-r border-blue-100 text-center font-mono text-slate-500">
                           {formatNumber(idx + 1, lang)}

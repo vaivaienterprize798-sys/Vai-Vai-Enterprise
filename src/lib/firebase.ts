@@ -27,6 +27,10 @@ import {
   increment,
 } from 'firebase/firestore';
 import fileConfig from '../../firebase-applet-config.json';
+import { initDeviceRole, stampForCloud, filterForDevice } from './deviceRole';
+
+// Decide main/secondary role before anything else touches local data
+initDeviceRole();
 
 // Real Firebase settings come from (in priority order):
 // 1. In-app setup saved to localStorage (easiest — paste once in the Cloud Sync panel)
@@ -304,11 +308,12 @@ export const cloudDbService = {
   ): Promise<void> => {
     const docPath = `${collectionName}/${item.id}`;
     try {
-      const sanitized = sanitizeForFirestore(item);
+      const stamped = stampForCloud(item);
+      const sanitized = sanitizeForFirestore(stamped);
       await setDoc(doc(db, collectionName, item.id), sanitized, { merge: true });
     } catch (error) {
       // Never lose a write: keep it in the retry queue until the cloud accepts it
-      queuePendingWrites([{ col: collectionName, id: String(item.id), data: item }]);
+      queuePendingWrites([{ col: collectionName, id: String(item.id), data: stampForCloud(item) }]);
       handleFirestoreError(error, OperationType.WRITE, docPath);
     }
   },
@@ -319,7 +324,7 @@ export const cloudDbService = {
    * `fields` are the non-quantity fields (rate, lastUpdated) merged alongside.
    */
   incrementStockQuantity: async (id: string, delta: number, fields: Record<string, any> = {}): Promise<void> => {
-    const clean = sanitizeForFirestore({ ...fields });
+    const clean = sanitizeForFirestore(stampForCloud({ ...fields }));
     delete (clean as any).quantity;
     try {
       await setDoc(doc(db, 'stock', id), { ...clean, quantity: increment(delta) }, { merge: true });
@@ -346,7 +351,7 @@ export const cloudDbService = {
       const snap = await getDocs(colRef);
       const items: T[] = [];
       snap.forEach((d) => items.push(d.data() as T));
-      return items;
+      return filterForDevice(collectionName, items);
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, collectionName);
     }
@@ -356,7 +361,7 @@ export const cloudDbService = {
   saveCompany: async (company: CompanyInfo): Promise<void> => {
     const docPath = 'company/main';
     try {
-      const sanitized = sanitizeForFirestore(company);
+      const sanitized = sanitizeForFirestore(stampForCloud(company));
       await setDoc(doc(db, 'company', 'main'), sanitized, { merge: true });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, docPath);
@@ -381,7 +386,8 @@ export const cloudDbService = {
         snapshot.forEach((docSnap) => {
           items.push(docSnap.data() as T);
         });
-        onData(overlayPending(collectionName, items) as T[]);
+        // Secondary devices never receive records older than the moment they joined
+        onData(overlayPending(collectionName, filterForDevice(collectionName, items)) as T[]);
       },
       (error) => {
         if (onError) onError(error);

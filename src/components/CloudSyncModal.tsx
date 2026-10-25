@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { auth, cloudDbService, isFirebaseConfigured, saveConfigOverride, clearConfigOverride, getConfigOverride } from '../lib/firebase';
 import { storageService } from '../lib/storage';
+import { isMainDevice } from '../lib/deviceRole';
 import { Language } from '../types';
 import { User } from 'firebase/auth';
 
@@ -257,6 +258,11 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 {lang === 'bn' ? 'ক্লাউড ডাটাবেজ ও মাল্টি-ডিভাইস সিঙ্ক' : 'Cloud Database & Multi-Device Sync'}
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono">
                   Firestore Live
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-700">
+                  {isMainDevice()
+                    ? (lang === 'bn' ? 'মূল ডিভাইস' : 'Main device')
+                    : (lang === 'bn' ? 'অতিরিক্ত ডিভাইস — শুধু নতুন আপডেট' : 'Secondary — new updates only')}
                 </span>
               </h2>
               <p className="text-xs text-slate-400">

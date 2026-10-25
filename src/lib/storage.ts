@@ -27,6 +27,7 @@ import {
 import { withComputedBalance, withComputedBalances } from './ledger';
 import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites, clearPendingIncrement } from './firebase';
 import { collection, getDocs, getDoc, writeBatch, doc } from 'firebase/firestore';
+import { filterForDevice, stampForCloud } from './deviceRole';
 
 const STORAGE_KEYS = {
   COMPANY: 'rsr_company_v2',
@@ -1036,7 +1037,7 @@ export const storageService = {
         }
         for (let i = 0; i < finalParties.length; i += FIRESTORE_BATCH_LIMIT) {
           const batch = writeBatch(db);
-          finalParties.slice(i, i + FIRESTORE_BATCH_LIMIT).forEach((p) => batch.set(doc(db, 'parties', p.id), JSON.parse(JSON.stringify(p))));
+          finalParties.slice(i, i + FIRESTORE_BATCH_LIMIT).forEach((p) => batch.set(doc(db, 'parties', p.id), JSON.parse(JSON.stringify(stampForCloud(p)))));
           await batch.commit();
         }
       } catch (err) {
@@ -1210,10 +1211,12 @@ export const storageService = {
         onProgress?.(`${m.col} নামানো হচ্ছে...`, Math.round((idx / mappings.length) * 100));
         const snap = await withTimeout(getDocs(collection(db, m.col)), 30000, 'Download');
         if (!snap.empty) {
-          const list: any[] = [];
-          snap.forEach((d) => list.push(d.data()));
-          saveToStorage(m.key, list);
-          total += snap.size;
+          const all: any[] = [];
+          snap.forEach((d) => all.push(d.data()));
+          // Secondary devices only take records written after they joined
+          const list = filterForDevice(m.col, all);
+          if (list.length) saveToStorage(m.key, list);
+          total += list.length;
         }
       }
       try {

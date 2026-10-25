@@ -10,3 +10,6 @@
 # Stock quantity sync
 - Invoice stock movements are sent to Firestore only as atomic `increment()` deltas via `cloudDbService.incrementStockQuantity`, never as absolute quantities, so concurrent devices cannot overwrite each other. Only a manual stock edit (`saveStockItem`) writes an absolute quantity.
 - Failed cloud writes are kept in retry queues (`vv_pending_writes`, `vv_pending_increments`) and overlaid on incoming snapshots, so a snapshot never rolls local data back. Snapshot listeners must not push data back to the cloud (avoids device ping-pong and quota exhaustion).
+
+# Device roles (main vs secondary)
+- `src/lib/deviceRole.ts` decides once per device: a device that already had data is "main"; any device that logs in fresh is "secondary" with a `joinedAt` time. Secondary devices never load the bundled seed file, never bulk-download or bulk-upload on startup, and every cloud read passes through `filterForDevice` so only records stamped `_syncedAt >= joinedAt` arrive (staff/company/appSettings always sync so logins work). Every single-record cloud write must go through `stampForCloud`; bulk re-uploads keep existing stamps so they never make old data look new.
