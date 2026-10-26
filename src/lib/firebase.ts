@@ -387,7 +387,10 @@ export const cloudDbService = {
           items.push(docSnap.data() as T);
         });
         // Secondary devices never receive records older than the moment they joined
-        onData(overlayPending(collectionName, filterForDevice(collectionName, items)) as T[]);
+        const allowed = filterForDevice(collectionName, items);
+        // Never let the device filter wipe data that already exists on this device
+        if (allowed.length === 0 && items.length > 0 && hasLocalData(collectionName)) return;
+        onData(overlayPending(collectionName, allowed) as T[]);
       },
       (error) => {
         if (onError) onError(error);

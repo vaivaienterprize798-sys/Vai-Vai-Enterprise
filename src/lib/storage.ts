@@ -27,7 +27,7 @@ import {
 import { withComputedBalance, withComputedBalances } from './ledger';
 import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites, clearPendingIncrement } from './firebase';
 import { collection, getDocs, getDoc, writeBatch, doc } from 'firebase/firestore';
-import { filterForDevice, stampForCloud } from './deviceRole';
+import { filterForDevice, stampForCloud, setDeviceRole } from './deviceRole';
 
 const STORAGE_KEYS = {
   COMPANY: 'rsr_company_v2',
@@ -102,6 +102,15 @@ export const loadFromStorage = <T>(key: string, defaultValue: T): T => {
     console.error(`Error loading key "${key}":`, err);
     return defaultValue;
   }
+};
+
+/** Merge cloud rows into local rows by id: cloud wins for the same id, local-only rows are kept. */
+export const mergeById = (local: any[], cloud: any[]): any[] => {
+  const map = new Map<string, any>();
+  const extra: any[] = [];
+  for (const r of Array.isArray(local) ? local : []) { if (r && r.id != null) map.set(String(r.id), r); else extra.push(r); }
+  for (const r of cloud) { if (r && r.id != null) map.set(String(r.id), r); else extra.push(r); }
+  return [...map.values(), ...extra];
 };
 
 // Helper to safely write to localStorage
@@ -953,6 +962,10 @@ export const storageService = {
       if (parsed.workerConversions) saveToStorage(STORAGE_KEYS.WORKER_CONVERSIONS, parsed.workerConversions);
       if (parsed.thirdParties) saveToStorage(STORAGE_KEYS.THIRD_PARTIES, parsed.thirdParties);
       if (parsed.chinaDirectPayments) saveToStorage(STORAGE_KEYS.CHINA_DIRECT_PAYMENTS, parsed.chinaDirectPayments);
+      // A device that restores a backup owns that data: make it the MAIN device.
+      // Otherwise a fresh install (e.g. new Windows) stays "secondary" and the
+      // live cloud listeners filter out every old record and wipe the restored data to 0.
+      if (syncToCloud) setDeviceRole('main');
       // Push the restored data to the cloud only if syncToCloud is true
       if (syncToCloud) {
         storageService.queueAllForCloud();
@@ -1215,7 +1228,7 @@ export const storageService = {
           snap.forEach((d) => all.push(d.data()));
           // Secondary devices only take records written after they joined
           const list = filterForDevice(m.col, all);
-          if (list.length) saveToStorage(m.key, list);
+          if (list.length) saveToStorage(m.key, mergeById(loadFromStorage<any[]>(m.key, []), list));
           total += list.length;
         }
       }

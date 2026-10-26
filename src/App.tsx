@@ -57,7 +57,7 @@ import {
 import { storageService } from './lib/storage';
 import { translations } from './lib/translations';
 import seedData from './seed-data.json';
-import { isMainDevice } from './lib/deviceRole';
+import { isMainDevice, setDeviceRole } from './lib/deviceRole';
 import { PeriodFilterMode } from './components/PettyCashPanel';
 import { BackButtonGuard } from './components/BackButtonGuard';
 
@@ -543,8 +543,28 @@ export default function App() {
     const unsubAccess = onAccessChanged((ok) => { if (ok) start(); });
     ensureCloudAccess().then((ok) => { if (ok) start(); }).catch((e) => console.warn('[AutoSync] access:', e?.message));
 
-    const unsubAuth = cloudDbService.onAuthChanged((user) => {
+    // Gmail (Google) connect = this is the owner's main device: get full data access,
+    // pull everything from the cloud (merged, never shrinks local data), push local-only
+    // records up, then restart live sync so the app updates immediately.
+    const unsubAuth = cloudDbService.onAuthChanged(async (user) => {
       setCurrentUser(user);
+      if (!user || user.isAnonymous || cancelled) return;
+      const GMAIL_SYNC_KEY = 'vv_gmail_synced_uid';
+      const wasMain = isMainDevice();
+      if (wasMain && localStorage.getItem(GMAIL_SYNC_KEY) === user.uid) return;
+      try {
+        setDeviceRole('main');
+        if (!(await ensureCloudAccess())) return;
+        await storageService.downloadAllFromCloud();
+        await storageService.uploadAllToCloud();
+        localStorage.setItem('rsr_auto_uploaded_v1', new Date().toISOString());
+        localStorage.setItem(GMAIL_SYNC_KEY, user.uid);
+        if (cancelled) return;
+        refreshAllData();
+        setupListeners();
+      } catch (err) {
+        console.warn('[GmailSync] notice:', err);
+      }
     });
 
     return () => {

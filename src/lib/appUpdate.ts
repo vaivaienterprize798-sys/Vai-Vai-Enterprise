@@ -106,3 +106,49 @@ export function initAutoUpdateListener(onUpdateAvailable?: () => void) {
   // Attach to window for emergency access
   (window as unknown as { __rsr_force_update: () => void }).__rsr_force_update = forceUpdateAndReloadApp;
 }
+
+/** Script/style file names inside index.html change on every new build. */
+function buildSignature(html: string): string {
+  return (html.match(/\/assets\/[^"']+\.(?:js|css)/g) || []).sort().join('|');
+}
+
+/**
+ * Live version watcher: checks the published index.html every few minutes and when
+ * the app comes back into focus. If a new build was published it clears the old cache
+ * and reloads, so every installed app (laptop / mobile) updates by itself.
+ * Data in localStorage and the cloud is never touched.
+ */
+export function initLiveVersionWatcher(intervalMs: number = 3 * 60 * 1000): void {
+  if (typeof window === 'undefined' || !import.meta.env.PROD) return;
+  let current = '';
+  let busy = false;
+  const check = async () => {
+    if (busy || !navigator.onLine) return;
+    busy = true;
+    try {
+      const res = await fetch('/index.html?v=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return;
+      const sig = buildSignature(await res.text());
+      if (!sig) return;
+      if (!current) {
+        // First check: compare with the scripts this page actually loaded
+        const loaded = Array.from(document.querySelectorAll('script[src],link[rel="stylesheet"][href]'))
+          .map((el) => (el.getAttribute('src') || el.getAttribute('href') || '').replace(/^.*?(\/assets\/)/, '$1'))
+          .filter((u) => u.startsWith('/assets/')).sort().join('|');
+        current = loaded || sig;
+      }
+      if (sig !== current) {
+        console.log('[RSR App Update] New version published, updating...');
+        await forceUpdateAndReloadApp();
+      }
+    } catch {
+      /* offline or network notice: try again later */
+    } finally {
+      busy = false;
+    }
+  };
+  setTimeout(check, 15000);
+  setInterval(check, intervalMs);
+  window.addEventListener('focus', () => { check(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+}

@@ -13,3 +13,7 @@
 
 # Device roles (main vs secondary)
 - `src/lib/deviceRole.ts` decides once per device: a device that already had data is "main"; any device that logs in fresh is "secondary" with a `joinedAt` time. Secondary devices never load the bundled seed file, never bulk-download or bulk-upload on startup, and every cloud read passes through `filterForDevice` so only records stamped `_syncedAt >= joinedAt` arrive (staff/company/appSettings always sync so logins work). Every single-record cloud write must go through `stampForCloud`; bulk re-uploads keep existing stamps so they never make old data look new.
+- A user-initiated backup restore (`restoreBackup` with syncToCloud) promotes the device to main, because a fresh install is secondary and its filtered snapshots would otherwise wipe the restored data. Snapshots whose device-filtered result is empty never overwrite existing local data.
+- Signing in with Google (non-anonymous) marks the device main, downloads all cloud data, uploads local data and restarts listeners, because the owner's Gmail device must always see the full data.
+- `downloadAllFromCloud` merges cloud rows into local rows by id (`mergeById`) and never replaces the local list, so a cloud download can never shrink restored data.
+- `initLiveVersionWatcher` (src/lib/appUpdate.ts) is started in main.tsx; it compares the asset names in the published index.html with the loaded ones and reloads on change.
