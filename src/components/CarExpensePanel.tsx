@@ -37,7 +37,7 @@ interface CarExpensePanelProps {
   lang: Language;
   onSaveExpense: (exp: CarExpense) => void;
   onDeleteExpense: (id: string) => void;
-  onPrintStatement: () => void;
+  onPrintStatement: (filters?: { filterMode: 'month' | 'date' | 'all'; selectedMonth?: string; selectedDate?: string }) => void;
 }
 
 export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
@@ -182,7 +182,13 @@ export const CarExpensePanel: React.FC<CarExpensePanelProps> = ({
           />
 
           <button
-            onClick={onPrintStatement}
+            onClick={() =>
+              onPrintStatement({
+                filterMode: dateFilterMode,
+                selectedMonth,
+                selectedDate,
+              })
+            }
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />

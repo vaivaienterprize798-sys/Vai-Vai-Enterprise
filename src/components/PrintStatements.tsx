@@ -16,6 +16,10 @@ import {
   DollarSign,
   Briefcase,
   Download,
+  Car,
+  Fuel,
+  Wrench,
+  Truck,
 } from 'lucide-react';
 import {
   StockItem,
@@ -28,6 +32,7 @@ import {
   StatementType,
   BranchConsignment,
   WorkerTaskRecord,
+  CarExpense,
 } from '../types';
 
 export type { StatementType };
@@ -110,6 +115,15 @@ export const sheetThemes: Record<StatementType, {
     subBorderColor: 'border-rose-200/80',
     accentText: 'text-rose-700',
   },
+  car_expense: {
+    headerBg: 'bg-gradient-to-r from-sky-950 via-blue-950 to-slate-900 border-sky-500/60',
+    badgeBg: 'bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-white shadow-sky-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-sky-300',
+    subBorderColor: 'border-sky-200/80',
+    accentText: 'text-sky-700',
+  },
 };
 
 interface PrintStatementsProps {
@@ -121,6 +135,7 @@ interface PrintStatementsProps {
   staff: Staff[];
   attendance?: AttendanceRecord[];
   expenses?: Expense[];
+  carExpenses?: CarExpense[];
   branchConsignments?: BranchConsignment[];
   workerTasks?: WorkerTaskRecord[];
   onBack: () => void;
@@ -143,6 +158,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
   staff,
   attendance,
   expenses,
+  carExpenses,
   branchConsignments,
   workerTasks,
   onBack,
@@ -237,6 +253,9 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
 
   const baseWorkerTasks = workerTasks !== undefined ? workerTasks : (storageService.getWorkerTasks() || []);
   const activeWorkerTasks = baseWorkerTasks.filter((t) => isDateInPeriod(t.date));
+
+  const baseCarExpenses = carExpenses !== undefined ? carExpenses : (storageService.getCarExpenses() || []);
+  const activeCarExpenses = baseCarExpenses.filter((c) => isDateInPeriod(c.date));
 
   const allInvoices = activeInvoices;
 
@@ -345,6 +364,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         return t.expenseStatement1Page;
       case 'financial':
         return t.financialAnalyticsStatement1Page;
+      case 'car_expense':
+        return lang === 'bn' ? 'গাড়ি ও পরিবহন খরচ বিবরণী' : 'Vehicle & Transport Expense Statement';
       case 'worker_tracking':
         return lang === 'bn'
           ? 'প্রসেসিং কর্মীভিত্তিক ওয়ার্কার ট্র্যাকিং ও ড্যামেজ হিসাব বিবরণী'
@@ -385,7 +406,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         const totalDue = selectedPartyMember.currentDue;
         const totalAdv = selectedPartyMember.currentAdvance;
 
-        summaryText += `👤 *পার্টি:* ${selectedPartyMember.name} (${selectedPartyMember.type})\n📞 *মোবাইল:* ${selectedPartyMember.phone || '-'}\n📍 *ঠিকানা:* ${selectedPartyMember.address || '-'}\n────────────────────────\n🏦 *প্রারম্ভিক জের (Opening B/L):* ৳${periodOpening.toLocaleString()}\n📝 মোট চালান: ${partyInvoices.length} টি\n🛒 ক্রয় (Purchases): ৳${totalPurchases.toLocaleString()}\n🛍️ বিক্রয় (Sales): ৳${totalSales.toLocaleString()}\n💵 মোট পরিশোধ: ৳${totalPaid.toLocaleString()}\n────────────────────────\n${totalDue > 0 ? `🔴 *বর্তমান পাওনা বাকি (Due):* ৳${totalDue.toLocaleString()}` : totalAdv > 0 ? `🟢 *বর্তমান অগ্রিম জমা (Advance):* ৳${totalAdv.toLocaleString()}` : `⚪ *হিসাব সম্পূর্ণ পরিশোধিত (Settled)*`}\n`;
+        summaryText += `👤 *পার্টি:* ${selectedPartyMember.name} (${selectedPartyMember.type})\n📞 *মোবাইল:* ${selectedPartyMember.phone || '-'}\n📍 *ঠিকানা:* ${selectedPartyMember.address || '-'}\n────────────────────────\n🏦 *প্রারম্ভিক জের (Opening B/L):* ৳${periodOpening.toLocaleString()}\n📝 মোট চালান: ${partyInvoices.length} টি\n🛒 ক্রয় (Purchases): ৳${totalPurchases.toLocaleString()}\n🛍️ বিক্রয় (Sales): ৳${totalSales.toLocaleString()}\n💵 মোট পরিশোধ: ৳${totalPaid.toLocaleString()}\n────────────────────────\n${totalDue > 0 ? `������ *বর্তমান পাওনা বাকি (Due):* ৳${totalDue.toLocaleString()}` : totalAdv > 0 ? `🟢 *বর্তমান অগ্রিম জমা (Advance):* ৳${totalAdv.toLocaleString()}` : `⚪ *হিসাব সম্পূর্ণ পরিশোধিত (Settled)*`}\n`;
       } else {
         const totalDue = parties.reduce((s, p) => s + p.currentDue, 0);
         const totalAdv = parties.reduce((s, p) => s + p.currentAdvance, 0);
@@ -457,6 +478,11 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
     } else if (type === 'expense') {
       const totalExp = activeExpenses.reduce((s, e) => s + e.amount, 0);
       summaryText += `💸 মোট অফিস খরচ: ৳${totalExp.toLocaleString()}\n📝 মোট এন্ট্রি: ${activeExpenses.length} টি\n`;
+    } else if (type === 'car_expense') {
+      const totalExp = activeCarExpenses.reduce((s, e) => s + e.amount, 0);
+      const totalFuel = activeCarExpenses.filter(e => e.category === 'fuel' || e.category === 'fuel_gas').reduce((s, e) => s + e.amount, 0);
+      const totalLiters = activeCarExpenses.reduce((s, e) => s + (Number(e.liter) || 0), 0);
+      summaryText += `🚗 মোট গাড়ি ও পরিবহন খরচ: ৳${totalExp.toLocaleString()}\n⛽ জ্বালানি: ৳${totalFuel.toLocaleString()} (${totalLiters} লিটার)\n📝 মোট এন্ট্রি: ${activeCarExpenses.length} টি\n`;
     } else if (type === 'worker_tracking') {
       const workerTasks = activeWorkerTasks;
       const totalGiven = workerTasks.reduce((s, t) => s + t.givenPcs, 0);
@@ -1611,6 +1637,130 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     </div>
                   </div>
 
+                  {/* Category-wise Expenditure Breakdown Table (খাত ভিত্তিক খরচের বিবরণী) */}
+                  {(() => {
+                    const categoryBreakdownMap: Record<string, { label: string; count: number; total: number }> = {};
+                    cashOutList.forEach((e) => {
+                      const catLabel =
+                        e.category === 'tea_snacks' || e.category === 'food_tea' || e.category === 'tea_food'
+                          ? (lang === 'bn' ? 'আপ্যায়ন, চা ও নাস্তা' : 'Tea & Snacks')
+                          : e.category === 'courier_bill'
+                          ? (lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill')
+                          : e.category === 'transport_allowance' || e.category === 'transport'
+                          ? (lang === 'bn' ? 'যাতায়াত ও লোকাল ভাড়া' : 'Transport Allowance')
+                          : e.category === 'service_charge'
+                          ? (lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge')
+                          : e.category === 'stationery'
+                          ? (lang === 'bn' ? 'খাতা, কলম ও স্টেশনারি' : 'Stationery & Printing')
+                          : e.category === 'utility' || e.category === 'utility_bills' || e.category === 'electricity'
+                          ? (lang === 'bn' ? 'বিদ্যুৎ ও ইউটিলিটি বিল' : 'Electricity & Utility')
+                          : e.category === 'maintenance' || e.category === 'repair' || e.category === 'cleaning_maint'
+                          ? (lang === 'bn' ? 'অফিস পরিচ্ছন্নতা ও মেনটেনেন্স' : 'Office Maintenance')
+                          : e.category === 'entertainment'
+                          ? (lang === 'bn' ? 'আপ্যায়ন ও মেহমানদারি' : 'Entertainment')
+                          : e.category === 'labor' || e.category === 'labour_coolie' || e.category === 'coolie_labor'
+                          ? (lang === 'bn' ? 'কুলি ও লেবার মজুরি' : 'Coolie & Labor')
+                          : e.category === 'rent'
+                          ? (lang === 'bn' ? 'দোকান ও অফিস ভাড়া' : 'Rent')
+                          : (lang === 'bn' ? 'অন্যান্য পরিচালন ব্যয়' : 'Other Expenses');
+
+                      if (!categoryBreakdownMap[catLabel]) {
+                        categoryBreakdownMap[catLabel] = { label: catLabel, count: 0, total: 0 };
+                      }
+                      categoryBreakdownMap[catLabel].count += 1;
+                      categoryBreakdownMap[catLabel].total += Number(e.amount) || 0;
+                    });
+
+                    const categoryBreakdownList = Object.values(categoryBreakdownMap).sort((a, b) => b.total - a.total);
+
+                    return (
+                      <div className="p-3.5 bg-amber-50/70 border border-amber-300 rounded-2xl space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-600 text-white font-black text-[11px]">
+                              {lang === 'bn' ? 'খাত ভিত্তিক' : 'By Category'}
+                            </span>
+                            <h4 className="font-black text-amber-950 text-xs sm:text-sm">
+                              {lang === 'bn' ? 'খাত-ভিত্তিক খরচের সংক্ষিপ্ত বিবরণী ও শতকরা অনুপাত' : 'Category-wise Expenditure Summary & % Share'}
+                            </h4>
+                          </div>
+                          <span className="text-[11px] text-amber-900 font-mono font-bold">
+                            {lang === 'bn' ? `মোট খাত: ${categoryBreakdownList.length} টি | মোট খরচ: ` : `Total Heads: ${categoryBreakdownList.length} | `}
+                            <strong className="text-rose-700 font-black">{formatCurrency(totalCashOut, lang)}</strong>
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto border border-amber-200 rounded-xl bg-white shadow-2xs">
+                          <table className="w-full text-left text-xs border-collapse print-compact">
+                            <thead>
+                              <tr className="bg-amber-100/90 text-amber-950 font-black text-[11px] border-b border-amber-300">
+                                <th className="py-1.5 px-2.5 w-10 text-center border-r border-amber-200">#</th>
+                                <th className="py-1.5 px-2.5 border-r border-amber-200">{lang === 'bn' ? 'খরচের খাত (Expense Head)' : 'Expense Head'}</th>
+                                <th className="py-1.5 px-2.5 w-24 text-center border-r border-amber-200">{lang === 'bn' ? 'ভাউচার সংখ্যা' : 'Entries'}</th>
+                                <th className="py-1.5 px-2.5 w-32 text-right border-r border-amber-200">{lang === 'bn' ? 'মোট ব্যয় (BDT)' : 'Total (BDT)'}</th>
+                                <th className="py-1.5 px-2.5 w-36 text-center">{lang === 'bn' ? 'শতকরা অনুপাত (%)' : '% Share'}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {categoryBreakdownList.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="py-3 text-center text-slate-400 text-xs">
+                                    {lang === 'bn' ? 'কোনো খরচের এন্ট্রি নেই' : 'No expenses recorded in this period'}
+                                  </td>
+                                </tr>
+                              ) : (
+                                categoryBreakdownList.map((item, idx) => {
+                                  const pct = totalCashOut > 0 ? ((item.total / totalCashOut) * 100).toFixed(1) : '0';
+                                  return (
+                                    <tr key={item.label} className="border-b border-amber-100 hover:bg-amber-50/50">
+                                      <td className="py-1.5 px-2.5 text-center font-mono text-slate-500 border-r border-amber-100">{idx + 1}</td>
+                                      <td className="py-1.5 px-2.5 font-bold text-slate-900 border-r border-amber-100">
+                                        {item.label}
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-center font-mono font-semibold text-slate-700 border-r border-amber-100">
+                                        {formatNumber(item.count, lang)} {lang === 'bn' ? 'টি' : ''}
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-right font-mono font-black text-rose-700 border-r border-amber-100">
+                                        {formatCurrency(item.total, lang)}
+                                      </td>
+                                      <td className="py-1.5 px-2.5 text-center">
+                                        <div className="flex items-center justify-center gap-2">
+                                          <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden hidden sm:block">
+                                            <div
+                                              className="bg-amber-600 h-1.5 rounded-full"
+                                              style={{ width: `${Math.min(100, Number(pct))}%` }}
+                                            />
+                                          </div>
+                                          <span className="font-mono text-[11px] font-bold text-amber-900">{pct}%</span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                            <tfoot>
+                              <tr className="bg-amber-100 text-amber-950 font-black text-xs border-t border-amber-300">
+                                <td colSpan={2} className="py-1.5 px-2.5 text-right uppercase border-r border-amber-300 font-black">
+                                  {lang === 'bn' ? 'সর্বমোট খাত খরচ:' : 'Total Category Outflow:'}
+                                </td>
+                                <td className="py-1.5 px-2.5 text-center font-mono border-r border-amber-300 font-bold">
+                                  {formatNumber(cashOutList.length, lang)} {lang === 'bn' ? 'টি' : ''}
+                                </td>
+                                <td className="py-1.5 px-2.5 text-right font-mono text-rose-800 text-sm border-r border-amber-300 font-black">
+                                  {formatCurrency(totalCashOut, lang)}
+                                </td>
+                                <td className="py-1.5 px-2.5 text-center font-mono font-black">
+                                  100%
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Expense Ledger Table */}
                   <div className="sheet-freeze-wrapper">
                     <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
@@ -1709,6 +1859,309 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     </tfoot>
                   </table>
                 </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* 4.5. CAR / VEHICLE EXPENSE STATEMENT SHEET */}
+        {type === 'car_expense' && (
+          <div className="mt-4 space-y-4">
+            {(() => {
+              const carRecords = activeCarExpenses;
+              const totalCarAmount = carRecords.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+              const totalFuelLiters = carRecords.reduce((s, e) => s + (Number(e.liter) || 0), 0);
+              const totalKilometers = carRecords.reduce((s, e) => s + (Number(e.kilometers) || 0), 0);
+
+              const fuelExpenses = carRecords.filter((e) => e.category === 'fuel' || e.category === 'fuel_gas');
+              const repairExpenses = carRecords.filter((e) => e.category === 'maintenance' || e.category === 'repair_servicing');
+              const driverExpenses = carRecords.filter((e) => e.category === 'driver_salary' || e.category === 'driver_salary_food');
+              const tollExpenses = carRecords.filter((e) => e.category === 'toll' || e.category === 'toll_parking');
+
+              const totalFuelAmount = fuelExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+              const totalRepairAmount = repairExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+              const totalDriverAmount = driverExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+              const totalTollAmount = tollExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+              // Vehicle Category Breakdown
+              const carCategoryBreakdownMap: Record<string, { label: string; count: number; total: number; liters: number }> = {};
+              carRecords.forEach((e) => {
+                const catLabel =
+                  e.category === 'fuel' || e.category === 'fuel_gas'
+                    ? (lang === 'bn' ? 'জ্বালানি (তেল/গ্যাস/ডিজেল)' : 'Fuel & Gas')
+                    : e.category === 'maintenance' || e.category === 'repair_servicing'
+                    ? (lang === 'bn' ? 'গাড়ি মেরামত ও পার্টস সার্ভিসিং' : 'Repairs & Servicing')
+                    : e.category === 'driver_salary' || e.category === 'driver_salary_food'
+                    ? (lang === 'bn' ? 'ড্রাইভারের বেতন ও খোরাকি' : 'Driver Salary & Food')
+                    : e.category === 'toll' || e.category === 'toll_parking'
+                    ? (lang === 'bn' ? 'টোল ও পার্কিং' : 'Toll & Parking')
+                    : e.category === 'papers' || e.category === 'papers_tax'
+                    ? (lang === 'bn' ? 'গাড়ির ট্যাক্স ও কাগজপত্র' : 'Taxes & Documentation')
+                    : e.category === 'truck_rent'
+                    ? (lang === 'bn' ? 'পণ্য পরিবহন / ট্রাক-পিকআপ ভাড়া' : 'Truck/Pickup Rent')
+                    : (lang === 'bn' ? 'অন্যান্য পরিবহন ব্যয়' : 'Other Transport');
+
+                if (!carCategoryBreakdownMap[catLabel]) {
+                  carCategoryBreakdownMap[catLabel] = { label: catLabel, count: 0, total: 0, liters: 0 };
+                }
+                carCategoryBreakdownMap[catLabel].count += 1;
+                carCategoryBreakdownMap[catLabel].total += Number(e.amount) || 0;
+                carCategoryBreakdownMap[catLabel].liters += Number(e.liter) || 0;
+              });
+
+              const carCategoryBreakdownList = Object.values(carCategoryBreakdownMap).sort((a, b) => b.total - a.total);
+
+              return (
+                <div className="space-y-4">
+                  {/* Executive Header Banner */}
+                  <div className="p-3.5 bg-gradient-to-r from-sky-950 via-blue-950 to-slate-950 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs border border-sky-500/60 shadow-lg">
+                    <div>
+                      <span className="font-black uppercase tracking-wider text-cyan-300 text-sm sm:text-base block drop-shadow-xs">
+                        {lang === 'bn' ? 'গাড়ি ও পণ্য পরিবহন খরচ বিবরণী' : 'Vehicle & Goods Transport Expense Statement'}
+                      </span>
+                      <p className="text-[11px] text-sky-200 mt-0.5">
+                        {lang === 'bn' ? `হিসাবের মাস/সময়কাল: ${formatMonthDisplay(selectedMonth)}` : `Statement Period: ${formatMonthDisplay(selectedMonth)}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono text-xs font-bold bg-sky-700/80 text-white px-3 py-1 rounded-xl border border-sky-400 shadow-xs">
+                        {lang === 'bn' ? 'মোট এন্ট্রি:' : 'Total Entries:'} {carRecords.length}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 4 Executive Summary KPI Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-3 rounded-2xl border border-sky-200 bg-sky-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-sky-900 font-extrabold block">
+                        {lang === 'bn' ? 'সর্বমোট গাড়ি খরচ' : 'Total Vehicle Expense'}
+                      </span>
+                      <div className="text-base font-black font-mono text-sky-950 mt-0.5">
+                        {formatCurrency(totalCarAmount, lang)}
+                      </div>
+                      <span className="text-[9px] text-sky-700 font-bold">
+                        {formatNumber(carRecords.length, lang)} {lang === 'bn' ? 'টি এন্ট্রি' : 'records'}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl border border-amber-200 bg-amber-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-amber-900 font-extrabold block">
+                        {lang === 'bn' ? 'জ্বালানি (তেল ও গ্যাস)' : 'Fuel & Gas Outflow'}
+                      </span>
+                      <div className="text-base font-black font-mono text-amber-950 mt-0.5">
+                        {formatCurrency(totalFuelAmount, lang)}
+                      </div>
+                      <span className="text-[9px] text-amber-700 font-bold">
+                        {totalFuelLiters > 0 ? `${formatNumber(totalFuelLiters, lang)} ${lang === 'bn' ? 'লিটার' : 'Ltrs'}` : (lang === 'bn' ? 'জ্বালানি খরচ' : 'Fuel cost')}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-rose-900 font-extrabold block">
+                        {lang === 'bn' ? 'মেরামত ও পার্টস সার্ভিসিং' : 'Repairs & Servicing'}
+                      </span>
+                      <div className="text-base font-black font-mono text-rose-950 mt-0.5">
+                        {formatCurrency(totalRepairAmount, lang)}
+                      </div>
+                      <span className="text-[9px] text-rose-700 font-bold">
+                        {lang === 'bn' ? 'গ্যারেজ ও মবিল' : 'Garage maintenance'}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-indigo-900 font-extrabold block">
+                        {lang === 'bn' ? 'ড্রাইভার ও টোল খরচ' : 'Driver & Toll Outflow'}
+                      </span>
+                      <div className="text-base font-black font-mono text-indigo-950 mt-0.5">
+                        {formatCurrency(totalDriverAmount + totalTollAmount, lang)}
+                      </div>
+                      <span className="text-[9px] text-indigo-700 font-bold">
+                        {lang === 'bn' ? 'বেতন ও রোড টোল' : 'Salary & Road Toll'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Vehicle Category Breakdown Table */}
+                  <div className="p-3.5 bg-sky-50/70 border border-sky-300 rounded-2xl space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-lg bg-sky-600 text-white font-black text-[11px]">
+                          {lang === 'bn' ? 'খাত ভিত্তিক' : 'By Category'}
+                        </span>
+                        <h4 className="font-black text-sky-950 text-xs sm:text-sm">
+                          {lang === 'bn' ? 'গাড়ির খাত-ভিত্তিক খরচের সংক্ষিপ্ত বিবরণী ও শতকরা অনুপাত' : 'Vehicle Category-wise Cost Summary & % Share'}
+                        </h4>
+                      </div>
+                      <span className="text-[11px] text-sky-900 font-mono font-bold">
+                        {lang === 'bn' ? `মোট খাত: ${carCategoryBreakdownList.length} টি | মোট খরচ: ` : `Total Heads: ${carCategoryBreakdownList.length} | `}
+                        <strong className="text-sky-800 font-black">{formatCurrency(totalCarAmount, lang)}</strong>
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto border border-sky-200 rounded-xl bg-white shadow-2xs">
+                      <table className="w-full text-left text-xs border-collapse print-compact">
+                        <thead>
+                          <tr className="bg-sky-100/90 text-sky-950 font-black text-[11px] border-b border-sky-300">
+                            <th className="py-1.5 px-2.5 w-10 text-center border-r border-sky-200">#</th>
+                            <th className="py-1.5 px-2.5 border-r border-sky-200">{lang === 'bn' ? 'খরচের খাত (Vehicle Head)' : 'Vehicle Head'}</th>
+                            <th className="py-1.5 px-2.5 w-24 text-center border-r border-sky-200">{lang === 'bn' ? 'এন্ট্রি সংখ্যা' : 'Entries'}</th>
+                            <th className="py-1.5 px-2.5 w-28 text-center border-r border-sky-200">{lang === 'bn' ? 'তেল (লিটার)' : 'Liters'}</th>
+                            <th className="py-1.5 px-2.5 w-32 text-right border-r border-sky-200">{lang === 'bn' ? 'মোট ব্যয় (BDT)' : 'Total (BDT)'}</th>
+                            <th className="py-1.5 px-2.5 w-32 text-center">{lang === 'bn' ? 'শতকরা অনুপাত (%)' : '% Share'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {carCategoryBreakdownList.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="py-3 text-center text-slate-400 text-xs">
+                                {lang === 'bn' ? 'কোনো গাড়ি খরচের এন্ট্রি নেই' : 'No vehicle expenses recorded in this period'}
+                              </td>
+                            </tr>
+                          ) : (
+                            carCategoryBreakdownList.map((item, idx) => {
+                              const pct = totalCarAmount > 0 ? ((item.total / totalCarAmount) * 100).toFixed(1) : '0';
+                              return (
+                                <tr key={item.label} className="border-b border-sky-100 hover:bg-sky-50/50">
+                                  <td className="py-1.5 px-2.5 text-center font-mono text-slate-500 border-r border-sky-100">{idx + 1}</td>
+                                  <td className="py-1.5 px-2.5 font-bold text-slate-900 border-r border-sky-100">
+                                    {item.label}
+                                  </td>
+                                  <td className="py-1.5 px-2.5 text-center font-mono font-semibold text-slate-700 border-r border-sky-100">
+                                    {formatNumber(item.count, lang)} {lang === 'bn' ? 'টি' : ''}
+                                  </td>
+                                  <td className="py-1.5 px-2.5 text-center font-mono font-bold text-amber-700 border-r border-sky-100">
+                                    {item.liters > 0 ? `${formatNumber(item.liters, lang)} L` : '-'}
+                                  </td>
+                                  <td className="py-1.5 px-2.5 text-right font-mono font-black text-sky-800 border-r border-sky-100">
+                                    {formatCurrency(item.total, lang)}
+                                  </td>
+                                  <td className="py-1.5 px-2.5 text-center">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden hidden sm:block">
+                                        <div
+                                          className="bg-sky-600 h-1.5 rounded-full"
+                                          style={{ width: `${Math.min(100, Number(pct))}%` }}
+                                        />
+                                      </div>
+                                      <span className="font-mono text-[11px] font-bold text-sky-900">{pct}%</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-sky-100 text-sky-950 font-black text-xs border-t border-sky-300">
+                            <td colSpan={2} className="py-1.5 px-2.5 text-right uppercase border-r border-sky-300 font-black">
+                              {lang === 'bn' ? 'সর্বমোট গাড়ি ব্যয়:' : 'Total Vehicle Outflow:'}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-center font-mono border-r border-sky-300 font-bold">
+                              {formatNumber(carRecords.length, lang)} {lang === 'bn' ? 'টি' : ''}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-center font-mono font-bold text-amber-900 border-r border-sky-300">
+                              {totalFuelLiters > 0 ? `${formatNumber(totalFuelLiters, lang)} L` : '-'}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-right font-mono text-sky-900 text-sm border-r border-sky-300 font-black">
+                              {formatCurrency(totalCarAmount, lang)}
+                            </td>
+                            <td className="py-1.5 px-2.5 text-center font-mono font-black">
+                              100%
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Detailed Vehicle Log Table */}
+                  <div className="sheet-freeze-wrapper">
+                    <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                      <thead className="sticky top-0 z-20">
+                        <tr className="bg-slate-900 text-white text-[11px] font-bold border-b-2 border-slate-950 shadow-xs">
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-8 sticky top-0 text-white font-bold">{t.sl}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-24 sticky top-0 text-white font-bold">{t.invoiceDate}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-32 sticky top-0 text-white font-bold">{lang === 'bn' ? 'গাড়ির নাম্বার' : 'Vehicle No'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-28 sticky top-0 text-white font-bold">{lang === 'bn' ? 'ড্রাইভার' : 'Driver'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 w-28 sticky top-0 text-white font-bold">{t.category}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 sticky top-0 text-white font-bold">{lang === 'bn' ? 'রুট ও বিবরণ' : 'Route & Description'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-24 sticky top-0 text-white font-bold">{lang === 'bn' ? 'তেল / কি.মি' : 'Fuel / KM'}</th>
+                          <th className="py-2 px-2 text-right w-28 sticky top-0 text-white font-bold">{lang === 'bn' ? 'টাকার পরিমাণ' : 'Amount'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {carRecords.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-6 text-center text-slate-400">
+                              {lang === 'bn' ? 'এই মাসে কোনো গাড়ি খরচের রেকর্ড নেই' : 'No vehicle expense records found for this period'}
+                            </td>
+                          </tr>
+                        ) : (
+                          carRecords.map((c, idx) => (
+                            <tr key={c.id || idx} className="border-b border-sky-100 hover:bg-sky-50/40">
+                              <td className="py-1.5 px-2 border-r border-sky-100 text-center font-mono text-slate-500">
+                                {formatNumber(idx + 1, lang)}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-sky-100 font-mono text-[11px] font-semibold text-slate-700">
+                                {formatDate(c.date, lang)}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-sky-100 font-bold text-slate-900 font-mono text-[11px]">
+                                {c.vehicleNo || '-'}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-sky-100 font-medium text-slate-700">
+                                {c.driverName || '-'}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-sky-100 text-[10px] font-bold text-sky-800">
+                                {c.category === 'fuel' || c.category === 'fuel_gas'
+                                  ? (lang === 'bn' ? 'জ্বালানি' : 'Fuel')
+                                  : c.category === 'maintenance' || c.category === 'repair_servicing'
+                                  ? (lang === 'bn' ? 'মেরামত' : 'Repair')
+                                  : c.category === 'driver_salary' || c.category === 'driver_salary_food'
+                                  ? (lang === 'bn' ? 'ড্রাইভার' : 'Driver')
+                                  : c.category === 'toll' || c.category === 'toll_parking'
+                                  ? (lang === 'bn' ? 'টোল' : 'Toll')
+                                  : c.category === 'papers' || c.category === 'papers_tax'
+                                  ? (lang === 'bn' ? 'কাগজপত্র' : 'Papers')
+                                  : c.category === 'truck_rent'
+                                  ? (lang === 'bn' ? 'ট্রাক ভাড়া' : 'Truck Rent')
+                                  : (lang === 'bn' ? 'অন্যান্য' : 'Other')}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-sky-100 text-slate-900">
+                                <div className="font-bold">{c.title}</div>
+                                {c.tripRoute && <div className="text-[10px] text-blue-700 font-semibold">📍 {c.tripRoute}</div>}
+                                {c.notes && <div className="text-[10px] text-slate-500 italic">{c.notes}</div>}
+                              </td>
+                              <td className="py-1.5 px-2 border-r border-sky-100 text-center font-mono text-[11px] text-slate-700">
+                                {c.liter ? `${c.liter} L` : ''}
+                                {c.liter && c.kilometers ? ' | ' : ''}
+                                {c.kilometers ? `${c.kilometers} km` : ''}
+                                {!c.liter && !c.kilometers ? '-' : ''}
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono font-black text-[12px] text-sky-900">
+                                {formatCurrency(c.amount, lang)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-gradient-to-r from-sky-100 via-blue-100 to-indigo-100 text-sky-950 font-black text-xs border-t-2 border-sky-400">
+                          <td colSpan={6} className="py-1.5 px-2 text-right uppercase border-r border-sky-300 font-extrabold">
+                            {lang === 'bn' ? 'মোট গাড়ি খরচ:' : 'Total Vehicle Expenses:'}
+                          </td>
+                          <td className="py-1.5 px-2 text-center font-mono text-[11px] border-r border-sky-300 text-slate-800 font-bold">
+                            {totalFuelLiters > 0 && `${totalFuelLiters} L`}
+                            {totalFuelLiters > 0 && totalKilometers > 0 && ' | '}
+                            {totalKilometers > 0 && `${totalKilometers} km`}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-sm font-black text-sky-950">
+                            = {formatCurrency(totalCarAmount, lang)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
               );
             })()}

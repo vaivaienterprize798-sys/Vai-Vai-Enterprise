@@ -17,6 +17,7 @@ import {
   Trash2,
   AlertTriangle,
   RotateCcw,
+  Car,
 } from 'lucide-react';
 import {
   StockItem,
@@ -209,9 +210,18 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
       color: 'bg-amber-600',
     },
     {
+      type: 'car_expense',
+      labelBn: '৫. গাড়ি ও পরিবহন খরচ স্টেটমেন্ট',
+      labelEn: '5. Vehicle & Transport Expense Sheet',
+      icon: Car,
+      badgeBn: 'গাড়ি ও পরিবহন',
+      badgeEn: 'Vehicle & Transport',
+      color: 'bg-sky-600',
+    },
+    {
       type: 'financial',
-      labelBn: '৫. ফাইন্যান্সিয়াল P&L ও ROI স্টেটমেন্ট',
-      labelEn: '5. Financial P&L & ROI Sheet',
+      labelBn: '৬. ফাইন্যান্সিয়াল P&L ও ROI স্টেটমেন্ট',
+      labelEn: '6. Financial P&L & ROI Sheet',
       icon: BarChart3,
       badgeBn: 'P&L ও ROI',
       badgeEn: 'Financial P&L',
@@ -219,8 +229,8 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
     },
     {
       type: 'worker_tracking',
-      labelBn: '৬. প্রসেসিং কর্মী কাজ ও ড্যামেজ শিট',
-      labelEn: '6. Worker Output & Damage Sheet',
+      labelBn: '৭. প্রসেসিং কর্মী কাজ ও ড্যামেজ শিট',
+      labelEn: '7. Worker Output & Damage Sheet',
       icon: Clock,
       badgeBn: 'প্রসেসিং ও ড্যামেজ',
       badgeEn: 'Worker Tasks',
@@ -427,7 +437,7 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
       </div>
 
       {/* Sheet Type Selection Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
         {sheetTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSheetType === tab.type;
@@ -437,6 +447,7 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
             party: 'from-indigo-900 via-blue-900 to-slate-900 border-indigo-400 ring-2 ring-indigo-400/50 shadow-indigo-950/30',
             payroll: 'from-purple-900 via-indigo-900 to-slate-900 border-purple-400 ring-2 ring-purple-400/50 shadow-purple-950/30',
             expense: 'from-amber-900 via-orange-900 to-slate-900 border-amber-400 ring-2 ring-amber-400/50 shadow-amber-950/30',
+            car_expense: 'from-sky-900 via-blue-900 to-slate-900 border-sky-400 ring-2 ring-sky-400/50 shadow-sky-950/30',
             financial: 'from-teal-900 via-cyan-900 to-slate-900 border-teal-400 ring-2 ring-teal-400/50 shadow-teal-950/30',
             worker_tracking: 'from-rose-900 via-pink-900 to-slate-900 border-rose-400 ring-2 ring-rose-400/50 shadow-rose-950/30',
           };

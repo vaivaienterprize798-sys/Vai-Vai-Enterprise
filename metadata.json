@@ -1,0 +1,8 @@
+{
+  "name": "RSR Vai Vai Enterprise",
+  "description": "RSR Vai Vai Enterprise - Complete Business Management ERP",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

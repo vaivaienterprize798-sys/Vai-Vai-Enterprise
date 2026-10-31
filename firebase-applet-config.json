@@ -1,9 +1,12 @@
 {
+  "projectId": "hazel-gateway-w1ttq",
+  "appId": "1:258202950135:web:475db690c97e8adca8f6f2",
   "apiKey": "AIzaSyCaF-9nNRB7VkFZZOKP_avu_3qK41N9Z60",
   "authDomain": "hazel-gateway-w1ttq.firebaseapp.com",
-  "projectId": "hazel-gateway-w1ttq",
+  "firestoreDatabaseId": "ai-studio-remixremixrsrvai-5555ef5b-4e50-4a8f-828a-eef69b544aa9",
   "storageBucket": "hazel-gateway-w1ttq.firebasestorage.app",
   "messagingSenderId": "258202950135",
-  "appId": "1:258202950135:web:475db690c97e8adca8f6f2",
-  "firestoreDatabaseId": "ai-studio-remixremixrsrvai-5555ef5b-4e50-4a8f-828a-eef69b544aa9"
+  "measurementId": "",
+  "oAuthClientId": "258202950135-64dpf8kincqujdjjapbjsaotab3re0e6.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

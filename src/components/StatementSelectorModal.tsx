@@ -64,17 +64,28 @@ export const StatementSelectorModal: React.FC<StatementSelectorModalProps> = ({
     {
       type: 'expense',
       number: '4',
-      title: t.expenseStatement1Page,
+      title: lang === 'bn' ? 'অফিস পেটি ক্যাশ ও খাত ভিত্তিক খরচ শিট' : 'Office Petty Cash & Category-wise Expense Sheet',
       subtitle:
         lang === 'bn'
-          ? 'অফিস পেটি ক্যাশ ও গাড়ি খরচের সমন্বিত মাসিক হিসাব শিট'
-          : 'Combined office petty cash and car maintenance expense statement',
+          ? 'অফিস পেটি ক্যাশ, ক্যাশ-ইন জমা ও খাত-ভিত্তিক খরচের পূর্ণাঙ্গ মাসিক শিট'
+          : 'Office petty cash, cash-in refills and category-wise expense statement',
       iconColor: 'bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400 border-amber-200 dark:border-amber-800',
-      badge: lang === 'bn' ? 'খরচ ও পেটি ক্যাশ' : 'Expenses & Office',
+      badge: lang === 'bn' ? 'অফিস পেটি ক্যাশ' : 'Office Petty Cash',
+    },
+    {
+      type: 'car_expense',
+      number: '5',
+      title: lang === 'bn' ? 'গাড়ি ও পরিবহন খরচ স্টেটমেন্ট' : 'Vehicle & Transport Expense Statement',
+      subtitle:
+        lang === 'bn'
+          ? 'গাড়ি, পিকআপ ভ্যান, তেল/জ্বালানি লিটার, ড্রাইভার বেতন, টোল ও যাতায়াত খরচের স্টেটমেন্ট'
+          : 'Vehicle maintenance, fuel liters, driver salary, toll and trip statement',
+      iconColor: 'bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-400 border-sky-200 dark:border-sky-800',
+      badge: lang === 'bn' ? 'গাড়ি ও পরিবহন' : 'Vehicle & Transport',
     },
     {
       type: 'financial',
-      number: '5',
+      number: '6',
       title: t.financialAnalyticsStatement1Page,
       subtitle:
         lang === 'bn'
@@ -85,7 +96,7 @@ export const StatementSelectorModal: React.FC<StatementSelectorModalProps> = ({
     },
     {
       type: 'worker_tracking',
-      number: '6',
+      number: '7',
       title: lang === 'bn' ? 'প্রসেসিং কর্মীভিত্তিক ওয়ার্কার ট্র্যাকিং ও ড্যামেজ শিট' : 'Processing Worker Task & Damage Statement',
       subtitle:
         lang === 'bn'

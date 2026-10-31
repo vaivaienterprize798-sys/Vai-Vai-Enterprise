@@ -45,6 +45,7 @@ import { WeChatShareDropdown } from './WeChatShareDropdown';
 import { CompanyLogo } from './CompanyLogo';
 import { executePrint } from '../lib/printUtils';
 import { storageService } from '../lib/storage';
+import { computeChinaOfficeSummary } from '../lib/rollover';
 import { BranchOfficeLedger } from './BranchOfficeLedger';
 
 interface BranchOfficePanelProps {
@@ -541,41 +542,31 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
 
   // KPI Calculations
   const metrics = useMemo(() => {
-    const totalBdtSent = filteredConsignments.reduce((acc, c) => acc + (Number(c.totalBdtValue) || 0), 0);
-    const totalRmbEstSent = filteredConsignments.reduce((acc, c) => acc + (Number(c.totalRmbEstimated) || 0), 0);
-    const totalRmbReceived = filteredRemittances.reduce((acc, r) => acc + (Number(r.rmbAmount) || 0), 0);
-    
-    const totalRmbConverted = filteredConversions.reduce((acc, cv) => acc + (Number(cv.rmbAmountGiven) || 0), 0);
-    const totalBdtReceived = filteredConversions.reduce((acc, cv) => acc + (Number(cv.receivedBdtAmount) || 0), 0);
-    const totalExpectedBdt = filteredConversions.reduce((acc, cv) => acc + (Number(cv.expectedBdtAmount) || 0), 0);
-    const totalThirdPartyDueBdt = filteredConversions.reduce((acc, cv) => acc + (Number(cv.remainingDueBdt) || 0), 0);
-
-    const rmbBalanceInHand = Math.max(0, totalRmbReceived - totalRmbConverted);
-    const branchNetRmbDue = totalRmbEstSent > 0 ? (totalRmbEstSent - totalRmbReceived) : 0;
-
-    // Direct China BDT payments without third parties
-    const totalChinaDirectBdt = filteredChinaDirectPayments.reduce((acc, p) => acc + (Number(p.amountBdt) || 0), 0);
-
-    // User exact calculation:
-    // Total Stock BDT থেকে RMB Converted BDT এবং China Direct BDT বিয়োগ (-) হয়ে স্বয়ংক্রয়ভাবে হিসাব দেখাবে
-    const rmbConvertedBdt = totalExpectedBdt > 0 ? totalExpectedBdt : totalBdtReceived;
-    const chinaRemainingStockBdt = totalBdtSent - rmbConvertedBdt - totalChinaDirectBdt;
+    const opening = filterPeriodMode === 'all' ? storageService.getBranchOpening() : null;
+    const summary = computeChinaOfficeSummary(
+      filteredConsignments,
+      filteredConversions,
+      filteredChinaDirectPayments,
+      filteredRemittances,
+      opening
+    );
 
     return {
-      totalBdtSent,
-      totalRmbEstSent,
-      totalRmbReceived,
-      totalRmbConverted,
-      rmbBalanceInHand,
-      totalBdtReceived,
-      totalExpectedBdt,
-      totalThirdPartyDueBdt,
-      totalChinaDirectBdt,
-      branchNetRmbDue,
-      rmbConvertedBdt,
-      chinaRemainingStockBdt,
+      totalBdtSent: summary.totalSentBdt,
+      totalRmbEstSent: summary.totalEstRmbSent,
+      totalRmbReceived: summary.totalRmbRemitted,
+      totalRmbConverted: summary.totalConvertedRmb,
+      rmbBalanceInHand: summary.rmbBalanceInHand,
+      totalBdtReceived: summary.totalBdtReceived,
+      totalExpectedBdt: summary.totalExpectedBdt,
+      totalThirdPartyDueBdt: summary.totalThirdPartyDueBdt,
+      totalChinaDirectBdt: summary.totalChinaDirectBdt,
+      branchNetRmbDue: summary.branchNetRmbDue,
+      rmbConvertedBdt: summary.rmbConvertedBdt,
+      chinaRemainingStockBdt: summary.chinaRemainingDueBdt,
+      signedOpening: summary.signedOpening,
     };
-  }, [filteredConsignments, filteredRemittances, filteredConversions, filteredChinaDirectPayments]);
+  }, [filteredConsignments, filteredRemittances, filteredConversions, filteredChinaDirectPayments, filterPeriodMode]);
 
   // Comprehensive China Stock BDT, RMB Conversion & Direct BDT Payment History Ledger
   const chinaBdtHistoryLedger = useMemo(() => {

@@ -142,3 +142,50 @@ export function chinaOfficeMovements(
     })),
   ];
 }
+
+/**
+ * Canonical China / Branch Office financial balance calculation.
+ * Ensures 100% mathematical consistency across Dashboard, Branch Office Panel, and Ledger.
+ *
+ * Remaining Due BDT = Total Sent BDT + signed opening balance - RMB Converted (BDT) - China Direct BDT.
+ */
+export function computeChinaOfficeSummary(
+  consignments: { id?: string; date?: string; consignmentNo?: string; totalBdtValue?: number; totalRmbEstimated?: number }[],
+  conversions: { id?: string; date?: string; voucherNo?: string; partyName?: string; expectedBdtAmount?: number; receivedBdtAmount?: number; rmbAmountGiven?: number; remainingDueBdt?: number }[],
+  chinaDirectPayments: { id?: string; date?: string; referenceNo?: string; amountBdt?: number }[],
+  remittances: { id?: string; date?: string; rmbAmount?: number }[],
+  opening?: BranchOpeningBalance | null
+) {
+  const totalSentBdt = round2((consignments || []).reduce((acc, c) => acc + num(c.totalBdtValue), 0));
+  const totalEstRmbSent = round2((consignments || []).reduce((acc, c) => acc + num(c.totalRmbEstimated), 0));
+  const totalRmbRemitted = round2((remittances || []).reduce((acc, r) => acc + num(r.rmbAmount), 0));
+
+  const totalConvertedRmb = round2((conversions || []).reduce((acc, cv) => acc + num(cv.rmbAmountGiven), 0));
+  const totalBdtReceived = round2((conversions || []).reduce((acc, cv) => acc + num(cv.receivedBdtAmount), 0));
+  const totalExpectedBdt = round2((conversions || []).reduce((acc, cv) => acc + num(cv.expectedBdtAmount), 0));
+  const totalThirdPartyDueBdt = round2((conversions || []).reduce((acc, cv) => acc + num(cv.remainingDueBdt), 0));
+
+  const rmbConvertedBdt = totalExpectedBdt > 0 ? totalExpectedBdt : totalBdtReceived;
+  const totalChinaDirectBdt = round2((chinaDirectPayments || []).reduce((acc, p) => acc + num(p.amountBdt), 0));
+
+  const signedOpening = signedBranchOpening(opening);
+  const chinaRemainingDueBdt = round2(totalSentBdt + signedOpening - rmbConvertedBdt - totalChinaDirectBdt);
+  const rmbBalanceInHand = round2(Math.max(0, totalRmbRemitted - totalConvertedRmb));
+  const branchNetRmbDue = totalEstRmbSent > 0 ? round2(Math.max(0, totalEstRmbSent - totalRmbRemitted)) : 0;
+
+  return {
+    totalSentBdt,
+    totalEstRmbSent,
+    totalRmbRemitted,
+    totalConvertedRmb,
+    totalBdtReceived,
+    totalExpectedBdt,
+    totalThirdPartyDueBdt,
+    totalChinaDirectBdt,
+    rmbConvertedBdt,
+    chinaRemainingDueBdt,
+    rmbBalanceInHand,
+    branchNetRmbDue,
+    signedOpening,
+  };
+}

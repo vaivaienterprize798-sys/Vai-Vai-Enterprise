@@ -290,7 +290,7 @@ export interface OfficeExpense {
 
 export type Expense = OfficeExpense;
 
-export type StatementType = 'stock' | 'party' | 'payroll' | 'expense' | 'financial' | 'worker_tracking';
+export type StatementType = 'stock' | 'party' | 'payroll' | 'expense' | 'car_expense' | 'financial' | 'worker_tracking';
 
 export interface FilterState {
   startDate: string;

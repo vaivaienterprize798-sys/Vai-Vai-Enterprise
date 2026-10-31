@@ -41,6 +41,7 @@ import {
   formatDashboardCurrency,
 } from '../lib/translations';
 import { storageService } from '../lib/storage';
+import { computeChinaOfficeSummary } from '../lib/rollover';
 import { CompanyLogo } from './CompanyLogo';
 
 interface DashboardProps {
@@ -223,24 +224,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // China Office Stock & Due Status (এক নজরে চায়না অফিস থেকে মোট আর কত টাকা পাওয়ার বাকি আছে বা হিসাবের বর্তমান অবস্থা)
   const chinaMetrics = useMemo(() => {
-    const totalSentBdt = (branchConsignments || []).reduce((acc, c) => acc + (Number(c.totalBdtValue) || 0), 0);
-    const totalEstRmbSent = (branchConsignments || []).reduce((acc, c) => acc + (Number(c.totalRmbEstimated) || 0), 0);
-    const totalRmbRemitted = (branchRemittances || []).reduce((acc, r) => acc + (Number(r.rmbAmount) || 0), 0);
-    const totalConvertedBdt = (rmbConversions || []).reduce((acc, cv) => acc + (Number(cv.receivedBdtAmount) || 0), 0);
-    const totalConvertedRmb = (rmbConversions || []).reduce((acc, cv) => acc + (Number(cv.rmbAmountGiven) || 0), 0);
-    const totalChinaDirectBdt = (chinaDirectPayments || []).reduce((acc, p) => acc + (Number(p.amountBdt) || 0), 0);
-    const remainingDueBdt = Math.max(0, totalSentBdt - (totalConvertedBdt + totalChinaDirectBdt));
-    const rmbBalanceInHand = Math.max(0, totalRmbRemitted - totalConvertedRmb);
-
+    const summary = computeChinaOfficeSummary(
+      branchConsignments || [],
+      rmbConversions || [],
+      chinaDirectPayments || [],
+      branchRemittances || [],
+      storageService.getBranchOpening()
+    );
     return {
-      totalSentBdt,
-      totalEstRmbSent,
-      totalRmbRemitted,
-      totalConvertedBdt,
-      totalConvertedRmb,
-      totalChinaDirectBdt,
-      remainingDueBdt,
-      rmbBalanceInHand,
+      totalSentBdt: summary.totalSentBdt,
+      totalEstRmbSent: summary.totalEstRmbSent,
+      totalRmbRemitted: summary.totalRmbRemitted,
+      totalConvertedBdt: summary.totalBdtReceived,
+      rmbConvertedBdt: summary.rmbConvertedBdt,
+      totalConvertedRmb: summary.totalConvertedRmb,
+      totalExpectedBdt: summary.totalExpectedBdt,
+      totalThirdPartyDueBdt: summary.totalThirdPartyDueBdt,
+      totalChinaDirectBdt: summary.totalChinaDirectBdt,
+      remainingDueBdt: summary.chinaRemainingDueBdt,
+      rmbBalanceInHand: summary.rmbBalanceInHand,
+      branchNetRmbDue: summary.branchNetRmbDue,
+      signedOpening: summary.signedOpening,
     };
   }, [branchConsignments, branchRemittances, rmbConversions, chinaDirectPayments]);
 
@@ -698,7 +702,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {formatDashboardCurrency(chinaMetrics.remainingDueBdt, lang)}
             </div>
             <p className="text-[10px] text-slate-300 font-mono">
-              = {lang === 'bn' ? 'স্টক' : 'Stock'} {formatDashboardCurrency(chinaMetrics.totalSentBdt, lang)} - {lang === 'bn' ? 'RMB BDT' : 'RMB'} {formatDashboardCurrency(chinaMetrics.totalConvertedBdt, lang)}
+              = {lang === 'bn' ? 'স্টক' : 'Stock'} {formatDashboardCurrency(chinaMetrics.totalSentBdt, lang)}
+              {chinaMetrics.signedOpening !== 0 && ` ${chinaMetrics.signedOpening > 0 ? '+' : '-'} ${lang === 'bn' ? 'প্রারম্ভিক' : 'Opening'} ${formatDashboardCurrency(Math.abs(chinaMetrics.signedOpening), lang)}`}
+              {` - ${lang === 'bn' ? 'RMB কনভার্ট BDT' : 'RMB'} ${formatDashboardCurrency(chinaMetrics.rmbConvertedBdt, lang)}`}
               {chinaMetrics.totalChinaDirectBdt > 0 && ` - ${lang === 'bn' ? 'সরাসরি BDT' : 'Direct'} ${formatDashboardCurrency(chinaMetrics.totalChinaDirectBdt, lang)}`}
             </p>
           </div>
@@ -719,13 +725,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {/* Card C: Total RMB Converted to BDT */}
           <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
-              {lang === 'bn' ? 'RMB হতে মোট প্রাপ্ত টাকা (BDT)' : 'RMB Converted BDT'}
+              {lang === 'bn' ? 'RMB হতে মোট কনভার্ট টাকা (BDT)' : 'RMB Converted BDT'}
             </span>
             <div className="text-2xl font-black font-mono text-emerald-300">
-              {formatDashboardCurrency(chinaMetrics.totalConvertedBdt, lang)}
+              {formatDashboardCurrency(chinaMetrics.rmbConvertedBdt, lang)}
             </div>
             <p className="text-[10px] text-slate-400 font-mono">
               {lang === 'bn' ? 'কনভার্ট RMB:' : 'Converted:'} ¥ {Math.round(chinaMetrics.totalConvertedRmb).toLocaleString()}
+              {chinaMetrics.totalThirdPartyDueBdt > 0 && ` (${lang === 'bn' ? '৩য়-পক্ষ বাকি:' : 'Party Due:'} ${formatDashboardCurrency(chinaMetrics.totalThirdPartyDueBdt, lang)})`}
             </p>
           </div>
 

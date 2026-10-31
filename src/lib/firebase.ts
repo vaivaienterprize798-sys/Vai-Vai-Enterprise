@@ -264,6 +264,17 @@ export const cloudDbService = {
         const result = await signInWithPopup(auth, googleProvider);
         return result.user;
       } catch (popupErr: any) {
+        if (popupErr?.code === 'auth/unauthorized-domain' || String(popupErr?.message).includes('unauthorized-domain')) {
+          const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+          const projectId = firebaseConfig.projectId || 'hazel-gateway-w1ttq';
+          const domainErr: any = new Error(
+            `Domain (${currentHost}) is not authorized in Firebase Console.`
+          );
+          domainErr.code = 'auth/unauthorized-domain';
+          domainErr.domain = currentHost;
+          domainErr.consoleUrl = `https://console.firebase.google.com/project/${projectId}/authentication/settings`;
+          throw domainErr;
+        }
         const fallback = [
           'auth/popup-blocked',
           'auth/cancelled-popup-request',
@@ -278,8 +289,10 @@ export const cloudDbService = {
         }
         throw popupErr;
       }
-    } catch (err) {
-      console.error('Google sign-in error:', err);
+    } catch (err: any) {
+      if (err?.code !== 'auth/unauthorized-domain') {
+        console.warn('Google sign-in notice:', err);
+      }
       throw err;
     }
   },

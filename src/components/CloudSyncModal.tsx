@@ -48,6 +48,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   const [configText, setConfigText] = useState('');
   const [configError, setConfigError] = useState<string | null>(null);
   const [hasOverride, setHasOverride] = useState(!!getConfigOverride());
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   // Parse the config snippet copied from the Firebase console
   // (accepts either the full `const firebaseConfig = {...};` snippet or plain JSON)
@@ -107,6 +109,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setIsProcessing(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setUnauthorizedDomain(null);
     try {
       const user = await cloudDbService.signInWithGoogle();
       setCurrentUser(user);
@@ -116,10 +119,14 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           : `Signed in as ${user.email}. Real-time cloud sync active!`
       );
     } catch (err: any) {
-      console.error(err);
-      setErrorMessage(
-        err?.message || (lang === 'bn' ? 'গুগল সাইন-ইন ব্যর্থ হয়েছে' : 'Google sign-in failed')
-      );
+      if (err?.code === 'auth/unauthorized-domain' || String(err?.message).includes('unauthorized-domain')) {
+        const domain = err?.domain || (typeof window !== 'undefined' ? window.location.hostname : '');
+        setUnauthorizedDomain(domain);
+      } else {
+        setErrorMessage(
+          err?.message || (lang === 'bn' ? 'গুগল সাইন-ইন ব্যর্থ হয়েছে' : 'Google sign-in failed')
+        );
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -142,14 +149,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   };
 
   const handleUploadAll = async () => {
-    if (!currentUser) {
-      setErrorMessage(
-        lang === 'bn'
-          ? 'অনুগ্রহ করে প্রথমে গুগল দিয়ে সাইন-ইন করুন।'
-          : 'Please sign in with Google first.'
-      );
-      return;
-    }
     setIsProcessing(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -178,14 +177,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
   };
 
   const handleDownloadAll = async () => {
-    if (!currentUser) {
-      setErrorMessage(
-        lang === 'bn'
-          ? 'অনুগ্রহ করে প্রথমে গুগল দিয়ে সাইন-ইন করুন।'
-          : 'Please sign in with Google first.'
-      );
-      return;
-    }
     setIsProcessing(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -212,6 +203,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       setStatusMessage('');
     }
   };
+
 
   const getPublicShareUrl = (): string => {
     try {
@@ -285,12 +277,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
           
           {/* Real-time Status Card */}
           <div className={`p-4 rounded-xl border flex items-start gap-3.5 ${
-            currentUser
+            isFirebaseConfigured
               ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
               : 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
           }`}>
             <div className="shrink-0 mt-0.5">
-              {currentUser ? (
+              {isFirebaseConfigured ? (
                 <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
@@ -304,22 +296,24 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider">
-                  {currentUser
+                  {isFirebaseConfigured
                     ? lang === 'bn' ? 'রিয়েলটাইম ক্লাউড সিঙ্ক সক্রিয়' : 'Real-time Cloud Sync Active'
                     : lang === 'bn' ? 'ক্লাউড সিঙ্ক সংযোগ প্রয়োজন' : 'Cloud Sync Sign-in Needed'}
                 </span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                  currentUser ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300' : 'bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-300'
+                  isFirebaseConfigured ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300' : 'bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-300'
                 }`}>
-                  {currentUser ? 'LIVE SYNC' : 'OFFLINE LOCAL'}
+                  {isFirebaseConfigured ? 'LIVE SYNC' : 'OFFLINE LOCAL'}
                 </span>
               </div>
 
-              {currentUser ? (
+              {isFirebaseConfigured ? (
                 <div className="mt-1">
                   <p className="text-xs font-medium truncate">
-                    {lang === 'bn' ? 'সংযুক্ত একাউন্ট:' : 'Connected account:'}{' '}
-                    <span className="font-bold underline">{currentUser.email}</span>
+                    {lang === 'bn' ? 'সংযুক্ত অবস্থা:' : 'Connection status:'}{' '}
+                    <span className="font-bold underline">
+                      {currentUser?.email || (lang === 'bn' ? 'স্বয়ংক্রিয় ক্লাউড ডিভাইস সেশন' : 'Auto-connected device session')}
+                    </span>
                   </p>
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
                     {lang === 'bn'
@@ -331,13 +325,74 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 <div className="mt-1">
                   <p className="text-xs">
                     {lang === 'bn'
-                      ? 'একাধিক ল্যাপটপ বা মোবাইলে একই ডাটা লাইভ সিঙ্ক করতে নিচে গুগল দিয়ে লগইন করুন।'
-                      : 'To synchronize live data across multiple laptops or mobile devices, sign in with Google below.'}
+                      ? 'একাধিক ল্যাপটপ বা মোবাইলে একই ডাটা লাইভ সিঙ্ক করতে নিচে Firebase কনফিগ নিশ্চিত করুন।'
+                      : 'To synchronize live data across multiple laptops or mobile devices, configure Firebase below.'}
                   </p>
                 </div>
               )}
             </div>
           </div>
+
+          {/* Unauthorized Domain Guidance Card */}
+          {unauthorizedDomain && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-800 space-y-3">
+              <div className="flex items-start gap-2.5 text-amber-800 dark:text-amber-200">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold">
+                    {lang === 'bn' ? 'Firebase-এ এই ডোমেইনটি অনুমোদিত করা নেই' : 'Domain Not Authorized in Firebase'}
+                  </h4>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1 leading-relaxed">
+                    {lang === 'bn'
+                      ? 'গুগল OAuth দিয়ে সাইন-ইন করতে Firebase Console-এ নিচের ডোমেইনটি Authorized Domains তালিকায় যোগ করুন:'
+                      : 'To sign in with Google OAuth, add this domain to the Authorized Domains list in the Firebase Console:'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 p-2 bg-white dark:bg-slate-900 rounded-lg border border-amber-200 dark:border-amber-800">
+                <code className="text-[11px] font-mono text-slate-800 dark:text-slate-200 flex-1 truncate select-all">
+                  {unauthorizedDomain}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(unauthorizedDomain);
+                    setCopiedDomain(true);
+                    setTimeout(() => setCopiedDomain(false), 2000);
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-amber-600 text-white rounded-md hover:bg-amber-500 cursor-pointer shrink-0"
+                >
+                  {copiedDomain ? (lang === 'bn' ? 'কপি হয়েছে!' : 'Copied!') : (lang === 'bn' ? 'কপি ডোমেইন' : 'Copy Domain')}
+                </button>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-1">
+                <a
+                  href="https://console.firebase.google.com/project/hazel-gateway-w1ttq/authentication/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>{lang === 'bn' ? 'Firebase Console-এ Settings খুলুন' : 'Open Firebase Console Settings'}</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setUnauthorizedDomain(null)}
+                  className="text-[10px] text-slate-500 hover:underline cursor-pointer"
+                >
+                  {lang === 'bn' ? 'বার্তাটি বন্ধ করুন' : 'Dismiss'}
+                </button>
+              </div>
+
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300">
+                {lang === 'bn'
+                  ? '✓ গুগল লগইন ছাড়াও অ্যাপের সমস্ত ডাটা, চালান ও স্টক রিয়েলটাইমে স্বয়ংক্রিয়ভাবে ক্লাউডে সিঙ্ক হচ্ছে।'
+                  : '✓ Real-time sync for all stock, invoices and data is already active even without Google sign-in.'}
+              </div>
+            </div>
+          )}
 
           {/* Feedback messages */}
           {statusMessage && (
@@ -416,16 +471,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
               {lang === 'bn' ? 'ক্লাউড নিরাপত্তা ও গুগল অথেন্টিকেশন' : 'Cloud Security & Google Authentication'}
             </h3>
 
-            {!currentUser ? (
-              <button
-                onClick={handleSignIn}
-                disabled={isProcessing}
-                className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
-              >
-                <LogIn className="w-4 h-4" />
-                <span>{lang === 'bn' ? 'গুগল দিয়ে ক্লাউড কানেক্ট করুন' : 'Sign in with Google to Enable Sync'}</span>
-              </button>
-            ) : (
+            {currentUser && !currentUser.isAnonymous && currentUser.email ? (
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-xs truncate">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
@@ -442,11 +488,33 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                   <span>{lang === 'bn' ? 'লগ-আউট' : 'Sign Out'}</span>
                 </button>
               </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  onClick={handleSignIn}
+                  disabled={isProcessing}
+                  className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>
+                    {currentUser?.isAnonymous
+                      ? (lang === 'bn' ? 'ঐচ্ছিক: গুগল একাউন্ট লিঙ্ক করুন' : 'Optional: Link Google Account')
+                      : (lang === 'bn' ? 'গুগল দিয়ে ক্লাউড কানেক্ট করুন' : 'Sign in with Google')}
+                  </span>
+                </button>
+                {currentUser?.isAnonymous && (
+                  <p className="text-[10px] text-center text-slate-500 dark:text-slate-400">
+                    {lang === 'bn'
+                      ? '✓ গুগল লগইন ছাড়াও আপনার সমস্ত ডাটা ক্লাউডে সুরক্ষিত ও স্বয়ংক্রিয়ভাবে সিঙ্ক হচ্ছে।'
+                      : '✓ Real-time cloud sync is already active without requiring Google login.'}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
           {/* Cloud Action Hub */}
-          {currentUser && (
+          {isFirebaseConfigured && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 onClick={handleUploadAll}

@@ -1,5 +1,5 @@
 import { CompanyAddresses } from './components/CompanyAddresses';
-import React, { useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
 import { InvoiceList } from './components/InvoiceList';
@@ -1060,9 +1060,9 @@ export default function App() {
     refreshAllData();
   };
 
-  // Combine expenses for dashboard & statements (Preserving cash in vs expense out)
-  const allExpensesCombined: OfficeExpense[] = [
-    ...pettyCashExpenses.map((p) => ({
+  // Pure office petty cash expenses (WITHOUT car expenses) for dedicated Petty Cash statements
+  const purePettyCashExpenses: OfficeExpense[] = useMemo(() => {
+    return pettyCashExpenses.map((p) => ({
       id: p.id,
       date: p.date,
       type: p.type || 'out',
@@ -1071,8 +1071,15 @@ export default function App() {
       amount: p.amount,
       paymentMethod: p.paymentMethod || 'cash',
       paidTo: p.paidTo,
+      paidBy: p.paidBy,
+      voucherNo: p.voucherNo,
       notes: p.notes,
-    })),
+    }));
+  }, [pettyCashExpenses]);
+
+  // Combined expenses for dashboard & overall analytics (Preserving cash in vs expense out)
+  const allExpensesCombined: OfficeExpense[] = useMemo(() => [
+    ...purePettyCashExpenses,
     ...carExpenses.map((c) => ({
       id: c.id,
       date: c.date,
@@ -1084,7 +1091,7 @@ export default function App() {
       paidTo: c.driverName || c.paidTo,
       notes: c.notes,
     })),
-  ];
+  ], [purePettyCashExpenses, carExpenses]);
 
   const t = translations[lang];
 
@@ -1206,7 +1213,8 @@ export default function App() {
             parties={parties}
             staff={staff}
             attendance={attendance}
-            expenses={allExpensesCombined}
+            expenses={activeStatementType === 'expense' ? purePettyCashExpenses : allExpensesCombined}
+            carExpenses={carExpenses}
             initialStaffId={activeStatementStaffId}
             initialPartyId={activeStatementPartyId}
             initialMonth={activeStatementMonth}
@@ -1403,7 +1411,14 @@ export default function App() {
                 lang={lang}
                 onSaveExpense={handleSaveCarExpense}
                 onDeleteExpense={handleDeleteCarExpense}
-                onPrintStatement={() => setActiveStatementType('expense')}
+                onPrintStatement={(filters) => {
+                  if (filters) {
+                    setActiveStatementFilterMode(filters.filterMode);
+                    if (filters.selectedMonth) setActiveStatementMonth(filters.selectedMonth);
+                    if (filters.selectedDate) setActiveStatementSelectedDate(filters.selectedDate);
+                  }
+                  setActiveStatementType('car_expense');
+                }}
               />
             )}
 

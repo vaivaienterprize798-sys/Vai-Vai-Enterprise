@@ -619,6 +619,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
+            <a
+              href="/rsr-vai-vai-enterprise.zip"
+              download="rsr-vai-vai-enterprise.zip"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer shadow-xs transition-all"
+              title={lang === 'bn' ? 'সম্পূর্ণ নির্ভুল কারেক্ট করা প্রজেক্টের জিপ ফাইল ডাউনলোড করুন' : 'Download complete source code zip package'}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{lang === 'bn' ? '📦 সোর্স কোড ZIP ডাউনলোড' : '📦 Download Source ZIP'}</span>
+            </a>
+
             <button
               type="button"
               onClick={onOpenBackupModal}
