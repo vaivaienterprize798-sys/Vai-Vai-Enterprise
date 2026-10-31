@@ -208,6 +208,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       { key: 'android', label: t.androidItem, color: 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' },
       { key: 'kg', label: t.kgItem, color: 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400' },
       { key: 'pcs_blank', label: t.pcsBlankItem, color: 'border-purple-500 bg-purple-50/50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-400' },
+      { key: 'computer', label: t.computerItem, color: 'border-teal-500 bg-teal-50/50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400' },
     ];
 
     return categories.map((cat) => {
@@ -775,7 +776,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {categoryStats.map((cat) => (
             <div
               key={cat.key}

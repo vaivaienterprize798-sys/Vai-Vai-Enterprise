@@ -5556,6 +5556,21 @@
   ],
   "stock": [
     {
+      "id": "stk-computer-accessories-01",
+      "category": "code",
+      "code": "ACC-001",
+      "nameBn": "কম্পিউটার এক্সেসরিজ",
+      "nameEn": "Computer Accessories",
+      "openingQty": 0,
+      "quantity": 50,
+      "unit": "pcs",
+      "purchaseRate": 500,
+      "purchaseAvgRate": 500,
+      "saleRate": 0,
+      "minAlertQty": 10,
+      "lastUpdated": "2026-10-31"
+    },
+    {
       "id": "stk-1790661268501",
       "minAlertQty": 50,
       "purchaseAvgRate": 75.25,

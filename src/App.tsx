@@ -298,7 +298,6 @@ export default function App() {
       unsubs.push(
         cloudDbService.subscribeToCollection<StockItem>('stock', (cloudStock) => {
           if (Array.isArray(cloudStock)) {
-            setStock(cloudStock);
             localStorage.setItem('rsr_stock_v1', JSON.stringify(cloudStock));
             // Avg-rate guard: local only (see above)
             storageService.reconcileStockAvgRates(false);

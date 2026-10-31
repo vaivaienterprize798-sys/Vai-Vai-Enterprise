@@ -757,6 +757,7 @@ Thank you for doing business with us!`;
                             <option value="android">{t.androidItem}</option>
                             <option value="kg">{t.kgItem}</option>
                             <option value="pcs_blank">{t.pcsBlankItem}</option>
+                            <option value="computer">{t.computerItem}</option>
                           </select>
                         </td>
                         {/* Quantity - Cell 2 */}

@@ -191,6 +191,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
     android: t.androidItem,
     kg: t.kgItem,
     pcs_blank: t.pcsBlankItem,
+    computer: t.computerItem,
   };
   const stockView = stockPanel === 'all' ? stock : stock.filter((s) => s.category === stockPanel);
 
@@ -406,7 +407,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         const totalDue = selectedPartyMember.currentDue;
         const totalAdv = selectedPartyMember.currentAdvance;
 
-        summaryText += `👤 *পার্টি:* ${selectedPartyMember.name} (${selectedPartyMember.type})\n📞 *মোবাইল:* ${selectedPartyMember.phone || '-'}\n📍 *ঠিকানা:* ${selectedPartyMember.address || '-'}\n────────────────────────\n🏦 *প্রারম্ভিক জের (Opening B/L):* ৳${periodOpening.toLocaleString()}\n📝 মোট চালান: ${partyInvoices.length} টি\n🛒 ক্রয় (Purchases): ৳${totalPurchases.toLocaleString()}\n🛍️ বিক্রয় (Sales): ৳${totalSales.toLocaleString()}\n💵 মোট পরিশোধ: ৳${totalPaid.toLocaleString()}\n────────────────────────\n${totalDue > 0 ? `������ *বর্তমান পাওনা বাকি (Due):* ৳${totalDue.toLocaleString()}` : totalAdv > 0 ? `🟢 *বর্তমান অগ্রিম জমা (Advance):* ৳${totalAdv.toLocaleString()}` : `⚪ *হিসাব সম্পূর্ণ পরিশোধিত (Settled)*`}\n`;
+        summaryText += `👤 *পার্টি:* ${selectedPartyMember.name} (${selectedPartyMember.type})\n📞 *মোবাইল:* ${selectedPartyMember.phone || '-'}\n📍 *ঠিকানা:* ${selectedPartyMember.address || '-'}\n────────────────────────\n🏦 *প্রারম্ভিক জের (Opening B/L):* ৳${periodOpening.toLocaleString()}\n📝 মোট চালান: ${partyInvoices.length} টি\n🛒 ক্রয় (Purchases): ৳${totalPurchases.toLocaleString()}\n🛍️ বিক্রয় (Sales): ৳${totalSales.toLocaleString()}\n💵 মোট পরিশোধ: ৳${totalPaid.toLocaleString()}\n────────────────────────\n${totalDue > 0 ? `🔴 *বর্তমান পাওনা বাকি (Due):* ৳${totalDue.toLocaleString()}` : totalAdv > 0 ? `🟢 *বর্তমান অগ্রিম জমা (Advance):* ৳${totalAdv.toLocaleString()}` : `⚪ *হিসাব সম্পূর্ণ পরিশোধিত (Settled)*`}\n`;
       } else {
         const totalDue = parties.reduce((s, p) => s + p.currentDue, 0);
         const totalAdv = parties.reduce((s, p) => s + p.currentAdvance, 0);
@@ -700,7 +701,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         {/* 1. STOCK STATEMENT SHEET */}
         {type === 'stock' && (
           <div className="mt-4 space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 text-center text-xs">
               <div className="p-2 bg-emerald-50/80 rounded-xl border border-emerald-300">
                 <span className="block text-[10px] uppercase text-emerald-800 font-extrabold">{t.codeItem}</span>
                 <span className="font-mono font-black text-emerald-950">
@@ -723,6 +724,12 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                 <span className="block text-[10px] uppercase text-indigo-800 font-extrabold">{t.pcsBlankItem}</span>
                 <span className="font-mono font-black text-indigo-950">
                   {formatNumber(stockView.filter((s) => s.category === 'pcs_blank').length, lang)} {lang === 'bn' ? 'আইটেম' : 'Items'}
+                </span>
+              </div>
+              <div className="p-2 bg-purple-50/80 rounded-xl border border-purple-300">
+                <span className="block text-[10px] uppercase text-purple-800 font-extrabold">{t.computerItem}</span>
+                <span className="font-mono font-black text-purple-950">
+                  {formatNumber(stockView.filter((s) => s.category === 'computer').length, lang)} {lang === 'bn' ? 'আইটেম' : 'Items'}
                 </span>
               </div>
               <div className="p-2 bg-emerald-100/90 border border-emerald-400 rounded-xl">

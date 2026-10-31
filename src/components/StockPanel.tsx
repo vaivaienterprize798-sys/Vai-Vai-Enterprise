@@ -139,6 +139,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
         return 'COD'; // কোড মাদারবোর্ড
       case 'kg':
         return 'KG'; // কেজি মাদারবোর্ড স্ক্র্যাপ
+      case 'computer':
+        return 'ACC'; // কম্পিউটার এক্সেসরিজ
       default:
         return 'ITM';
     }
@@ -294,8 +296,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {lang === 'bn'
-                ? '৪টি নির্দিষ্ট ক্যাটাগরিতে অটো স্টক ও ক্রয় গড় দর (ইনভয়েস সেভ করলেই স্টক ও গড় রেট স্বয়ংক্রিয়ভাবে আপডেট হয়)'
-                : 'Auto stock & weighted average purchase rate tracking across 4 designated scrap categories'}
+                ? '৫টি নির্দিষ্ট ক্যাটাগরিতে অটো স্টক ও ক্রয় গড় দর (ইনভয়েস সেভ করলেই স্টক ও গড় রেট স্বয়ংক্রিয়ভাবে আপডেট হয়)'
+                : 'Auto stock & weighted average purchase rate tracking across 5 designated categories'}
             </p>
           </div>
         </div>
@@ -325,6 +327,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             <option value="android">{t.androidItem}</option>
             <option value="kg">{t.kgItem}</option>
             <option value="pcs_blank">{t.pcsBlankItem}</option>
+            <option value="computer">{t.computerItem}</option>
           </select>
 
           {activeCategory !== 'all' && (
@@ -357,8 +360,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
         </div>
       </div>
 
-      {/* 4 Category Tabs Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      {/* 5 Category Tabs Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
         <button
           onClick={() => setActiveCategory('all')}
           className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
@@ -426,6 +429,20 @@ export const StockPanel: React.FC<StockPanelProps> = ({
           <div className="text-xs font-semibold">{t.pcsBlankItem}</div>
           <div className="text-lg font-bold font-mono mt-0.5">
             {formatNumber(stock.filter((s) => s.category === 'pcs_blank').length, lang)}
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveCategory('computer')}
+          className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
+            activeCategory === 'computer'
+              ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <div className="text-xs font-semibold">{t.computerItem}</div>
+          <div className="text-lg font-bold font-mono mt-0.5">
+            {formatNumber(stock.filter((s) => s.category === 'computer').length, lang)}
           </div>
         </button>
       </div>
@@ -622,7 +639,9 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                             : it.category === 'kg'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                            : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                            : it.category === 'pcs_blank'
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                            : 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300'
                         }`}
                       >
                         {it.category === 'code'
@@ -631,7 +650,9 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                           ? t.androidItem
                           : it.category === 'kg'
                           ? t.kgItem
-                          : t.pcsBlankItem}
+                          : it.category === 'pcs_blank'
+                          ? t.pcsBlankItem
+                          : t.computerItem}
                       </span>
                     </td>
                     <td className="py-3 px-3 text-center bg-emerald-50/30 dark:bg-emerald-950/20 font-mono font-bold text-emerald-700 dark:text-emerald-400">
@@ -801,6 +822,23 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                       <span>⚖️ কেজি স্ক্র্যাপ বোর্ড</span>
                       <span className="font-mono text-[10px] bg-amber-200 dark:bg-amber-800 px-1 py-0.2 rounded font-bold">KG</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        applyPresetProduct(
+                          lang === 'bn' ? 'কম্পিউটার এক্সেসরিজ' : 'Computer Accessories',
+                          'Computer Accessories',
+                          'computer',
+                          'pcs',
+                          500
+                        )
+                      }
+                      className="col-span-2 px-2.5 py-1.5 rounded-lg text-left bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300 font-semibold cursor-pointer transition-all flex items-center justify-between"
+                    >
+                      <span>🖥️ কম্পিউটার এক্সেসরিজ (Computer Accessories)</span>
+                      <span className="font-mono text-[10px] bg-teal-200 dark:bg-teal-800 px-1 py-0.2 rounded font-bold">ACC</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -819,6 +857,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                     <option value="pcs_blank">{t.pcsBlankItem} (BTN)</option>
                     <option value="code">{t.codeItem} (COD)</option>
                     <option value="kg">{t.kgItem} (KG)</option>
+                    <option value="computer">{t.computerItem} (ACC)</option>
                   </select>
                 </div>
 

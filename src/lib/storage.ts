@@ -236,11 +236,42 @@ export const storageService = {
   // Stock
   getStock: (): StockItem[] => {
     const list = loadFromStorage<StockItem[]>(STORAGE_KEYS.STOCK, INITIAL_STOCK);
-    if (!Array.isArray(list)) return INITIAL_STOCK;
-    return list.filter(Boolean).map((s) => ({
+    const stockItems: StockItem[] = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s) => ({
       ...s,
       purchaseAvgRate: s?.purchaseAvgRate ?? s?.purchaseRate ?? 0,
     }));
+
+    // Auto-ensure "Computer Accessories" (কম্পিউটার এক্সেসরিজ) exists
+    const hasCompAcc = stockItems.some(
+      (it) =>
+        it.code === 'ACC-001' ||
+        it.nameBn?.includes('কম্পিউটার এক্সেসরিজ') ||
+        it.nameEn?.toLowerCase().includes('computer accessories')
+    );
+    if (!hasCompAcc) {
+      const compAccItem: StockItem = {
+        id: 'stk-computer-accessories-01',
+        category: 'computer',
+        code: 'ACC-001',
+        nameBn: 'কম্পিউটার এক্সেসরিজ',
+        nameEn: 'Computer Accessories',
+        openingQty: 0,
+        quantity: 50,
+        unit: 'pcs',
+        purchaseRate: 500,
+        purchaseAvgRate: 500,
+        saleRate: 0,
+        minAlertQty: 10,
+        lastUpdated: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
+      };
+      stockItems.unshift(compAccItem);
+      saveToStorage(STORAGE_KEYS.STOCK, stockItems);
+      cloudDbService.saveDocument('stock', compAccItem).catch((err) => {
+        console.warn('[Cloud Sync] Computer Accessories push note:', err);
+      });
+    }
+
+    return stockItems;
   },
 
   saveStockItem: (item: StockItem): void => {
