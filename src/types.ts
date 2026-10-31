@@ -98,6 +98,7 @@ export interface StockItem {
   saleRate?: number; // optional legacy
   minAlertQty: number;
   lastUpdated: string;
+  sortOrder?: number; // ক্রম সাজানোর জন্য (Custom Display Order)
 }
 
 export interface DokanPayment {

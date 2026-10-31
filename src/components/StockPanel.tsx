@@ -17,6 +17,8 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { StockItem, StockCategory, Language, Invoice } from '../types';
 import {
@@ -37,6 +39,7 @@ interface StockPanelProps {
   lang: Language;
   onSaveItem: (item: StockItem) => void;
   onDeleteItem: (id: string) => void;
+  onReorderStock?: (updatedStock: StockItem[]) => void;
   onPrintStockStatement: (panel?: string) => void;
   isSuperAdmin?: boolean;
 }
@@ -47,6 +50,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
   lang,
   onSaveItem,
   onDeleteItem,
+  onReorderStock,
   onPrintStockStatement,
   isSuperAdmin = true,
 }) => {
@@ -268,6 +272,41 @@ export const StockPanel: React.FC<StockPanelProps> = ({
       return matchCat && matchSearch;
     });
   }, [stock, activeCategory, searchTerm]);
+
+  // Handle Move Up / Move Down to reorder stock items
+  const handleMoveItem = (itemId: string, direction: 'up' | 'down') => {
+    const listToUse = filteredStock;
+    const currIdx = listToUse.findIndex((it) => it.id === itemId);
+    if (currIdx < 0) return;
+
+    const targetIdx = direction === 'up' ? currIdx - 1 : currIdx + 1;
+    if (targetIdx < 0 || targetIdx >= listToUse.length) return;
+
+    const currentItem = listToUse[currIdx];
+    const targetItem = listToUse[targetIdx];
+
+    // Swap elements in full stock array
+    const fullStock = [...stock];
+    const fullCurrIdx = fullStock.findIndex((it) => it.id === currentItem.id);
+    const fullTargetIdx = fullStock.findIndex((it) => it.id === targetItem.id);
+
+    if (fullCurrIdx >= 0 && fullTargetIdx >= 0) {
+      const temp = fullStock[fullCurrIdx];
+      fullStock[fullCurrIdx] = fullStock[fullTargetIdx];
+      fullStock[fullTargetIdx] = temp;
+
+      const updatedStock = fullStock.map((it, idx) => ({
+        ...it,
+        sortOrder: idx + 1,
+      }));
+
+      if (onReorderStock) {
+        onReorderStock(updatedStock);
+      } else {
+        storageService.reorderStockItems(updatedStock);
+      }
+    }
+  };
 
   // Overall totals based on Purchase Rate
   const totalValuation = useMemo(() => {
@@ -580,6 +619,23 @@ export const StockPanel: React.FC<StockPanelProps> = ({
         </div>
       </div>
 
+      {/* Custom Reorder Tip Banner for SuperAdmin */}
+      {isSuperAdmin && (
+        <div className="bg-slate-100 dark:bg-slate-800/80 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
+          <div className="flex items-center gap-2">
+            <ArrowUpDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>
+              {lang === 'bn'
+                ? '💡 যেকোনো আইটেম নিজের মতো সাজাতে ▲ (উপরে) এবং ▼ (নিচে) বোতাম চাপুন।'
+                : '💡 Click ▲ (Move Up) or ▼ (Move Down) buttons to reorder stock items in your preferred order.'}
+            </span>
+          </div>
+          <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 px-2.5 py-0.5 rounded-full font-bold hidden sm:inline-block">
+            {lang === 'bn' ? 'কাস্টম সিকোয়েন্স সক্রিয়' : 'Custom Sequence Active'}
+          </span>
+        </div>
+      )}
+
       {/* Stock Table (includes Today's In and Today's Out per item) */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
@@ -599,7 +655,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                 <th className="py-3 px-3 text-center w-28 text-white font-bold">{t.inStock}</th>
                 <th className="py-3 px-3 text-right w-28 text-white font-bold">{t.purchaseRate}</th>
                 <th className="py-3 px-3 text-right w-32 text-white font-bold">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Stock Value'}</th>
-                <th className="py-3 px-3 text-right w-20 text-white font-bold">{t.action}</th>
+                <th className="py-3 px-3 text-right w-28 text-white font-bold">{t.action}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -692,10 +748,32 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                     </td>
                     {isSuperAdmin ? (
                       <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Move Up (▲) */}
+                          <button
+                            type="button"
+                            onClick={() => handleMoveItem(it.id, 'up')}
+                            disabled={idx === 0}
+                            title={lang === 'bn' ? 'উপরে তুলুন' : 'Move Up'}
+                            className="p-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          {/* Move Down (▼) */}
+                          <button
+                            type="button"
+                            onClick={() => handleMoveItem(it.id, 'down')}
+                            disabled={idx === filteredStock.length - 1}
+                            title={lang === 'bn' ? 'নিচে নামান' : 'Move Down'}
+                            className="p-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/80 text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+
                           <button
                             onClick={() => openEditItemModal(it)}
-                            className="p-1 rounded-md text-blue-600 hover:text-blue-800 hover:bg-blue-50 cursor-pointer"
+                            title={lang === 'bn' ? 'সম্পাদনা' : 'Edit'}
+                            className="p-1.5 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/50 cursor-pointer transition-colors"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
@@ -705,7 +783,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                                 onDeleteItem(it.id);
                               }
                             }}
-                            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
+                            title={lang === 'bn' ? 'মুছে ফেলুন' : 'Delete'}
+                            className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer transition-colors"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

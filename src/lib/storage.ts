@@ -236,12 +236,58 @@ export const storageService = {
   // Stock
   getStock: (): StockItem[] => {
     const list = loadFromStorage<StockItem[]>(STORAGE_KEYS.STOCK, INITIAL_STOCK);
-    const stockItems: StockItem[] = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s) => ({
+    const stockItems: StockItem[] = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s, idx) => ({
       ...s,
       purchaseAvgRate: s?.purchaseAvgRate ?? s?.purchaseRate ?? 0,
+      sortOrder: s?.sortOrder ?? idx + 1,
     }));
 
+    stockItems.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999));
+
     return stockItems;
+  },
+
+  mergeStockWithCloud: (cloudStock: StockItem[]): StockItem[] => {
+    const list = loadFromStorage<StockItem[]>(STORAGE_KEYS.STOCK, INITIAL_STOCK);
+    const local = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s, idx) => ({
+      ...s,
+      purchaseAvgRate: s?.purchaseAvgRate ?? s?.purchaseRate ?? 0,
+      sortOrder: s?.sortOrder ?? idx + 1,
+    }));
+
+    const localMap = new Map<string, StockItem>();
+    local.forEach((item) => {
+      if (item && item.id) localMap.set(item.id, item);
+    });
+
+    const mergedMap = new Map<string, StockItem>();
+
+    // Process cloud items
+    cloudStock.forEach((cloudItem) => {
+      if (!cloudItem || !cloudItem.id) return;
+      const localItem = localMap.get(cloudItem.id);
+
+      const mergedItem: StockItem = {
+        ...cloudItem,
+        purchaseAvgRate: cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? localItem?.purchaseAvgRate ?? 0,
+        sortOrder: localItem?.sortOrder ?? cloudItem.sortOrder,
+      };
+
+      mergedMap.set(cloudItem.id, mergedItem);
+    });
+
+    // Preserve local-only items not yet in cloud
+    local.forEach((localItem) => {
+      if (localItem && localItem.id && !mergedMap.has(localItem.id)) {
+        mergedMap.set(localItem.id, localItem);
+      }
+    });
+
+    const result = Array.from(mergedMap.values());
+    result.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999));
+
+    saveToStorage(STORAGE_KEYS.STOCK, result);
+    return result;
   },
 
   saveStockItem: (item: StockItem): void => {
@@ -251,6 +297,7 @@ export const storageService = {
     const itemWithAvg = {
       ...item,
       purchaseAvgRate: item.purchaseAvgRate ?? item.purchaseRate ?? 0,
+      sortOrder: item.sortOrder ?? (idx >= 0 ? stock[idx].sortOrder ?? (idx + 1) : stock.length + 1),
     };
     if (idx >= 0) {
       updated = [...stock];
@@ -263,6 +310,19 @@ export const storageService = {
     clearPendingIncrement('stock', itemWithAvg.id);
     cloudDbService.saveDocument('stock', itemWithAvg).catch((err) => {
       console.warn('[Cloud Sync] Stock push note:', err);
+    });
+  },
+
+  reorderStockItems: (items: StockItem[]): void => {
+    const reordered = items.map((item, index) => ({
+      ...item,
+      sortOrder: index + 1,
+    }));
+    saveToStorage(STORAGE_KEYS.STOCK, reordered);
+    reordered.forEach((item) => {
+      cloudDbService.saveDocument('stock', item).catch((err) => {
+        console.warn('[Cloud Sync] Stock reorder push note:', err);
+      });
     });
   },
 

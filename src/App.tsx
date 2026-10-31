@@ -298,7 +298,7 @@ export default function App() {
       unsubs.push(
         cloudDbService.subscribeToCollection<StockItem>('stock', (cloudStock) => {
           if (Array.isArray(cloudStock)) {
-            localStorage.setItem('rsr_stock_v1', JSON.stringify(cloudStock));
+            storageService.mergeStockWithCloud(cloudStock);
             // Avg-rate guard: local only (see above)
             storageService.reconcileStockAvgRates(false);
             setStock(storageService.getStock());
@@ -1307,6 +1307,11 @@ export default function App() {
                 lang={lang}
                 onSaveItem={handleSaveStockItem}
                 onDeleteItem={handleDeleteStockItem}
+                onReorderStock={(updatedStock) => {
+                  storageService.reorderStockItems(updatedStock);
+                  setStock(storageService.getStock());
+                  showToast(lang === 'bn' ? 'স্টক ক্রমানুসার সাজানো হয়েছে' : 'Stock items reordered', 'success');
+                }}
                 onPrintStockStatement={(panel) => { setActiveStatementStockPanel(panel || 'all'); setActiveStatementType('stock'); }}
                 isSuperAdmin={isSuperAdmin}
               />
