@@ -18,8 +18,15 @@ import {
   ArrowUpRight,
   TrendingDown,
   TrendingUp,
+  Car,
+  Users,
+  PieChart,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  BarChart3,
 } from 'lucide-react';
-import { PettyCashExpense, Language } from '../types';
+import { PettyCashExpense, CarExpense, Staff, AttendanceRecord, Language } from '../types';
 import {
   formatCurrency,
   formatNumber,
@@ -29,12 +36,16 @@ import {
 } from '../lib/translations';
 import { CompanyLogo } from './CompanyLogo';
 import { storageService } from '../lib/storage';
+import { computeStaffPayroll } from '../lib/payrollCalc';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
 export type PeriodFilterMode = 'month' | 'date' | 'range' | 'all';
 
 interface PettyCashPanelProps {
   expenses: PettyCashExpense[];
+  carExpenses?: CarExpense[];
+  staff?: Staff[];
+  attendance?: AttendanceRecord[];
   lang: Language;
   onSaveExpense: (exp: PettyCashExpense) => void;
   onDeleteExpense: (id: string) => void;
@@ -43,6 +54,9 @@ interface PettyCashPanelProps {
 
 export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
   expenses,
+  carExpenses = [],
+  staff = [],
+  attendance = [],
   lang,
   onSaveExpense,
   onDeleteExpense,
@@ -133,23 +147,102 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
 
   // Aggregate stats (All time)
   const totalIn = useMemo(() => {
-    return expenses.filter((e) => e.type === 'in').reduce((sum, e) => sum + e.amount, 0);
+    return expenses.filter((e: PettyCashExpense) => e.type === 'in').reduce((sum: number, e: PettyCashExpense) => sum + e.amount, 0);
   }, [expenses]);
 
   const totalOut = useMemo(() => {
-    return expenses.filter((e) => e.type === 'out' || !e.type).reduce((sum, e) => sum + e.amount, 0);
+    return expenses.filter((e: PettyCashExpense) => e.type === 'out' || !e.type).reduce((sum: number, e: PettyCashExpense) => sum + e.amount, 0);
   }, [expenses]);
 
   const currentBalance = totalIn - totalOut;
 
   // Filtered period stats
   const filteredIn = useMemo(() => {
-    return filteredExpenses.filter((e) => e.type === 'in').reduce((sum, e) => sum + e.amount, 0);
+    return filteredExpenses.filter((e: PettyCashExpense) => e.type === 'in').reduce((sum: number, e: PettyCashExpense) => sum + e.amount, 0);
   }, [filteredExpenses]);
 
   const filteredOut = useMemo(() => {
-    return filteredExpenses.filter((e) => e.type === 'out' || !e.type).reduce((sum, e) => sum + e.amount, 0);
+    return filteredExpenses.filter((e: PettyCashExpense) => e.type === 'out' || !e.type).reduce((sum: number, e: PettyCashExpense) => sum + e.amount, 0);
   }, [filteredExpenses]);
+
+  const [activeTab, setActiveTab] = useState<'daily' | 'monthly_consolidated'>('daily');
+
+  // Month-wise Consolidated Expense Breakdown calculations (Office Petty Cash + Car Expense + Staff Salary)
+  const monthExpenseSummary = useMemo(() => {
+    const selMonth = selectedMonth || todayStr.slice(0, 7);
+
+    // 1. Office Petty Cash Expenses for selectedMonth
+    const monthlyPettyCashOut = expenses
+      .filter((e) => (e.type === 'out' || !e.type) && e.date && e.date.startsWith(selMonth))
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+
+    const monthlyPettyCashIn = expenses
+      .filter((e) => e.type === 'in' && e.date && e.date.startsWith(selMonth))
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+
+    // 2. Car Expenses for selectedMonth
+    const monthlyCarOut = (carExpenses || [])
+      .filter((c) => c.date && c.date.startsWith(selMonth))
+      .reduce((s, c) => s + Number(c.amount || 0), 0);
+
+    // 3. Staff Salary Payroll for selectedMonth
+    let monthlyStaffSalaryOut = 0;
+    const staffSalaryList = (staff || []).map((stf) => {
+      const calc = computeStaffPayroll(stf, attendance || [], selMonth);
+      monthlyStaffSalaryOut += calc.netPayable;
+      return {
+        id: stf.id,
+        name: stf.name,
+        designation: stf.designation,
+        category: stf.category,
+        netPayable: calc.netPayable,
+        earnedBase: calc.earnedBase,
+        totalOtAmount: calc.totalOtAmount,
+        advanceDeduction: calc.totalAdvance,
+      };
+    });
+
+    // 4. Grand Total Monthly Expense
+    const grandTotalCost = monthlyPettyCashOut + monthlyCarOut + monthlyStaffSalaryOut;
+
+    // Percentages
+    const pettyPct = grandTotalCost > 0 ? Math.round((monthlyPettyCashOut / grandTotalCost) * 100) : 0;
+    const carPct = grandTotalCost > 0 ? Math.round((monthlyCarOut / grandTotalCost) * 100) : 0;
+    const staffPct = grandTotalCost > 0 ? Math.round((monthlyStaffSalaryOut / grandTotalCost) * 100) : 0;
+
+    // Itemized Petty Cash Categories
+    const pettyCatTotals: Record<string, number> = {};
+    expenses
+      .filter((e) => (e.type === 'out' || !e.type) && e.date && e.date.startsWith(selMonth))
+      .forEach((e) => {
+        const cat = e.category || 'other';
+        pettyCatTotals[cat] = (pettyCatTotals[cat] || 0) + Number(e.amount || 0);
+      });
+
+    // Itemized Car Categories
+    const carCatTotals: Record<string, number> = {};
+    (carExpenses || [])
+      .filter((c) => c.date && c.date.startsWith(selMonth))
+      .forEach((c) => {
+        const cat = c.category || 'other';
+        carCatTotals[cat] = (carCatTotals[cat] || 0) + Number(c.amount || 0);
+      });
+
+    return {
+      selMonth,
+      monthlyPettyCashOut,
+      monthlyPettyCashIn,
+      monthlyCarOut,
+      monthlyStaffSalaryOut,
+      grandTotalCost,
+      pettyPct,
+      carPct,
+      staffPct,
+      pettyCatTotals,
+      carCatTotals,
+      staffSalaryList,
+    };
+  }, [expenses, carExpenses, staff, attendance, selectedMonth, todayStr]);
 
   const filteredNet = filteredIn - filteredOut;
 
@@ -179,6 +272,9 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
             lang={lang}
             buttonLabel={lang === 'bn' ? 'হোয়াটসঅ্যাপ রিপোর্ট' : 'Share WhatsApp'}
             getText={() => {
+              if (activeTab === 'monthly_consolidated') {
+                return `*${companyInfo.name} - মাসভিত্তিক সর্বমোট খরচের হিসাব*\n📅 মাস: ${monthExpenseSummary.selMonth}\n────────────────────────\n☕ অফিস পেটি ক্যাশ: ৳${monthExpenseSummary.monthlyPettyCashOut.toLocaleString()} (${monthExpenseSummary.pettyPct}%)\n🚗 গাড়ি ও পরিবহন খরচ: ৳${monthExpenseSummary.monthlyCarOut.toLocaleString()} (${monthExpenseSummary.carPct}%)\n👥 স্টাফ মাসিক বেতন বিল: ৳${monthExpenseSummary.monthlyStaffSalaryOut.toLocaleString()} (${monthExpenseSummary.staffPct}%)\n────────────────────────\n🔴 *সর্বমোট মাসভিত্তিক কোম্পানির খরচ:* ৳${monthExpenseSummary.grandTotalCost.toLocaleString()}\n────────────────────────\n_${companyInfo.name}_`;
+              }
               return `*${companyInfo.name} - অফিস পেটি ক্যাশ সামারি*\n📅 মাস: ${selectedMonth}\n────────────────────────\n📥 মোট ক্যাশ ইন: ৳${totalIn.toLocaleString()}\n📤 মোট ক্যাশ আউট: ৳${totalOut.toLocaleString()}\n💼 অবশিষ্ট ক্যাশ ব্যালেন্স: ৳${currentBalance.toLocaleString()}\n────────────────────────\n_${companyInfo.name}_`;
             }}
           />
@@ -209,8 +305,321 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
         </div>
       </div>
 
-      {/* 3 Main Petty Cash KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Main View Mode Selector Tabs */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-xs">
+        <button
+          type="button"
+          onClick={() => setActiveTab('daily')}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === 'daily'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>
+            {lang === 'bn'
+              ? '📖 অফিস পেটি ক্যাশ রেজিস্টার (দৈনিক খাতা)'
+              : 'Daily Petty Cash Register'}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('monthly_consolidated')}
+          className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            activeTab === 'monthly_consolidated'
+              ? 'bg-purple-600 text-white shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <PieChart className="w-4 h-4" />
+          <span>
+            {lang === 'bn'
+              ? '📊 মাসভিত্তিক সর্বমোট খরচের হিসাব (Petty Cash + Car + Staff Salary)'
+              : 'Month-wise Total Cost Accounting'}
+          </span>
+        </button>
+      </div>
+
+      {/* RENDER MONTHLY CONSOLIDATED ACCOUNTING VIEW */}
+      {activeTab === 'monthly_consolidated' && (
+        <div className="space-y-6">
+          {/* Month Selector & Banner */}
+          <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white p-5 rounded-2xl border border-purple-500/40 shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-6 h-6 text-pink-400" />
+                <h3 className="text-lg font-black text-white">
+                  {lang === 'bn' ? 'মাসভিত্তিক সর্বমোট কোম্পানির পরিচালন খরচ' : 'Monthly Consolidated Company Expenses'}
+                </h3>
+              </div>
+              <p className="text-xs text-purple-200 mt-1">
+                {lang === 'bn'
+                  ? 'অফিস পেটি ক্যাশ, গাড়ি ও পরিবহন খরচ এবং স্টাফদের মাসিক নিট বেতন বিলের সংকলিত হিসাব'
+                  : 'Combined cost analysis covering office petty cash, vehicle expenses, and staff monthly payroll'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 bg-white/10 p-1.5 rounded-xl border border-white/20">
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m] = (selectedMonth || todayStr.slice(0, 7)).split('-').map(Number);
+                  const prevDate = new Date(y, m - 2, 1);
+                  const prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+                  setSelectedMonth(prevMonthStr);
+                }}
+                className="p-1 rounded-lg hover:bg-white/20 transition-colors text-white cursor-pointer"
+                title={lang === 'bn' ? 'পূর্ববর্তী মাস' : 'Previous Month'}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <input
+                type="month"
+                value={selectedMonth || todayStr.slice(0, 7)}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent text-white font-mono font-bold text-xs focus:outline-none px-2 cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const [y, m] = (selectedMonth || todayStr.slice(0, 7)).split('-').map(Number);
+                  const nextDate = new Date(y, m, 1);
+                  const nextMonthStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+                  setSelectedMonth(nextMonthStr);
+                }}
+                className="p-1 rounded-lg hover:bg-white/20 transition-colors text-white cursor-pointer"
+                title={lang === 'bn' ? 'পরবর্তী মাস' : 'Next Month'}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Summary KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Petty Cash */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border-l-4 border-l-amber-500 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex justify-between items-center text-xs text-slate-500 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <Coffee className="w-4 h-4 text-amber-500" />
+                  {lang === 'bn' ? '১. অফিস পেটি ক্যাশ' : '1. Office Petty Cash'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-[10px] font-bold">
+                  {monthExpenseSummary.pettyPct}%
+                </span>
+              </div>
+              <div className="mt-2 text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
+                {formatCurrency(monthExpenseSummary.monthlyPettyCashOut, lang)}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {lang === 'bn' ? 'চা-নাস্তা, স্টেশনারি ও খাতা খরচ' : 'Office petty expenses'}
+              </p>
+            </div>
+
+            {/* Car Expenses */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border-l-4 border-l-sky-500 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex justify-between items-center text-xs text-slate-500 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <Car className="w-4 h-4 text-sky-500" />
+                  {lang === 'bn' ? '২. গাড়ি ও পরিবহন খরচ' : '2. Car Expenses'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 text-[10px] font-bold">
+                  {monthExpenseSummary.carPct}%
+                </span>
+              </div>
+              <div className="mt-2 text-2xl font-black font-mono text-sky-600 dark:text-sky-400">
+                {formatCurrency(monthExpenseSummary.monthlyCarOut, lang)}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {lang === 'bn' ? 'জ্বালানি, টোল ও পরিবহন খরচ' : 'Vehicle fuel & toll expenses'}
+              </p>
+            </div>
+
+            {/* Staff Salary Payroll */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border-l-4 border-l-purple-500 border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex justify-between items-center text-xs text-slate-500 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-purple-500" />
+                  {lang === 'bn' ? '৩. স্টাফ মাসিক বেতন বিল' : '3. Staff Salary Payroll'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 text-[10px] font-bold">
+                  {monthExpenseSummary.staffPct}%
+                </span>
+              </div>
+              <div className="mt-2 text-2xl font-black font-mono text-purple-600 dark:text-purple-400">
+                {formatCurrency(monthExpenseSummary.monthlyStaffSalaryOut, lang)}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {lang === 'bn' ? `${staff.length} জন স্টাফের নিট বেতন` : `Net salary for ${staff.length} staff`}
+              </p>
+            </div>
+
+            {/* Grand Total Cost */}
+            <div className="bg-gradient-to-br from-rose-900 to-rose-950 text-white p-4 rounded-2xl border border-rose-700 shadow-md">
+              <div className="flex justify-between items-center text-xs text-rose-200 font-semibold">
+                <span>{lang === 'bn' ? 'সর্বমোট মাসভিত্তিক খরচ' : 'Grand Total Cost'}</span>
+                <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-black">
+                  100%
+                </span>
+              </div>
+              <div className="mt-2 text-2xl font-black font-mono text-white">
+                {formatCurrency(monthExpenseSummary.grandTotalCost, lang)}
+              </div>
+              <p className="mt-1 text-[11px] text-rose-200">
+                {lang === 'bn' ? `মাস: ${monthExpenseSummary.selMonth}` : `Month: ${monthExpenseSummary.selMonth}`}
+              </p>
+            </div>
+          </div>
+
+          {/* Visual Percentage Share Bar */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold text-slate-700 dark:text-slate-300">
+              <span>{lang === 'bn' ? 'মাসিক খরচের অনুপাত বিশ্লেষণ (Expense Share)' : 'Expense Share Breakdown'}</span>
+              <span className="font-mono text-rose-600 dark:text-rose-400 font-black">
+                {formatCurrency(monthExpenseSummary.grandTotalCost, lang)}
+              </span>
+            </div>
+            <div className="h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+              <div
+                style={{ width: `${monthExpenseSummary.pettyPct}%` }}
+                className="bg-amber-500 h-full transition-all"
+                title={`Petty Cash: ${monthExpenseSummary.pettyPct}%`}
+              />
+              <div
+                style={{ width: `${monthExpenseSummary.carPct}%` }}
+                className="bg-sky-500 h-full transition-all"
+                title={`Car Expense: ${monthExpenseSummary.carPct}%`}
+              />
+              <div
+                style={{ width: `${monthExpenseSummary.staffPct}%` }}
+                className="bg-purple-600 h-full transition-all"
+                title={`Staff Salary: ${monthExpenseSummary.staffPct}%`}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-xs font-medium pt-1">
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
+                <span>{lang === 'bn' ? 'পেটি ক্যাশ:' : 'Petty Cash:'} {monthExpenseSummary.pettyPct}%</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-sky-500 inline-block" />
+                <span>{lang === 'bn' ? 'গাড়ি ও পরিবহন:' : 'Car:'} {monthExpenseSummary.carPct}%</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-purple-600 inline-block" />
+                <span>{lang === 'bn' ? 'স্টাফ বেতন:' : 'Staff Salary:'} {monthExpenseSummary.staffPct}%</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Itemized Breakdowns */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* 1. Petty Cash Breakdown */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+                <h4 className="font-bold text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                  <Coffee className="w-4 h-4" />
+                  <span>{lang === 'bn' ? 'অফিস পেটি ক্যাশ খাতসমুহ' : 'Office Petty Cash Categories'}</span>
+                </h4>
+                <span className="font-mono text-xs font-bold text-amber-600">
+                  {formatCurrency(monthExpenseSummary.monthlyPettyCashOut, lang)}
+                </span>
+              </div>
+              <div className="space-y-2 text-xs">
+                {Object.keys(monthExpenseSummary.pettyCatTotals).length === 0 ? (
+                  <p className="text-slate-400 text-center py-4">{lang === 'bn' ? 'এই মাসে কোনো খরচের এন্ট্রি নেই' : 'No petty cash expense'}</p>
+                ) : (
+                  Object.entries(monthExpenseSummary.pettyCatTotals).map(([cat, amt]) => (
+                    <div key={cat} className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-slate-800/50">
+                      <span className="text-slate-700 dark:text-slate-300 capitalize font-medium">
+                        {cat === 'tea_snacks' ? (lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks') :
+                         cat === 'courier_bill' ? (lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill') :
+                         cat === 'transport_allowance' ? (lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport') :
+                         cat === 'utility' ? (lang === 'bn' ? 'বিদ্যুৎ/বিল' : 'Utility') :
+                         cat === 'stationery' ? (lang === 'bn' ? 'স্টেশনারি' : 'Stationery') :
+                         cat === 'entertainment' ? (lang === 'bn' ? 'আপ্যায়ন' : 'Entertainment') : cat}
+                      </span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        {formatCurrency(amt as number, lang)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 2. Car Expense Breakdown */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+                <h4 className="font-bold text-xs text-sky-600 dark:text-sky-400 flex items-center gap-1.5">
+                  <Car className="w-4 h-4" />
+                  <span>{lang === 'bn' ? 'গাড়ি ও পরিবহন খাতসমুহ' : 'Car Expense Categories'}</span>
+                </h4>
+                <span className="font-mono text-xs font-bold text-sky-600">
+                  {formatCurrency(monthExpenseSummary.monthlyCarOut, lang)}
+                </span>
+              </div>
+              <div className="space-y-2 text-xs">
+                {Object.keys(monthExpenseSummary.carCatTotals).length === 0 ? (
+                  <p className="text-slate-400 text-center py-4">{lang === 'bn' ? 'এই মাসে কোনো গাড়ি খরচ নেই' : 'No car expense'}</p>
+                ) : (
+                  Object.entries(monthExpenseSummary.carCatTotals).map(([cat, amt]) => (
+                    <div key={cat} className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-slate-800/50">
+                      <span className="text-slate-700 dark:text-slate-300 capitalize font-medium">
+                        {cat === 'fuel' ? (lang === 'bn' ? 'জ্বালানি তেল' : 'Fuel') :
+                         cat === 'maintenance' ? (lang === 'bn' ? 'গাড়ি মেরামত' : 'Maintenance') :
+                         cat === 'toll' ? (lang === 'bn' ? 'টোল ও পার্কিং' : 'Toll & Parking') :
+                         cat === 'driver_allowance' ? (lang === 'bn' ? 'ড্রাইভার ভাতাদি' : 'Driver Allowance') : cat}
+                      </span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        {formatCurrency(amt as number, lang)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 3. Staff Salary Breakdown */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+                <h4 className="font-bold text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+                  <Users className="w-4 h-4" />
+                  <span>{lang === 'bn' ? 'স্টাফ মাসিক বেতন তালিকা' : 'Staff Monthly Net Payroll'}</span>
+                </h4>
+                <span className="font-mono text-xs font-bold text-purple-600">
+                  {formatCurrency(monthExpenseSummary.monthlyStaffSalaryOut, lang)}
+                </span>
+              </div>
+              <div className="space-y-2 text-xs">
+                {monthExpenseSummary.staffSalaryList.length === 0 ? (
+                  <p className="text-slate-400 text-center py-4">{lang === 'bn' ? 'কোনো স্টাফ তথ্য নেই' : 'No staff payroll'}</p>
+                ) : (
+                  monthExpenseSummary.staffSalaryList.map((stf: any) => (
+                    <div key={stf.id} className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-slate-800/50">
+                      <div>
+                        <div className="font-semibold text-slate-900 dark:text-white">{stf.name}</div>
+                        <div className="text-[10px] text-slate-500">{stf.designation}</div>
+                      </div>
+                      <span className="font-mono font-bold text-purple-700 dark:text-purple-300">
+                        {formatCurrency(stf.netPayable, lang)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RENDER DAILY PETTY CASH REGISTER VIEW */}
+      {activeTab === 'daily' && (
+        <>
+          {/* 3 Main Petty Cash KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Total In */}
         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border-l-4 border-l-teal-600 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex justify-between items-start">
@@ -421,7 +830,7 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredExpenses.map((it, idx) => (
+                filteredExpenses.map((it: PettyCashExpense, idx: number) => (
                   <tr key={it.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="py-3 px-3 text-center font-mono text-slate-500">
                       {formatNumber(idx + 1, lang)}
@@ -528,6 +937,8 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
           </table>
         </div>
       </div>
+        </>
+      )}
 
       {/* Entry Modal */}
       {isModalOpen && (

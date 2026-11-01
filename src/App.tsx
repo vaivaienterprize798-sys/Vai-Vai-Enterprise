@@ -1394,6 +1394,9 @@ export default function App() {
             {currentTab === 'petty_cash' && (
               <PettyCashPanel
                 expenses={pettyCashExpenses}
+                carExpenses={carExpenses}
+                staff={staff}
+                attendance={attendance}
                 lang={lang}
                 onSaveExpense={handleSavePettyCash}
                 onDeleteExpense={handleDeletePettyCash}

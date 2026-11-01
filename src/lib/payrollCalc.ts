@@ -66,8 +66,8 @@ export function computeStaffPayroll(stf: Staff, attendance: AttendanceRecord[], 
     absentDeduction,
     earnedBase,
     netSalary,
-    /** Payable amount (never below zero) */
-    netPayable: Math.max(0, netSalary),
+    /** Payable amount: negative means staff owes company advance */
+    netPayable: netSalary,
     paymentStatus,
   };
 }
