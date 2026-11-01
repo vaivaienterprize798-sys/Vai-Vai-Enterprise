@@ -1212,7 +1212,7 @@ export default function App() {
             parties={parties}
             staff={staff}
             attendance={attendance}
-            expenses={activeStatementType === 'expense' ? purePettyCashExpenses : allExpensesCombined}
+            expenses={activeStatementType === 'expense' || activeStatementType === 'monthly_expense' ? purePettyCashExpenses : allExpensesCombined}
             carExpenses={carExpenses}
             initialStaffId={activeStatementStaffId}
             initialPartyId={activeStatementPartyId}
@@ -1407,6 +1407,10 @@ export default function App() {
                   setActiveStatementStartDate(filters.startDate);
                   setActiveStatementEndDate(filters.endDate);
                   setActiveStatementType('expense');
+                }}
+                onPrintMonthlyExpense={(month) => {
+                  setActiveStatementMonth(month);
+                  setActiveStatementType('monthly_expense');
                 }}
               />
             )}

@@ -450,6 +450,7 @@ export const AllSheetsPanel: React.FC<AllSheetsPanelProps> = ({
             car_expense: 'from-sky-900 via-blue-900 to-slate-900 border-sky-400 ring-2 ring-sky-400/50 shadow-sky-950/30',
             financial: 'from-teal-900 via-cyan-900 to-slate-900 border-teal-400 ring-2 ring-teal-400/50 shadow-teal-950/30',
             worker_tracking: 'from-rose-900 via-pink-900 to-slate-900 border-rose-400 ring-2 ring-rose-400/50 shadow-rose-950/30',
+            monthly_expense: 'from-purple-900 via-indigo-900 to-slate-900 border-purple-400 ring-2 ring-purple-400/50 shadow-purple-950/30',
           };
 
           return (

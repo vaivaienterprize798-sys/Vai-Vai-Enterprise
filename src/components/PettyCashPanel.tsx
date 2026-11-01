@@ -50,6 +50,7 @@ interface PettyCashPanelProps {
   onSaveExpense: (exp: PettyCashExpense) => void;
   onDeleteExpense: (id: string) => void;
   onPrintStatement: (filters: { filterMode: PeriodFilterMode; selectedMonth: string; selectedDate: string; startDate: string; endDate: string }) => void;
+  onPrintMonthlyExpense?: (month: string) => void;
 }
 
 export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
@@ -61,6 +62,7 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
   onSaveExpense,
   onDeleteExpense,
   onPrintStatement,
+  onPrintMonthlyExpense,
 }) => {
   const todayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
   const companyInfo = storageService.getCompanyInfo();
@@ -279,6 +281,17 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
               return `*${companyInfo.name} - অফিস পেটি ক্যাশ সামারি*\n📅 মাস: ${selectedMonth}\n────────────────────────\n📥 মোট ক্যাশ ইন: ৳${totalIn.toLocaleString()}\n📤 মোট ক্যাশ আউট: ৳${totalOut.toLocaleString()}\n💼 অবশিষ্ট ক্যাশ ব্যালেন্স: ৳${currentBalance.toLocaleString()}\n────────────────────────\n_${companyInfo.name}_`;
             }}
           />
+
+          {activeTab === 'monthly_consolidated' && (
+            <button
+              type="button"
+              onClick={() => onPrintMonthlyExpense && onPrintMonthlyExpense(monthExpenseSummary.selMonth)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md shadow-purple-600/20 transition-all cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>{lang === 'bn' ? 'মাসিক খরচ প্রিন্ট (1-Page A4)' : 'Print Monthly Expense'}</span>
+            </button>
+          )}
 
           <button
             onClick={() => onPrintStatement({ filterMode: dateFilterMode, selectedMonth, selectedDate, startDate, endDate })}

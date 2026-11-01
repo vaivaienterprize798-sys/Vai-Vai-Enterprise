@@ -124,6 +124,15 @@ export const sheetThemes: Record<StatementType, {
     subBorderColor: 'border-sky-200/80',
     accentText: 'text-sky-700',
   },
+  monthly_expense: {
+    headerBg: 'bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 border-purple-500/60',
+    badgeBg: 'bg-gradient-to-r from-purple-600 via-fuchsia-600 to-indigo-600 text-white shadow-purple-500/20',
+    theadBg: 'bg-slate-100 text-slate-900 font-black border-slate-300',
+    tfootBg: 'bg-slate-100 text-slate-950 border-slate-300',
+    borderColor: 'border-purple-300',
+    subBorderColor: 'border-purple-200/80',
+    accentText: 'text-purple-700',
+  },
 };
 
 interface PrintStatementsProps {
@@ -371,6 +380,10 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         return lang === 'bn'
           ? 'প্রসেসিং কর্মীভিত্তিক ওয়ার্কার ট্র্যাকিং ও ড্যামেজ হিসাব বিবরণী'
           : 'Processing Worker Task & Damage Statement';
+      case 'monthly_expense':
+        return lang === 'bn'
+          ? `মাসভিত্তিক সর্বমোট কোম্পানির খরচ বিবরণী (${formatMonthDisplay(selectedMonth)})`
+          : `Monthly Consolidated Company Expense Statement (${formatMonthDisplay(selectedMonth)})`;
     }
   };
 
@@ -494,6 +507,19 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       const rate = totalGiven > 0 ? ((totalDamaged / totalGiven) * 100).toFixed(1) : '0';
 
       summaryText += `👷‍♂️ মোট প্রসেসিং কর্মী কাজ: ${workerTasks.length} টি\n📦 মোট প্রদত্ত মাল (Given): ${totalGiven.toLocaleString()} PCS\n✅ মোট সম্পন্ন কাজ (Delivered): ${totalCompleted.toLocaleString()} PCS\n⏳ মোট বকেয়া কাজ (Remaining): ${totalRemaining.toLocaleString()} PCS\n⚠️ মোট নষ্ট / ড্যামেজ: ${totalDamaged.toLocaleString()} PCS (${rate}%)\n`;
+    } else if (type === 'monthly_expense') {
+      const monthLabel = formatMonthDisplay(selectedMonth);
+      const selMonth = selectedMonth || currentMonthStr;
+      const monthlyPettyCashOut = (expenses || []).filter((e) => (e.type === 'out' || !e.type) && e.date && e.date.startsWith(selMonth)).reduce((s, e) => s + Number(e.amount || 0), 0);
+      const monthlyCarOut = (carExpenses || []).filter((c) => c.date && c.date.startsWith(selMonth)).reduce((s, c) => s + Number(c.amount || 0), 0);
+      let monthlyStaffSalaryOut = 0;
+      (staff || []).forEach((stf) => {
+        const calc = computeStaffPayroll(stf, baseAttendance || [], selMonth);
+        monthlyStaffSalaryOut += (Number(calc.earnedBase) || 0) + (Number(calc.totalOtAmount) || 0);
+      });
+      const grandTotalCost = monthlyPettyCashOut + monthlyCarOut + monthlyStaffSalaryOut;
+
+      summaryText += `📅 *মাসের খরচ হিসাব:* ${monthLabel}\n☕ অফিস পেটি ক্যাশ: ৳${monthlyPettyCashOut.toLocaleString()}\n🚗 গাড়ি ও পরিবহন খরচ: ৳${monthlyCarOut.toLocaleString()}\n👥 স্টাফ মাসিক বেতন বিল (গ্রস): ৳${monthlyStaffSalaryOut.toLocaleString()}\n────────────────────────\n🔴 *সর্বমোট মাসভিত্তিক খরচ:* ৳${grandTotalCost.toLocaleString()}\n`;
     }
     summaryText += `────────────────────────\n_আরএসআর ভাই ভাই এন্টারপ্রাইজ_`;
     return summaryText;
@@ -2520,6 +2546,119 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                           <td className="py-1.5 px-2 text-right font-mono text-amber-950 border-r border-rose-300 font-black">{totalRemaining}</td>
                           <td className="py-1.5 px-2 text-right font-mono text-rose-700 border-r border-rose-300 font-black">{totalDamaged}</td>
                           <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* 7. Monthly Consolidated Company Expense Statement Sheet */}
+        {type === 'monthly_expense' && (
+          <div className="space-y-4">
+            {(() => {
+              const selMonth = selectedMonth || currentMonthStr;
+              const monthlyPettyCashOut = (expenses || []).filter((e) => (e.type === 'out' || !e.type) && e.date && e.date.startsWith(selMonth)).reduce((s, e) => s + Number(e.amount || 0), 0);
+              const monthlyCarOut = (carExpenses || []).filter((c) => c.date && c.date.startsWith(selMonth)).reduce((s, c) => s + Number(c.amount || 0), 0);
+              let monthlyStaffSalaryOut = 0;
+              const staffSalaryList = (staff || []).map((stf) => {
+                const calc = computeStaffPayroll(stf, baseAttendance || [], selMonth);
+                const gross = (Number(calc.earnedBase) || 0) + (Number(calc.totalOtAmount) || 0);
+                monthlyStaffSalaryOut += gross;
+                return { ...stf, gross, calc };
+              });
+              const grandTotalCost = monthlyPettyCashOut + monthlyCarOut + monthlyStaffSalaryOut;
+              const pettyPct = grandTotalCost > 0 ? Math.round((monthlyPettyCashOut / grandTotalCost) * 100) : 0;
+              const carPct = grandTotalCost > 0 ? Math.round((monthlyCarOut / grandTotalCost) * 100) : 0;
+              const staffPct = grandTotalCost > 0 ? Math.round((monthlyStaffSalaryOut / grandTotalCost) * 100) : 0;
+
+              return (
+                <div className="space-y-4">
+                  {/* Executive Header Banner */}
+                  <div className="p-3.5 bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-950 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs border border-purple-500/60 shadow-lg">
+                    <div>
+                      <span className="font-black uppercase tracking-wider text-purple-300 text-sm sm:text-base block drop-shadow-xs">
+                        {lang === 'bn' ? 'মাসভিত্তিক সর্বমোট কোম্পানির পরিচালন খরচ বিবরণী' : 'Monthly Consolidated Company Expense Statement'}
+                      </span>
+                      <p className="text-[11px] text-purple-200 mt-0.5">
+                        {lang === 'bn' ? `হিসাবের মাস: ${formatMonthDisplay(selMonth)}` : `Accounting Month: ${formatMonthDisplay(selMonth)}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono text-xs font-bold bg-purple-700/80 text-white px-3 py-1 rounded-xl border border-purple-400 shadow-xs">
+                        {lang === 'bn' ? 'সর্বমোট খরচ:' : 'Total Cost:'} {formatCurrency(grandTotalCost, lang)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 4 KPI Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-3 rounded-2xl border border-amber-200 bg-amber-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-amber-900 font-extrabold block">{lang === 'bn' ? 'অফিস পেটি ক্যাশ খরচ' : 'Office Petty Cash'}</span>
+                      <div className="text-base font-black font-mono text-amber-950 mt-0.5">{formatCurrency(monthlyPettyCashOut, lang)}</div>
+                      <span className="text-[9px] text-amber-700 font-bold">{pettyPct}% {lang === 'bn' ? 'অনুপাত' : 'share'}</span>
+                    </div>
+                    <div className="p-3 rounded-2xl border border-sky-200 bg-sky-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-sky-900 font-extrabold block">{lang === 'bn' ? 'গাড়ি ও পরিবহন খরচ' : 'Car & Transport'}</span>
+                      <div className="text-base font-black font-mono text-sky-950 mt-0.5">{formatCurrency(monthlyCarOut, lang)}</div>
+                      <span className="text-[9px] text-sky-700 font-bold">{carPct}% {lang === 'bn' ? 'অনুপাত' : 'share'}</span>
+                    </div>
+                    <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/80 text-xs shadow-2xs">
+                      <span className="text-[10px] text-purple-900 font-extrabold block">{lang === 'bn' ? 'স্টাফ মাসিক বেতন বিল' : 'Staff Monthly Payroll'}</span>
+                      <div className="text-base font-black font-mono text-purple-950 mt-0.5">{formatCurrency(monthlyStaffSalaryOut, lang)}</div>
+                      <span className="text-[9px] text-purple-700 font-bold">{staffPct}% {lang === 'bn' ? 'অনুপাত' : 'share'}</span>
+                    </div>
+                    <div className="p-3 rounded-2xl border border-rose-300 bg-rose-50/90 text-xs shadow-2xs ring-1 ring-rose-300">
+                      <span className="text-[10px] text-rose-950 font-black block">{lang === 'bn' ? 'সর্বমোট মাসিক খরচ' : 'Grand Total Cost'}</span>
+                      <div className="text-base font-black font-mono text-rose-950 mt-0.5">{formatCurrency(grandTotalCost, lang)}</div>
+                      <span className="text-[9px] text-rose-700 font-bold">100%</span>
+                    </div>
+                  </div>
+
+                  {/* Staff Salary Table */}
+                  <div className="space-y-2">
+                    <h4 className="font-black text-xs text-slate-900">
+                      {lang === 'bn' ? 'স্টাফ মাসিক বেতন ও পে-রোল তালিকা (গ্রস হিসাব):' : 'Staff Monthly Payroll Breakdown (Gross):'}
+                    </h4>
+                    <table className="w-full text-left border-collapse border border-slate-300 text-xs print-compact">
+                      <thead>
+                        <tr className="bg-slate-900 text-white text-[11px] font-bold">
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-8">#</th>
+                          <th className="py-2 px-2 border-r border-slate-700">{lang === 'bn' ? 'স্টাফ নাম ও পদবি' : 'Staff Name & Designation'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-center w-24">{lang === 'bn' ? 'ক্যাটাগরি' : 'Category'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-right w-24">{lang === 'bn' ? 'মূল বেতন' : 'Base'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-right w-24">{lang === 'bn' ? 'ওভারটাইম' : 'OT'}</th>
+                          <th className="py-2 px-2 border-r border-slate-700 text-right w-24">{lang === 'bn' ? 'অনুপস্থিতি কর্তন' : 'Absent Ded'}</th>
+                          <th className="py-2 px-2 text-right w-28">{lang === 'bn' ? 'গ্রস বেতন' : 'Gross Salary'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {staffSalaryList.map((stf, idx) => (
+                          <tr key={stf.id} className="border-b border-slate-200 hover:bg-slate-50">
+                            <td className="py-1.5 px-2 text-center border-r border-slate-200 font-mono text-slate-500">{idx + 1}</td>
+                            <td className="py-1.5 px-2 border-r border-slate-200 font-bold text-slate-900">
+                              {stf.name}
+                              <div className="text-[10px] text-slate-500 font-normal">{stf.designation}</div>
+                            </td>
+                            <td className="py-1.5 px-2 text-center border-r border-slate-200 capitalize font-medium text-slate-700">{stf.category}</td>
+                            <td className="py-1.5 px-2 text-right border-r border-slate-200 font-mono">{formatCurrency(stf.baseSalary, lang)}</td>
+                            <td className="py-1.5 px-2 text-right border-r border-slate-200 font-mono text-emerald-700">+{formatCurrency(stf.calc.totalOtAmount, lang)}</td>
+                            <td className="py-1.5 px-2 text-right border-r border-slate-200 font-mono text-rose-700">-{formatCurrency(stf.calc.absentDeduction, lang)}</td>
+                            <td className="py-1.5 px-2 text-right font-mono font-black text-purple-950">{formatCurrency(stf.gross, lang)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-purple-100 text-purple-950 font-black text-xs border-t border-purple-300">
+                          <td colSpan={6} className="py-1.5 px-2 text-right border-r border-purple-300 uppercase">
+                            {lang === 'bn' ? 'সর্বমোট স্টাফ বেতন বিল:' : 'Total Staff Payroll:'}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-sm font-black text-purple-950">
+                            {formatCurrency(monthlyStaffSalaryOut, lang)}
+                          </td>
                         </tr>
                       </tfoot>
                     </table>
