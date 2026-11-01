@@ -720,7 +720,11 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
   // Executive Summary Card Metrics for the selected month
   const executiveSummary = useMemo(() => {
     const totalStaff = staffPayrollSummary.length;
-    // Payable totals only count positive net salary; negative (over-advance) is tracked separately
+    // Total Gross Salary (Earned Base + OT) before advance deductions
+    const totalGrossSalary = staffPayrollSummary.reduce((sum, s) => sum + (Number(s.earnedBase) || 0) + (Number(s.totalOtAmount) || 0), 0);
+    // Total Advance Taken in the month
+    const totalAdvanceTaken = staffPayrollSummary.reduce((sum, s) => sum + (Number(s.totalAdvance) || 0), 0);
+    // Net Payable Salary (Gross - Advance)
     const totalSalary = staffPayrollSummary.reduce((sum, s) => sum + Math.max(0, s.netSalary), 0);
     const paidSalary = staffPayrollSummary
       .filter((s) => s.paymentStatus === 'Paid')
@@ -735,6 +739,8 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
 
     return {
       totalStaff,
+      totalGrossSalary,
+      totalAdvanceTaken,
       totalSalary,
       paidSalary,
       unpaidSalary,
@@ -901,18 +907,18 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
 
         {/* 3 Real-time Dynamic Executive Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Card 1: Total Staff Salary */}
+          {/* Card 1: Total Gross Salary */}
           <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/80 space-y-2 relative overflow-hidden backdrop-blur-xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-300">
-                {lang === 'bn' ? 'মোট স্টাফ বেতন (Net Payable)' : 'Total Staff Salary'}
+                {lang === 'bn' ? 'মোট মাসিক মূল বেতন ও ওটি (Gross Salary)' : 'Total Gross Salary (Base + OT)'}
               </span>
-              <div className="w-7 h-7 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
-                <Wallet className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                <Users className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl font-black font-mono text-white">
-              {formatCurrency(executiveSummary.totalSalary, lang)}
+            <div className="text-2xl font-black font-mono text-purple-300">
+              {formatCurrency(executiveSummary.totalGrossSalary, lang)}
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-700/60">
               <span>{lang === 'bn' ? 'মোট স্টাফ সংখ্যা:' : 'Total Staff:'}</span>
@@ -920,53 +926,41 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
             </div>
           </div>
 
-          {/* Card 2: Total Paid Salary */}
-          <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 space-y-2 relative overflow-hidden backdrop-blur-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-emerald-300">
-                {lang === 'bn' ? 'মোট পরিশোধিত বেতন (Paid)' : 'Total Paid Salary'}
-              </span>
-              <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="text-2xl font-black font-mono text-emerald-400">
-              {formatCurrency(executiveSummary.paidSalary, lang)}
-            </div>
-            <div className="space-y-1 pt-1 border-t border-emerald-900/60">
-              <div className="flex items-center justify-between text-[11px] text-emerald-300/80">
-                <span>{lang === 'bn' ? 'পরিশোধিত স্টাফ:' : 'Paid Staff:'}</span>
-                <span className="font-bold text-emerald-300">
-                  {formatNumber(executiveSummary.paidCount, lang)} {lang === 'bn' ? 'জন' : ''} ({executiveSummary.paidPercentage}%)
-                </span>
-              </div>
-              <div className="w-full bg-emerald-950 rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="bg-emerald-400 h-full rounded-full transition-all duration-300"
-                  style={{ width: `${executiveSummary.paidPercentage}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Total Unpaid Salary */}
+          {/* Card 2: Total Advance Taken */}
           <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 space-y-2 relative overflow-hidden backdrop-blur-xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-amber-300">
-                {lang === 'bn' ? 'মোট বকেয়া / অপরিশোধিত (Unpaid)' : 'Total Unpaid Salary'}
+                {lang === 'bn' ? 'মোট অগ্রিম গ্রহণ (Total Advance)' : 'Total Advance Taken'}
               </span>
               <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                <AlertCircle className="w-4 h-4" />
+                <DollarSign className="w-4 h-4" />
               </div>
             </div>
             <div className="text-2xl font-black font-mono text-amber-400">
-              {formatCurrency(executiveSummary.unpaidSalary, lang)}
+              {formatCurrency(executiveSummary.totalAdvanceTaken, lang)}
             </div>
             <div className="flex items-center justify-between text-[11px] text-amber-300/80 pt-1 border-t border-amber-900/60">
-              <span>{lang === 'bn' ? 'বকেয়া স্টাফ:' : 'Unpaid Staff:'}</span>
-              <span className="font-bold text-amber-300">
-                {formatNumber(executiveSummary.unpaidCount, lang)} {lang === 'bn' ? 'জন' : ''}
+              <span>{lang === 'bn' ? 'অগ্রিম বাবদ প্রদান:' : 'Advance Outflow:'}</span>
+              <span className="font-bold text-amber-300">{lang === 'bn' ? 'মাসিক সর্বমোট' : 'Monthly Total'}</span>
+            </div>
+          </div>
+
+          {/* Card 3: Net Payable Salary */}
+          <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 space-y-2 relative overflow-hidden backdrop-blur-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-emerald-300">
+                {lang === 'bn' ? 'নিট প্রদেয় বেতন (Net Payable)' : 'Net Payable Salary'}
               </span>
+              <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                <Wallet className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-2xl font-black font-mono text-emerald-400">
+              {formatCurrency(executiveSummary.totalSalary, lang)}
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-emerald-300/80 pt-1 border-t border-emerald-900/60">
+              <span>{lang === 'bn' ? 'পরিশোধিত (Paid):' : 'Paid:'} {formatCurrency(executiveSummary.paidSalary, lang)}</span>
+              <span className="font-bold text-emerald-300">{executiveSummary.paidPercentage}%</span>
             </div>
           </div>
         </div>

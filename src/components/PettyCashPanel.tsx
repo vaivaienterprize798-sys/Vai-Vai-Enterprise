@@ -185,11 +185,12 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
       .filter((c) => c.date && c.date.startsWith(selMonth))
       .reduce((s, c) => s + Number(c.amount || 0), 0);
 
-    // 3. Staff Salary Payroll for selectedMonth
+    // 3. Staff Salary Payroll for selectedMonth (Gross Salary = Earned Base + OT Amount)
     let monthlyStaffSalaryOut = 0;
     const staffSalaryList = (staff || []).map((stf) => {
       const calc = computeStaffPayroll(stf, attendance || [], selMonth);
-      monthlyStaffSalaryOut += calc.netPayable;
+      const grossSalary = (Number(calc.earnedBase) || 0) + (Number(calc.totalOtAmount) || 0);
+      monthlyStaffSalaryOut += grossSalary;
       return {
         id: stf.id,
         name: stf.name,

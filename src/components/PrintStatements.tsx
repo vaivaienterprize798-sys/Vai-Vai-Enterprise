@@ -430,7 +430,8 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
       let totalPaidSal = 0;
       staff.forEach((stf) => {
         if (storageService.getStaffPaymentStatus(selectedMonth, stf.id) === 'Paid') {
-          totalPaidSal += computeStaffPayroll(stf, baseAttendance, selectedMonth).netPayable;
+          const pc = computeStaffPayroll(stf, baseAttendance, selectedMonth);
+          totalPaidSal += (pc.earnedBase + pc.totalOtAmount);
         }
       });
 

@@ -321,11 +321,9 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
           const absentDays = records.filter((a) => a.status === 'absent').length;
           const totalOt = stf.category === 'office' ? 0 : records.reduce((s, a) => s + (a.otHours || 0), 0);
           const otAmount = totalOt * 60;
-          const totalAdv = records.reduce((s, a) => s + (a.advanceDeduction || 0), 0);
-          const damageDeduction = storageService.getWorkerDamagePenaltyForMonth(stf.id, m);
           const absentDeduction = absentDays * stf.dailyRate;
-          const net = Math.max(0, stf.baseSalary - absentDeduction + otAmount - totalAdv - damageDeduction);
-          sumPaidSalary += net;
+          const gross = Math.max(0, stf.baseSalary - absentDeduction + otAmount);
+          sumPaidSalary += gross;
         }
       });
     });
