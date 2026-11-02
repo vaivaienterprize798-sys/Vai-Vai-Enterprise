@@ -41,6 +41,7 @@ import {
   formatDashboardCurrency,
 } from '../lib/translations';
 import { storageService } from '../lib/storage';
+import { computeStaffPayroll } from '../lib/payrollCalc';
 import { computeChinaOfficeSummary } from '../lib/rollover';
 import { CompanyLogo } from './CompanyLogo';
 
@@ -99,29 +100,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const { totalStaffMonthlySalary, totalStaffAdvance, allTimeStaffAdvance } = useMemo(() => {
     const monthRecords = attendance.filter((a) => a.date && a.date.startsWith(salaryMonth));
     const staffSalarySum = staff.reduce((total, stf) => {
-      const isOffice = stf.category === 'office';
-      const records = monthRecords.filter((a) => a.staffId === stf.id);
-      const presentDays = records.filter((a) => a.status === 'present' || a.status === 'late').length;
-      const leaveDays = records.filter(
-        (a) =>
-          a.status === 'full_day_leave' ||
-          a.status === 'half_day_leave' ||
-          a.status === 'leave' ||
-          a.status === 'holiday'
-      ).length;
-      const daysBase = isOffice ? 30 : 26;
-      const dailyRate = Math.round(Number(stf.baseSalary || 0) / daysBase);
-      const absentDays = records.length === 0 ? 0 : Math.max(0, daysBase - (presentDays + leaveDays));
-      const absentDeduction = absentDays * dailyRate;
-      const totalOtMoney = isOffice
-        ? 0
-        : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
-      const totalAdv = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
-      const damageDeduction = storageService.getWorkerDamagePenaltyForMonth(stf.id, salaryMonth);
-      const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
-      const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
-      const netSalary = Math.max(0, stf.baseSalary - absentDeduction + totalOtMoney - totalAdv - damageDeduction - lateDeduction);
-      return total + netSalary;
+      const pc = computeStaffPayroll(stf, attendance, salaryMonth);
+      return total + Math.max(0, pc.netSalary);
     }, 0);
 
     const monthAdv = monthRecords.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);

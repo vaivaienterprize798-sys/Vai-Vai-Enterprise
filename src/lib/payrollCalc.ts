@@ -18,21 +18,8 @@ export function computeStaffPayroll(stf: Staff, attendance: AttendanceRecord[], 
     (a) => a.status === 'full_day_leave' || a.status === 'half_day_leave' || a.status === 'leave' || a.status === 'holiday'
   ).length;
 
-  const [selY, selM] = month.split('-').map(Number);
-  const monthDays = new Date(selY, selM, 0).getDate();
-  const now = new Date();
-  const isCurrentMonth = now.getFullYear() === selY && now.getMonth() + 1 === selM;
-  const isFutureMonth = selY > now.getFullYear() || (selY === now.getFullYear() && selM > now.getMonth() + 1);
-  const lastDay = isFutureMonth ? 0 : isCurrentMonth ? now.getDate() : monthDays;
-  let requiredDays = 0;
-  for (let d = 1; d <= lastDay; d++) {
-    if (new Date(selY, selM - 1, d).getDay() !== 5) requiredDays++;
-  }
-  const isFriday = (date: string) => new Date(`${date}T00:00:00`).getDay() === 5;
-  const paidWorkingDays = new Set(
-    records.filter((a) => !isFriday(a.date) && a.status !== 'absent').map((a) => a.date)
-  ).size;
-  const absentDays = records.length === 0 ? 0 : Math.min(daysBase, Math.max(0, requiredDays - paidWorkingDays));
+  // Absent days: strictly count records explicitly marked as 'absent'
+  const absentDays = new Set(records.filter((a) => a.status === 'absent').map((a) => a.date)).size;
 
   const lateDays = isOffice ? 0 : records.filter((a) => a.status === 'late').length;
   const totalLateMinutes = isOffice ? 0 : records.reduce((s, a) => s + (Number(a.lateMinutes) || 0), 0);

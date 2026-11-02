@@ -45,6 +45,7 @@ import {
   formatDate,
 } from '../lib/translations';
 import { storageService } from '../lib/storage';
+import { computeStaffPayroll } from '../lib/payrollCalc';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
 interface PayrollPanelProps {
@@ -615,79 +616,27 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
   // 4. Leave Policy: Full Day / Half Day / Approved Leaves are 100% fully paid without deduction.
   const staffPayrollSummary = useMemo(() => {
     return staff.map((stf) => {
+      const pc = computeStaffPayroll(stf, monthAttendance, selectedMonth);
       const isOffice = stf.category === 'office';
       const records = monthAttendance.filter((a) => a.staffId === stf.id);
-      const daysPresent = records.filter(
-        (a) => a.status === 'present' || a.status === 'late'
-      ).length;
-      const leaveDays = records.filter(
-        (a) =>
-          a.status === 'full_day_leave' ||
-          a.status === 'half_day_leave' ||
-          a.status === 'leave' ||
-          a.status === 'holiday'
-      ).length;
-
-      // Office Staff: 30 days calculation. Processing Staff: 26 days calculation.
-      const daysBase = isOffice ? 30 : 26;
-      const dailyRate = Math.round(Number(stf.baseSalary || 0) / daysBase);
-
-      // Unexcused absences:
-      // - Calculated dynamically as the difference between required daysBase and actual paid/present days
-      // Count only working days (Friday is the weekly holiday) that have already passed in the selected month.
-      // A Friday attendance never counts toward the required days, so it can't cancel an absence.
-      const [selY, selM] = selectedMonth.split('-').map(Number);
-      const monthDays = new Date(selY, selM, 0).getDate();
-      const now = new Date();
-      const isCurrentMonth = now.getFullYear() === selY && now.getMonth() + 1 === selM;
-      const isFutureMonth = selY > now.getFullYear() || (selY === now.getFullYear() && selM > now.getMonth() + 1);
-      const lastDay = isFutureMonth ? 0 : isCurrentMonth ? now.getDate() : monthDays;
-      let requiredDays = 0;
-      for (let d = 1; d <= lastDay; d++) {
-        if (new Date(selY, selM - 1, d).getDay() !== 5) requiredDays++;
-      }
-      const isFriday = (date: string) => new Date(`${date}T00:00:00`).getDay() === 5;
-      const paidWorkingDays = new Set(
-        records
-          .filter((a) => !isFriday(a.date) && a.status !== 'absent')
-          .map((a) => a.date)
-      ).size;
-      const absentDays = records.length === 0 ? 0 : Math.min(daysBase, Math.max(0, requiredDays - paidWorkingDays));
-      
-      // Office staff: strictly NO late count and NO OT
-      const lateDays = isOffice ? 0 : records.filter((a) => a.status === 'late').length;
-      const totalLateMinutes = isOffice ? 0 : records.reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
-      const lateDeduction = Math.round((totalLateMinutes / 60) * (dailyRate / 10));
-      const totalOtHours = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otHours || 0), 0);
-      const totalOtAmount = isOffice ? 0 : records.reduce((sum, a) => sum + (a.otAmount !== undefined ? a.otAmount : (a.otHours || 0) * 60), 0);
-      const totalAdvance = records.reduce((sum, a) => sum + (a.advanceDeduction || 0), 0);
-      const damageDeduction = storageService.getWorkerDamagePenaltyForMonth(stf.id, selectedMonth);
-
-      const absentDeduction = Math.round((absentDays * Number(stf.baseSalary || 0)) / daysBase);
-      const earnedBase = Math.max(0, stf.baseSalary - absentDeduction);
-      // Not clamped: if advance exceeds earnings, net is negative (staff owes the company)
-      const netSalary = Math.round(earnedBase + totalOtAmount - totalAdvance - damageDeduction - lateDeduction);
-
-      const paymentKey = `${selectedMonth}_${stf.id}`;
-      const paymentStatus: StaffPaymentStatus = (salaryPayments[paymentKey] as StaffPaymentStatus) || 'Unpaid';
 
       return {
         ...stf,
-        dailyRate,
-        daysPresent: records.length === 0 ? (isOffice ? 30 : 26) : daysPresent,
-        leaveDays,
-        absentDays,
-        lateDays,
-        totalLateMinutes,
-        lateDeduction,
-        totalOtHours,
-        totalOtAmount,
-        totalAdvance,
-        damageDeduction,
-        absentDeduction,
-        earnedBase,
-        netSalary,
-        paymentStatus,
+        dailyRate: pc.dailyRate,
+        daysPresent: records.length === 0 ? (isOffice ? 30 : 26) : pc.presentDays,
+        leaveDays: pc.leaveDays,
+        absentDays: pc.absentDays,
+        lateDays: pc.lateDays,
+        totalLateMinutes: pc.totalLateMinutes,
+        lateDeduction: pc.lateDeduction,
+        totalOtHours: pc.totalOtHours,
+        totalOtAmount: pc.totalOtAmount,
+        totalAdvance: pc.totalAdvance,
+        damageDeduction: pc.damageDeduction,
+        absentDeduction: pc.absentDeduction,
+        earnedBase: pc.earnedBase,
+        netSalary: pc.netSalary,
+        paymentStatus: pc.paymentStatus,
       };
     });
   }, [staff, monthAttendance, selectedMonth, salaryPayments]);
