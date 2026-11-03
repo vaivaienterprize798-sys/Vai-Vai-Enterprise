@@ -24,6 +24,7 @@ import {
   translations,
   formatCurrency,
   formatNumber,
+  formatSheetNumber,
 } from '../lib/translations';
 import { storageService } from '../lib/storage';
 import { generateNextInvoiceNo, isInvoiceNoTaken } from '../lib/invoiceUtils';
@@ -728,15 +729,15 @@ Thank you for doing business with us!`;
                                 }`}
                                 title={
                                   lang === 'bn'
-                                    ? `গড় ক্রয় দর: ৳${matchedStock.purchaseAvgRate ?? matchedStock.purchaseRate}`
-                                    : `Avg Rate: ৳${matchedStock.purchaseAvgRate ?? matchedStock.purchaseRate}`
+                                    ? `গড় ক্রয় দর: ৳${formatCurrency(matchedStock.purchaseAvgRate ?? matchedStock.purchaseRate ?? 0, lang)}`
+                                    : `Avg Rate: ৳${formatCurrency(matchedStock.purchaseAvgRate ?? matchedStock.purchaseRate ?? 0, lang)}`
                                 }
                               >
-                                {formatNumber(matchedStock.quantity, lang)} {matchedStock.unit}
+                                {formatSheetNumber(matchedStock.quantity, lang)} {matchedStock.unit}
                               </span>
                               {matchedStock.purchaseAvgRate ? (
                                 <span className="text-[9px] text-slate-400 font-mono">
-                                  গড়: ৳{matchedStock.purchaseAvgRate}
+                                  গড়: ৳{formatCurrency(matchedStock.purchaseAvgRate, lang)}
                                 </span>
                               ) : null}
                             </div>

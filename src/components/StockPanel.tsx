@@ -29,7 +29,7 @@ import {
   formatSheetNumber,
   formatSheetDecimal,
 } from '../lib/translations';
-import { storageService } from '../lib/storage';
+import { storageService, cleanStockQty, cleanStockRate } from '../lib/storage';
 import { CompanyLogo } from './CompanyLogo';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
@@ -227,11 +227,11 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     setFormNameBn(item.nameBn);
     setFormNameEn(item.nameEn);
     setFormCode(item.code);
-    setFormOpeningQty(item.openingQty || 0);
-    setFormQuantity(item.quantity);
+    setFormOpeningQty(cleanStockQty(item.openingQty || 0));
+    setFormQuantity(cleanStockQty(item.quantity));
     setFormUnit(item.unit);
-    setFormPurchaseRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0);
-    setFormMinAlert(item.minAlertQty);
+    setFormPurchaseRate(cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0));
+    setFormMinAlert(cleanStockQty(item.minAlertQty));
     setIsModalOpen(true);
   };
 
@@ -242,20 +242,25 @@ export const StockPanel: React.FC<StockPanelProps> = ({
       return;
     }
 
+    const cleanedQty = cleanStockQty(formQuantity);
+    const cleanedRate = cleanStockRate(formPurchaseRate);
+    const cleanedOpening = cleanStockQty(formOpeningQty);
+
     const newItem: StockItem = {
       id: editingItem ? editingItem.id : `stk-${Date.now()}`,
       category: formCategory,
       nameBn: formNameBn,
       nameEn: formNameEn || formNameBn,
       code: formCode.trim() || `ITM-${Date.now().toString().slice(-4)}`,
-      openingQty: Number(formOpeningQty) || 0,
-      quantity: Number(formQuantity) || 0,
+      openingQty: cleanedOpening,
+      quantity: cleanedQty,
       unit: formUnit,
-      purchaseRate: Number(formPurchaseRate) || 0,
-      purchaseAvgRate: Number(formPurchaseRate) || 0,
+      purchaseRate: cleanedRate,
+      purchaseAvgRate: cleanedRate,
       saleRate: 0,
       minAlertQty: Number(formMinAlert) || 10,
       lastUpdated: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
+      _syncedAt: Date.now(),
     };
 
     onSaveItem(newItem);
@@ -998,8 +1003,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   <input
                     type="number"
                     step="any"
-                    value={formOpeningQty || ''}
-                    onChange={(e) => setFormOpeningQty(parseFloat(e.target.value) || 0)}
+                    value={formOpeningQty === 0 ? '0' : (formOpeningQty || '')}
+                    onChange={(e) => setFormOpeningQty(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                     placeholder="0"
                     className="w-full px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs text-amber-700 dark:text-amber-300"
                   />
@@ -1012,8 +1017,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   <input
                     type="number"
                     step="any"
-                    value={formQuantity || ''}
-                    onChange={(e) => setFormQuantity(parseFloat(e.target.value) || 0)}
+                    value={formQuantity === 0 ? '0' : (formQuantity || '')}
+                    onChange={(e) => setFormQuantity(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs"
                     required
                   />
@@ -1042,8 +1047,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   <input
                     type="number"
                     step="any"
-                    value={formPurchaseRate || ''}
-                    onChange={(e) => setFormPurchaseRate(parseFloat(e.target.value) || 0)}
+                    value={formPurchaseRate === 0 ? '0' : (formPurchaseRate || '')}
+                    onChange={(e) => setFormPurchaseRate(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs"
                     required
                   />
@@ -1060,8 +1065,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   </label>
                   <input
                     type="number"
-                    value={formMinAlert || ''}
-                    onChange={(e) => setFormMinAlert(parseFloat(e.target.value) || 0)}
+                    value={formMinAlert === 0 ? '0' : (formMinAlert || '')}
+                    onChange={(e) => setFormMinAlert(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs"
                   />
                 </div>

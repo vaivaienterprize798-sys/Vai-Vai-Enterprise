@@ -99,6 +99,7 @@ export interface StockItem {
   minAlertQty: number;
   lastUpdated: string;
   sortOrder?: number; // ক্রম সাজানোর জন্য (Custom Display Order)
+  _syncedAt?: number;
 }
 
 export interface DokanPayment {

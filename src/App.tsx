@@ -734,6 +734,7 @@ export default function App() {
   // Stock Handlers
   const handleSaveStockItem = (item: StockItem) => {
     storageService.saveStockItem(item);
+    setStock(storageService.getStock());
     refreshAllData();
     showToast(lang === 'bn' ? 'মালের স্টক সফলভাবে সংরক্ষিত হয়েছে' : 'Stock item saved successfully');
   };

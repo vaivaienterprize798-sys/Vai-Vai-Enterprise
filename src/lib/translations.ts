@@ -28,21 +28,20 @@ export const formatDashboardCurrency = (amount: number, lang?: Language): string
 };
 
 /**
- * Formats numbers for all sheet panels with exactly up to 3 decimal places (English digits 0-9)
+ * Formats numbers for all sheet panels with cleanly rounded decimals (up to 3 decimal places for kg, English digits 0-9)
  */
 export const formatSheetDecimal = (num: number | string, _lang?: Language, fixed: boolean = false): string => {
   const n = Number(num);
-  if (isNaN(n)) return fixed ? '0.000' : '0';
-  let formatted: string;
+  if (isNaN(n) || num === null || num === undefined || num === '') return fixed ? '0.000' : '0';
+  if (Math.abs(n) < 0.0001) return fixed ? '0.000' : '0';
+  const clean = Math.round((n + Number.EPSILON) * 1000) / 1000;
   if (fixed) {
-    formatted = n.toFixed(3);
-  } else if (Number.isInteger(n)) {
-    formatted = n.toString();
-  } else {
-    // Has decimal places: show exactly 3 decimal places per requirement
-    formatted = n.toFixed(3);
+    return clean.toFixed(3);
   }
-  return formatted;
+  if (Number.isInteger(clean)) {
+    return clean.toString();
+  }
+  return clean.toFixed(3).replace(/\.?0+$/, '');
 };
 
 export const formatSheetNumber = (num: number | string, lang?: Language, fixed: boolean = false): string => {
@@ -51,8 +50,10 @@ export const formatSheetNumber = (num: number | string, lang?: Language, fixed: 
 
 export const formatDecimal3 = (num: number | string, _lang?: Language): string => {
   const n = Number(num);
-  if (isNaN(n)) return '0.000';
-  return n.toFixed(3);
+  if (isNaN(n) || num === null || num === undefined || num === '') return '0.000';
+  if (Math.abs(n) < 0.0001) return '0.000';
+  const clean = Math.round((n + Number.EPSILON) * 1000) / 1000;
+  return clean.toFixed(3);
 };
 
 /**
@@ -60,16 +61,23 @@ export const formatDecimal3 = (num: number | string, _lang?: Language): string =
  */
 export const formatQuantity = (qty: number | string, lang?: Language): string => {
   const n = Number(qty);
-  if (isNaN(n)) return '0';
-  if (Number.isInteger(n)) {
-    return formatNumber(n, lang);
+  if (isNaN(n) || qty === null || qty === undefined || qty === '') return '0';
+  if (Math.abs(n) < 0.0001) return '0';
+  const clean = Math.round((n + Number.EPSILON) * 1000) / 1000;
+  if (Number.isInteger(clean)) {
+    return clean.toString();
   }
-  return formatDecimal3(n, lang);
+  return clean.toFixed(3).replace(/\.?0+$/, '');
 };
 
 export const formatNumber = (num: number | string, _lang?: Language): string => {
-  if (num === null || num === undefined) return '';
-  return num.toString();
+  if (num === null || num === undefined || num === '') return '';
+  const n = Number(num);
+  if (isNaN(n)) return num.toString();
+  if (Math.abs(n) < 0.0001) return '0';
+  const clean = Math.round((n + Number.EPSILON) * 1000) / 1000;
+  if (Number.isInteger(clean)) return clean.toString();
+  return clean.toFixed(3).replace(/\.?0+$/, '');
 };
 
 export const formatDate = (dateStr: string, _lang?: Language): string => {

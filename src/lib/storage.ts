@@ -127,6 +127,27 @@ const isPartyInvoice = (inv: Invoice) => inv.type !== 'processing' && !!(inv.par
 const FIRESTORE_BATCH_LIMIT = 450;
 
 /**
+ * Utility to cleanly round stock quantities up to 3 decimal places (e.g. grams for KG items)
+ * without IEEE-754 precision noise (e.g. 12.300000000000002 -> 12.3).
+ */
+export const cleanStockQty = (val: number | string | undefined | null): number => {
+  const n = Number(val);
+  if (isNaN(n) || val === null || val === undefined || val === '') return 0;
+  if (Math.abs(n) < 0.0001) return 0;
+  return Math.round((n + Number.EPSILON) * 1000) / 1000;
+};
+
+/**
+ * Utility to cleanly round rates/prices up to 2 decimal places (currency Taka).
+ */
+export const cleanStockRate = (val: number | string | undefined | null): number => {
+  const n = Number(val);
+  if (isNaN(n) || val === null || val === undefined || val === '') return 0;
+  if (Math.abs(n) < 0.001) return 0;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+};
+
+/**
  * All-time weighted average purchase rate for a stock item, derived from the FULL
  * purchase invoice history: (sum of purchased qty * unit price) / (sum of purchased qty).
  * Sales never affect it and an empty stock never resets it. This is the single source
@@ -148,13 +169,13 @@ const computeAllTimeAvgRateForItem = (stockItem: StockItem): number | null => {
       const inm = norm(it.name);
       const matched = (!!c && !!ic && ic === c) || (!!inm && ((!!bn && inm === bn) || (!!en && inm === en)));
       if (!matched) continue;
-      const q = Number(it.quantity) || 0;
+      const q = cleanStockQty(it.quantity);
       qty += q;
       value += q * (Number(it.unitPrice) || 0);
     }
   }
   if (qty <= 0) return null;
-  return Math.round((value / qty) * 100) / 100;
+  return cleanStockRate(value / qty);
 };
 
 // API Service Wrapper for Local Database
@@ -238,7 +259,11 @@ export const storageService = {
     const list = loadFromStorage<StockItem[]>(STORAGE_KEYS.STOCK, INITIAL_STOCK);
     const stockItems: StockItem[] = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s, idx) => ({
       ...s,
-      purchaseAvgRate: s?.purchaseAvgRate ?? s?.purchaseRate ?? 0,
+      quantity: cleanStockQty(s?.quantity),
+      purchaseAvgRate: cleanStockRate(s?.purchaseAvgRate ?? s?.purchaseRate ?? 0),
+      purchaseRate: cleanStockRate(s?.purchaseRate ?? s?.purchaseAvgRate ?? 0),
+      openingQty: cleanStockQty(s?.openingQty || 0),
+      minAlertQty: cleanStockQty(s?.minAlertQty ?? 10),
       sortOrder: s?.sortOrder ?? idx + 1,
     }));
 
@@ -251,7 +276,9 @@ export const storageService = {
     const list = loadFromStorage<StockItem[]>(STORAGE_KEYS.STOCK, INITIAL_STOCK);
     const local = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s, idx) => ({
       ...s,
-      purchaseAvgRate: s?.purchaseAvgRate ?? s?.purchaseRate ?? 0,
+      quantity: cleanStockQty(s?.quantity),
+      purchaseAvgRate: cleanStockRate(s?.purchaseAvgRate ?? s?.purchaseRate ?? 0),
+      purchaseRate: cleanStockRate(s?.purchaseRate ?? s?.purchaseAvgRate ?? 0),
       sortOrder: s?.sortOrder ?? idx + 1,
     }));
 
@@ -267,11 +294,27 @@ export const storageService = {
       if (!cloudItem || !cloudItem.id) return;
       const localItem = localMap.get(cloudItem.id);
 
-      const mergedItem: StockItem = {
-        ...cloudItem,
-        purchaseAvgRate: cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? localItem?.purchaseAvgRate ?? 0,
-        sortOrder: localItem?.sortOrder ?? cloudItem.sortOrder,
-      };
+      const localSyncedAt = Number(localItem?._syncedAt || 0);
+      const cloudSyncedAt = Number(cloudItem?._syncedAt || 0);
+      // If local item was edited more recently, protect local edits from stale snapshots
+      const isLocalNewer = localItem && localSyncedAt > cloudSyncedAt;
+
+      const mergedItem: StockItem = isLocalNewer
+        ? {
+            ...cloudItem,
+            ...localItem,
+            quantity: cleanStockQty(localItem.quantity),
+            purchaseAvgRate: cleanStockRate(localItem.purchaseAvgRate ?? localItem.purchaseRate ?? 0),
+            purchaseRate: cleanStockRate(localItem.purchaseRate ?? localItem.purchaseAvgRate ?? 0),
+            sortOrder: localItem.sortOrder ?? cloudItem.sortOrder,
+          }
+        : {
+            ...cloudItem,
+            quantity: cleanStockQty(cloudItem.quantity),
+            purchaseAvgRate: cleanStockRate(cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? localItem?.purchaseAvgRate ?? 0),
+            purchaseRate: cleanStockRate(cloudItem.purchaseRate ?? cloudItem.purchaseAvgRate ?? localItem?.purchaseRate ?? 0),
+            sortOrder: localItem?.sortOrder ?? cloudItem.sortOrder,
+          };
 
       mergedMap.set(cloudItem.id, mergedItem);
     });
@@ -294,10 +337,17 @@ export const storageService = {
     const stock = storageService.getStock();
     const idx = stock.findIndex((s) => s.id === item.id);
     let updated: StockItem[];
-    const itemWithAvg = {
+    const now = Date.now();
+    const cleanQty = cleanStockQty(item.quantity);
+    const cleanRate = cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0);
+    const itemWithAvg: StockItem = {
       ...item,
-      purchaseAvgRate: item.purchaseAvgRate ?? item.purchaseRate ?? 0,
+      quantity: cleanQty,
+      purchaseRate: cleanRate,
+      purchaseAvgRate: cleanRate,
+      openingQty: cleanStockQty(item.openingQty || 0),
       sortOrder: item.sortOrder ?? (idx >= 0 ? stock[idx].sortOrder ?? (idx + 1) : stock.length + 1),
+      _syncedAt: now,
     };
     if (idx >= 0) {
       updated = [...stock];
@@ -347,7 +397,6 @@ export const storageService = {
     const isPurchase = invoice.mode === 'purchase';
     const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const norm = (v?: string) => (v || '').trim().toLowerCase();
-    const r2 = (n: number) => Math.round(n * 100) / 100;
     const stock = storageService.getStock();
     const deltas = new Map<string, number>();
     // Each invoice line is matched to exactly ONE stock item (code match first, then name),
@@ -366,9 +415,9 @@ export const storageService = {
     for (const it of invoice.items) {
       const target = lineTarget(it);
       if (!target) continue;
-      const q = Number(it.quantity) || 0;
+      const q = cleanStockQty(it.quantity);
       if (q <= 0) continue;
-      deltas.set(target.id, (deltas.get(target.id) || 0) + q);
+      deltas.set(target.id, cleanStockQty((deltas.get(target.id) || 0) + q));
     }
     if (deltas.size === 0) return;
     const sign = (isPurchase ? 1 : -1) * direction;
@@ -377,12 +426,12 @@ export const storageService = {
     const updatedStock = stock.map((stockItem) => {
       const qty = deltas.get(stockItem.id);
       if (!qty) return stockItem;
-      const delta = r2(sign * qty);
-      const oldQty = Number(stockItem.quantity) || 0;
-      const oldAvg = Number(stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? 0) || 0;
+      const delta = cleanStockQty(sign * qty);
+      const oldQty = cleanStockQty(stockItem.quantity);
+      const oldAvg = cleanStockRate(stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? 0);
       const historyAvg = computeAllTimeAvgRateForItem(stockItem);
-      const newAvg = historyAvg != null ? historyAvg : oldAvg;
-      const next = { ...stockItem, quantity: r2(oldQty + delta), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
+      const newAvg = cleanStockRate(historyAvg != null ? historyAvg : oldAvg);
+      const next = { ...stockItem, quantity: cleanStockQty(oldQty + delta), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
       changes.push({ item: next, delta });
       return next;
     });
@@ -401,9 +450,10 @@ export const storageService = {
     const updated = stock.map((item) => {
       const hist = computeAllTimeAvgRateForItem(item);
       if (hist == null) return item;
-      const cur = Number(item.purchaseAvgRate ?? item.purchaseRate ?? 0) || 0;
-      if (Math.abs(cur - hist) <= 0.005) return item;
-      const next = { ...item, purchaseAvgRate: hist, purchaseRate: hist };
+      const cleanHist = cleanStockRate(hist);
+      const cur = cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0);
+      if (Math.abs(cur - cleanHist) <= 0.005) return item;
+      const next = { ...item, purchaseAvgRate: cleanHist, purchaseRate: cleanHist };
       fixed.push(next);
       return next;
     });

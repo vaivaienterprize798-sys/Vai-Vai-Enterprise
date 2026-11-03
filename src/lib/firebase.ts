@@ -539,7 +539,9 @@ export function overlayPending(col: string, items: any[]): any[] {
     const p = incs[k];
     if (p.col !== col || !byId.has(p.id)) continue;
     const cur = byId.get(p.id);
-    byId.set(p.id, { ...cur, ...p.fields, quantity: Math.round(((Number(cur.quantity) || 0) + p.delta) * 100) / 100 });
+    const rawQty = (Number(cur.quantity) || 0) + p.delta;
+    const cleanQty = Math.round((rawQty + Number.EPSILON) * 1000) / 1000;
+    byId.set(p.id, { ...cur, ...p.fields, quantity: Math.abs(cleanQty) < 0.0001 ? 0 : cleanQty });
   }
   const out = items.map((it) => (it && it.id != null ? byId.get(String(it.id)) : it));
   return [...out, ...extra];
@@ -571,7 +573,7 @@ export function flushPendingWrites(): Promise<number> {
         await withTimeout(setDoc(_doc(db, it.col, it.id), { ...sanitizeForFirestore(it.fields || {}), quantity: increment(it.delta) }, { merge: true }), 30000, 'Upload');
         const cur = _readInc();
         if (cur[k]) {
-          const rest = Math.round((cur[k].delta - it.delta) * 100) / 100;
+          const rest = Math.round(((cur[k].delta - it.delta) + Number.EPSILON) * 1000) / 1000;
           if (Math.abs(rest) < 0.0001) delete cur[k]; else cur[k] = { ...cur[k], delta: rest };
           _saveInc(cur);
         }
