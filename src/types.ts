@@ -95,6 +95,8 @@ export interface StockItem {
   unit: 'pcs' | 'kg';
   purchaseRate: number; // ক্রয় দর (Purchase Rate)
   purchaseAvgRate?: number; // optional legacy
+  manualRate?: number; // ইউজার কর্তৃক ম্যানুয়ালি নির্ধারিত ক্রয় দর
+  rateUpdatedAt?: number; // ম্যানুয়াল দর আপডেটের সময় (ms timestamp)
   saleRate?: number; // optional legacy
   minAlertQty: number;
   lastUpdated: string;

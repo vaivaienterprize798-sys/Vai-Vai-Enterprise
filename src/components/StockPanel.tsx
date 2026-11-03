@@ -178,11 +178,11 @@ export const StockPanel: React.FC<StockPanelProps> = ({
   const [formNameBn, setFormNameBn] = useState('');
   const [formNameEn, setFormNameEn] = useState('');
   const [formCode, setFormCode] = useState('');
-  const [formOpeningQty, setFormOpeningQty] = useState<number>(0);
-  const [formQuantity, setFormQuantity] = useState<number>(0);
+  const [formOpeningQty, setFormOpeningQty] = useState<number | string>(0);
+  const [formQuantity, setFormQuantity] = useState<number | string>(0);
   const [formUnit, setFormUnit] = useState<'pcs' | 'kg'>('pcs');
-  const [formPurchaseRate, setFormPurchaseRate] = useState<number>(0);
-  const [formMinAlert, setFormMinAlert] = useState<number>(50);
+  const [formPurchaseRate, setFormPurchaseRate] = useState<number | string>(0);
+  const [formMinAlert, setFormMinAlert] = useState<number | string>(50);
 
   const openNewItemModal = () => {
     setEditingItem(null);
@@ -230,7 +230,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     setFormOpeningQty(cleanStockQty(item.openingQty || 0));
     setFormQuantity(cleanStockQty(item.quantity));
     setFormUnit(item.unit);
-    setFormPurchaseRate(cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0));
+    setFormPurchaseRate(cleanStockRate(item.manualRate ?? item.purchaseAvgRate ?? item.purchaseRate ?? 0));
     setFormMinAlert(cleanStockQty(item.minAlertQty));
     setIsModalOpen(true);
   };
@@ -245,22 +245,25 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     const cleanedQty = cleanStockQty(formQuantity);
     const cleanedRate = cleanStockRate(formPurchaseRate);
     const cleanedOpening = cleanStockQty(formOpeningQty);
+    const now = Date.now();
 
     const newItem: StockItem = {
-      id: editingItem ? editingItem.id : `stk-${Date.now()}`,
+      id: editingItem ? editingItem.id : `stk-${now}`,
       category: formCategory,
       nameBn: formNameBn,
       nameEn: formNameEn || formNameBn,
-      code: formCode.trim() || `ITM-${Date.now().toString().slice(-4)}`,
+      code: formCode.trim() || `ITM-${now.toString().slice(-4)}`,
       openingQty: cleanedOpening,
       quantity: cleanedQty,
       unit: formUnit,
       purchaseRate: cleanedRate,
       purchaseAvgRate: cleanedRate,
+      manualRate: cleanedRate,
+      rateUpdatedAt: now,
       saleRate: 0,
       minAlertQty: Number(formMinAlert) || 10,
-      lastUpdated: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
-      _syncedAt: Date.now(),
+      lastUpdated: new Date(now - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
+      _syncedAt: now,
     };
 
     onSaveItem(newItem);
@@ -666,7 +669,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredStock.map((it, idx) => {
                 const isLow = it.quantity <= it.minAlertQty;
-                const effectiveAvgRate = it.purchaseAvgRate ?? it.purchaseRate ?? 0;
+                const effectiveAvgRate = cleanStockRate(it.manualRate ?? it.purchaseAvgRate ?? it.purchaseRate ?? 0);
                 const rowValuation = it.quantity * effectiveAvgRate;
                 const { stockIn, stockOut } = getItemStats(it.code, it.nameBn, it.nameEn);
 
@@ -746,7 +749,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                       )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono text-slate-800 dark:text-slate-200">
-                      {formatCurrency(it.purchaseAvgRate ?? it.purchaseRate ?? 0, lang)}
+                      {formatCurrency(cleanStockRate(it.manualRate ?? it.purchaseAvgRate ?? it.purchaseRate ?? 0), lang)}
                     </td>
                     <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
                       {formatCurrency(rowValuation, lang)}
@@ -1003,8 +1006,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   <input
                     type="number"
                     step="any"
-                    value={formOpeningQty === 0 ? '0' : (formOpeningQty || '')}
-                    onChange={(e) => setFormOpeningQty(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                    value={formOpeningQty}
+                    onChange={(e) => setFormOpeningQty(e.target.value)}
                     placeholder="0"
                     className="w-full px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs text-amber-700 dark:text-amber-300"
                   />
@@ -1017,8 +1020,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   <input
                     type="number"
                     step="any"
-                    value={formQuantity === 0 ? '0' : (formQuantity || '')}
-                    onChange={(e) => setFormQuantity(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                    value={formQuantity}
+                    onChange={(e) => setFormQuantity(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs"
                     required
                   />
@@ -1047,15 +1050,15 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   <input
                     type="number"
                     step="any"
-                    value={formPurchaseRate === 0 ? '0' : (formPurchaseRate || '')}
-                    onChange={(e) => setFormPurchaseRate(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                    value={formPurchaseRate}
+                    onChange={(e) => setFormPurchaseRate(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-xs"
                     required
                   />
                   <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
                     {lang === 'bn'
-                      ? 'চালান থাকা মালের গড় ক্রয় দর কেনার চালান থেকে নিজে থেকেই হিসাব হয়'
-                      : 'For items with invoices, the avg rate is calculated automatically from purchase invoices'}
+                      ? 'ম্যানুয়ালি রেট লিখলে তা স্থায়ী থাকবে এবং পরবর্তীতে নতুন ক্রয়ের চালানের সাথে গড় হিসাব হবে।'
+                      : 'Manually entered rate is preserved and combines with future purchase invoices.'}
                   </p>
                 </div>
 
@@ -1065,8 +1068,8 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                   </label>
                   <input
                     type="number"
-                    value={formMinAlert === 0 ? '0' : (formMinAlert || '')}
-                    onChange={(e) => setFormMinAlert(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                    value={formMinAlert}
+                    onChange={(e) => setFormMinAlert(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs"
                   />
                 </div>

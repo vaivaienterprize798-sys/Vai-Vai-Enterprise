@@ -324,6 +324,7 @@ export const cloudDbService = {
       const stamped = stampForCloud(item);
       const sanitized = sanitizeForFirestore(stamped);
       await setDoc(doc(db, collectionName, item.id), sanitized, { merge: true });
+      clearPendingWrite(collectionName, item.id);
     } catch (error) {
       // Never lose a write: keep it in the retry queue until the cloud accepts it
       queuePendingWrites([{ col: collectionName, id: String(item.id), data: stampForCloud(item) }]);
@@ -517,6 +518,13 @@ export function queuePendingIncrement(col: string, id: string, delta: number, fi
 export function clearPendingIncrement(col: string, id: string): void {
   const m = _readInc();
   if (m[`${col}/${id}`]) { delete m[`${col}/${id}`]; _saveInc(m); }
+}
+
+/** Drop queued pending write for a doc (used when doc is successfully saved or overwritten). */
+export function clearPendingWrite(col: string, id: string): void {
+  const m = _readPending();
+  const k = `${col}/${id}`;
+  if (m[k]) { delete m[k]; _savePending(m); }
 }
 
 /**

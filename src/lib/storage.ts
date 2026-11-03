@@ -25,7 +25,7 @@ import {
   ChinaDirectPayment,
 } from '../types';
 import { withComputedBalance, withComputedBalances } from './ledger';
-import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites, clearPendingIncrement } from './firebase';
+import { cloudDbService, auth, db, handleFirestoreError, OperationType, ensureCloudAccess, withTimeout, queuePendingWrites, flushPendingWrites, clearPendingIncrement, clearPendingWrite } from './firebase';
 import { collection, getDocs, getDoc, writeBatch, doc } from 'firebase/firestore';
 import { filterForDevice, stampForCloud, setDeviceRole } from './deviceRole';
 
@@ -152,16 +152,54 @@ export const cleanStockRate = (val: number | string | undefined | null): number 
  * purchase invoice history: (sum of purchased qty * unit price) / (sum of purchased qty).
  * Sales never affect it and an empty stock never resets it. This is the single source
  * of truth for the average rate, so editing or deleting any invoice can never drift it.
- * Returns null when the item has no purchase records, so manually set rates survive.
+ *
+ * When a user manually sets or edits a rate on a stock item (manualRate and rateUpdatedAt),
+ * that manual rate is respected and preserved. Any new purchase invoices created AFTER
+ * rateUpdatedAt will move the average rate forward with the manual rate as the base.
+ * Returns null when the item has no purchase records and no manual rate, so opening rates survive.
  */
-const computeAllTimeAvgRateForItem = (stockItem: StockItem): number | null => {
+export const computeEffectiveStockRate = (stockItem: StockItem): number | null => {
   const norm = (v?: string) => (v || '').trim().toLowerCase();
   const c = norm(stockItem?.code);
   const bn = norm(stockItem?.nameBn);
   const en = norm(stockItem?.nameEn);
+  const rateUpdatedAt = Number(stockItem?.rateUpdatedAt || 0);
+  const manualRate = stockItem?.manualRate != null && Number(stockItem.manualRate) > 0 ? cleanStockRate(stockItem.manualRate) : null;
+
+  const invoices = storageService.getInvoices();
+
+  // If user explicitly set a manual rate:
+  if (manualRate !== null && rateUpdatedAt > 0) {
+    let postQty = 0;
+    let postValue = 0;
+    for (const inv of invoices) {
+      if (inv?.mode !== 'purchase' || !Array.isArray(inv.items)) continue;
+      const invTime = inv.createdAt ? new Date(inv.createdAt).getTime() : 0;
+      if (invTime <= rateUpdatedAt) continue; // Only count invoices created AFTER manual edit
+      for (const it of inv.items) {
+        if (!it) continue;
+        const ic = norm(it.code);
+        const inm = norm(it.name);
+        const matched = (!!c && !!ic && ic === c) || (!!inm && ((!!bn && inm === bn) || (!!en && inm === en)));
+        if (!matched) continue;
+        const q = cleanStockQty(it.quantity);
+        postQty += q;
+        postValue += q * (Number(it.unitPrice) || 0);
+      }
+    }
+    // If no new purchase invoices arrived after manual edit, user's manual rate is the exact rate!
+    if (postQty <= 0) return manualRate;
+    // If new purchase invoices arrived after manual edit, compute weighted average starting from the manual baseline:
+    const baseQty = Math.max(0, cleanStockQty(stockItem.quantity) - postQty);
+    const totalQty = baseQty + postQty;
+    if (totalQty <= 0) return manualRate;
+    return cleanStockRate((baseQty * manualRate + postValue) / totalQty);
+  }
+
+  // Standard case: derive from full purchase invoice history
   let qty = 0;
   let value = 0;
-  for (const inv of storageService.getInvoices()) {
+  for (const inv of invoices) {
     if (inv?.mode !== 'purchase' || !Array.isArray(inv.items)) continue;
     for (const it of inv.items) {
       if (!it) continue;
@@ -176,6 +214,10 @@ const computeAllTimeAvgRateForItem = (stockItem: StockItem): number | null => {
   }
   if (qty <= 0) return null;
   return cleanStockRate(value / qty);
+};
+
+export const computeAllTimeAvgRateForItem = (stockItem: StockItem): number | null => {
+  return computeEffectiveStockRate(stockItem);
 };
 
 // API Service Wrapper for Local Database
@@ -260,11 +302,14 @@ export const storageService = {
     const stockItems: StockItem[] = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s, idx) => ({
       ...s,
       quantity: cleanStockQty(s?.quantity),
-      purchaseAvgRate: cleanStockRate(s?.purchaseAvgRate ?? s?.purchaseRate ?? 0),
-      purchaseRate: cleanStockRate(s?.purchaseRate ?? s?.purchaseAvgRate ?? 0),
+      purchaseAvgRate: cleanStockRate(s?.purchaseAvgRate ?? s?.purchaseRate ?? s?.manualRate ?? 0),
+      purchaseRate: cleanStockRate(s?.purchaseRate ?? s?.purchaseAvgRate ?? s?.manualRate ?? 0),
+      manualRate: s?.manualRate !== undefined && s?.manualRate !== null ? cleanStockRate(s.manualRate) : undefined,
+      rateUpdatedAt: s?.rateUpdatedAt ? Number(s.rateUpdatedAt) : undefined,
       openingQty: cleanStockQty(s?.openingQty || 0),
       minAlertQty: cleanStockQty(s?.minAlertQty ?? 10),
       sortOrder: s?.sortOrder ?? idx + 1,
+      _syncedAt: s?._syncedAt ? Number(s._syncedAt) : undefined,
     }));
 
     stockItems.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999));
@@ -277,9 +322,12 @@ export const storageService = {
     const local = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s, idx) => ({
       ...s,
       quantity: cleanStockQty(s?.quantity),
-      purchaseAvgRate: cleanStockRate(s?.purchaseAvgRate ?? s?.purchaseRate ?? 0),
-      purchaseRate: cleanStockRate(s?.purchaseRate ?? s?.purchaseAvgRate ?? 0),
+      purchaseAvgRate: cleanStockRate(s?.purchaseAvgRate ?? s?.purchaseRate ?? s?.manualRate ?? 0),
+      purchaseRate: cleanStockRate(s?.purchaseRate ?? s?.purchaseAvgRate ?? s?.manualRate ?? 0),
+      manualRate: s?.manualRate !== undefined && s?.manualRate !== null ? cleanStockRate(s.manualRate) : undefined,
+      rateUpdatedAt: s?.rateUpdatedAt ? Number(s.rateUpdatedAt) : undefined,
       sortOrder: s?.sortOrder ?? idx + 1,
+      _syncedAt: s?._syncedAt ? Number(s._syncedAt) : undefined,
     }));
 
     const localMap = new Map<string, StockItem>();
@@ -304,15 +352,19 @@ export const storageService = {
             ...cloudItem,
             ...localItem,
             quantity: cleanStockQty(localItem.quantity),
-            purchaseAvgRate: cleanStockRate(localItem.purchaseAvgRate ?? localItem.purchaseRate ?? 0),
-            purchaseRate: cleanStockRate(localItem.purchaseRate ?? localItem.purchaseAvgRate ?? 0),
+            purchaseAvgRate: cleanStockRate(localItem.purchaseAvgRate ?? localItem.purchaseRate ?? localItem.manualRate ?? 0),
+            purchaseRate: cleanStockRate(localItem.purchaseRate ?? localItem.purchaseAvgRate ?? localItem.manualRate ?? 0),
+            manualRate: localItem.manualRate !== undefined ? cleanStockRate(localItem.manualRate) : (cloudItem.manualRate !== undefined ? cleanStockRate(cloudItem.manualRate) : undefined),
+            rateUpdatedAt: localItem.rateUpdatedAt ?? cloudItem.rateUpdatedAt,
             sortOrder: localItem.sortOrder ?? cloudItem.sortOrder,
           }
         : {
             ...cloudItem,
             quantity: cleanStockQty(cloudItem.quantity),
-            purchaseAvgRate: cleanStockRate(cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? localItem?.purchaseAvgRate ?? 0),
-            purchaseRate: cleanStockRate(cloudItem.purchaseRate ?? cloudItem.purchaseAvgRate ?? localItem?.purchaseRate ?? 0),
+            purchaseAvgRate: cleanStockRate(cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? cloudItem.manualRate ?? localItem?.purchaseAvgRate ?? 0),
+            purchaseRate: cleanStockRate(cloudItem.purchaseRate ?? cloudItem.purchaseAvgRate ?? cloudItem.manualRate ?? localItem?.purchaseRate ?? 0),
+            manualRate: cloudItem.manualRate !== undefined ? cleanStockRate(cloudItem.manualRate) : (localItem?.manualRate !== undefined ? cleanStockRate(localItem.manualRate) : undefined),
+            rateUpdatedAt: cloudItem.rateUpdatedAt ?? localItem?.rateUpdatedAt,
             sortOrder: localItem?.sortOrder ?? cloudItem.sortOrder,
           };
 
@@ -339,12 +391,14 @@ export const storageService = {
     let updated: StockItem[];
     const now = Date.now();
     const cleanQty = cleanStockQty(item.quantity);
-    const cleanRate = cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0);
+    const cleanRate = cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? item.manualRate ?? 0);
     const itemWithAvg: StockItem = {
       ...item,
       quantity: cleanQty,
       purchaseRate: cleanRate,
       purchaseAvgRate: cleanRate,
+      manualRate: cleanRate,
+      rateUpdatedAt: item.rateUpdatedAt || now,
       openingQty: cleanStockQty(item.openingQty || 0),
       sortOrder: item.sortOrder ?? (idx >= 0 ? stock[idx].sortOrder ?? (idx + 1) : stock.length + 1),
       _syncedAt: now,
@@ -356,8 +410,9 @@ export const storageService = {
       updated = [...stock, itemWithAvg];
     }
     saveToStorage(STORAGE_KEYS.STOCK, updated);
-    // A manual save sets the absolute quantity, so drop any queued deltas for it
+    // A manual save sets the absolute quantity and rate, so drop any queued deltas / pending writes for it
     clearPendingIncrement('stock', itemWithAvg.id);
+    clearPendingWrite('stock', itemWithAvg.id);
     cloudDbService.saveDocument('stock', itemWithAvg).catch((err) => {
       console.warn('[Cloud Sync] Stock push note:', err);
     });
@@ -428,8 +483,8 @@ export const storageService = {
       if (!qty) return stockItem;
       const delta = cleanStockQty(sign * qty);
       const oldQty = cleanStockQty(stockItem.quantity);
-      const oldAvg = cleanStockRate(stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? 0);
-      const historyAvg = computeAllTimeAvgRateForItem(stockItem);
+      const oldAvg = cleanStockRate(stockItem.purchaseAvgRate ?? stockItem.purchaseRate ?? stockItem.manualRate ?? 0);
+      const historyAvg = computeEffectiveStockRate(stockItem);
       const newAvg = cleanStockRate(historyAvg != null ? historyAvg : oldAvg);
       const next = { ...stockItem, quantity: cleanStockQty(oldQty + delta), purchaseAvgRate: newAvg, purchaseRate: newAvg, lastUpdated };
       changes.push({ item: next, delta });
@@ -443,17 +498,23 @@ export const storageService = {
   },
 
   // Permanent avg-rate guard: re-derive every stock item's average purchase rate from
-  // the full invoice history and repair any drift (older versions, cloud copies, etc.).
+  // the full invoice history (or user-defined manual rate baseline) and repair any drift.
   reconcileStockAvgRates: (pushToCloud: boolean = true): number => {
     const stock = storageService.getStock();
     const fixed: StockItem[] = [];
     const updated = stock.map((item) => {
-      const hist = computeAllTimeAvgRateForItem(item);
+      const hist = computeEffectiveStockRate(item);
       if (hist == null) return item;
       const cleanHist = cleanStockRate(hist);
-      const cur = cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? 0);
+      const cur = cleanStockRate(item.purchaseAvgRate ?? item.purchaseRate ?? item.manualRate ?? 0);
       if (Math.abs(cur - cleanHist) <= 0.005) return item;
-      const next = { ...item, purchaseAvgRate: cleanHist, purchaseRate: cleanHist };
+      const next: StockItem = {
+        ...item,
+        purchaseAvgRate: cleanHist,
+        purchaseRate: cleanHist,
+        manualRate: item.manualRate !== undefined ? cleanStockRate(item.manualRate) : cleanHist,
+        rateUpdatedAt: item.rateUpdatedAt,
+      };
       fixed.push(next);
       return next;
     });
@@ -463,7 +524,13 @@ export const storageService = {
       // quantity can never overwrite the real stock in the cloud.
       if (pushToCloud) {
         fixed.forEach((stk) =>
-          cloudDbService.saveDocument('stock', { id: stk.id, purchaseAvgRate: stk.purchaseAvgRate, purchaseRate: stk.purchaseRate } as any).catch(() => {})
+          cloudDbService.saveDocument('stock', {
+            id: stk.id,
+            purchaseAvgRate: stk.purchaseAvgRate,
+            purchaseRate: stk.purchaseRate,
+            manualRate: stk.manualRate,
+            rateUpdatedAt: stk.rateUpdatedAt,
+          } as any).catch(() => {})
         );
       }
     }
