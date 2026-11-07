@@ -39,8 +39,10 @@ import {
   formatNumber,
   formatDate,
   formatDashboardCurrency,
+  formatSheetNumber,
+  formatSheetDecimal,
 } from '../lib/translations';
-import { storageService } from '../lib/storage';
+import { storageService, cleanStockQty } from '../lib/storage';
 import { computeStaffPayroll } from '../lib/payrollCalc';
 import { computeChinaOfficeSummary } from '../lib/rollover';
 import { CompanyLogo } from './CompanyLogo';
@@ -148,12 +150,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
       .reduce((acc, inv) => acc + inv.netInvoiceAmount, 0);
   }, [filteredInvoices]);
 
+  const isKgItem = (it: { unit?: string; category?: string } | null | undefined): boolean => {
+    return (it?.unit || '').trim().toLowerCase() === 'kg' || (it?.category || '').trim().toLowerCase() === 'kg';
+  };
+
   // Total Stock Value using weighted average purchase rate
   const totalStockValue = useMemo(() => {
     return stock.reduce(
       (sum, item) => sum + item.quantity * (item.purchaseAvgRate ?? item.purchaseRate ?? 0),
       0
     );
+  }, [stock]);
+
+  const totalStockPcs = useMemo(() => {
+    return stock
+      .filter((it) => !isKgItem(it))
+      .reduce((sum, item) => sum + cleanStockQty(item.quantity), 0);
+  }, [stock]);
+
+  const totalStockKg = useMemo(() => {
+    const sum = stock
+      .filter((it) => isKgItem(it))
+      .reduce((sum, item) => sum + cleanStockQty(item.quantity), 0);
+    return cleanStockQty(sum);
   }, [stock]);
 
   const totalDueReceivable = useMemo(() => {
@@ -415,6 +434,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div className="mt-2 text-xl font-bold font-mono text-indigo-600 dark:text-indigo-400 tracking-tight">
             {formatDashboardCurrency(totalStockValue, lang)}
+          </div>
+          <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-mono">
+            <span className="text-slate-600 dark:text-slate-300">
+              <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{formatSheetNumber(totalStockPcs, lang)}</strong> {t.pcsUnit}
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="text-slate-600 dark:text-slate-300">
+              <strong className="text-amber-600 dark:text-amber-400 font-bold">{formatSheetDecimal(totalStockKg, lang)}</strong> {t.kgUnit}
+            </span>
           </div>
           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
             <span>{lang === 'bn' ? 'গড় ক্রয় দরে' : 'Avg Rate'}</span>
@@ -746,7 +774,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 : 'Stock & weighted average purchase rate updates automatically on invoice saving'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-2xs">
+              {t.totalPcs}: <strong className="font-mono">{formatSheetNumber(totalStockPcs, lang)}</strong> {t.pcsUnit}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-2xs">
+              {t.totalKg}: <strong className="font-mono">{formatSheetDecimal(totalStockKg, lang)}</strong> {t.kgUnit}
+            </span>
             <button
               onClick={() => onSelectTab('stock')}
               className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-1 cursor-pointer"
@@ -775,7 +809,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div className="mt-3 flex items-baseline justify-between">
                 <div>
                   <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
-                    {formatNumber(Math.round(cat.totalQty), lang)}
+                    {cat.key === 'kg' ? formatSheetDecimal(cat.totalQty, lang) : formatSheetNumber(cat.totalQty, lang)}
                   </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                     {cat.key === 'kg' ? (lang === 'bn' ? 'কেজি মজুদ' : 'KG in stock') : (lang === 'bn' ? 'পিস মজুদ' : 'Pcs in stock')}

@@ -195,6 +195,10 @@ export const translations = {
     purchaseRate: 'গড় ক্রয় দর',
     saleRate: 'বিক্রয় দর',
     stockAlert: 'কম মজুদের সতর্কতা',
+    totalPcs: 'মোট পিস',
+    totalKg: 'মোট কেজি',
+    pcsUnit: 'পিস',
+    kgUnit: 'কেজি',
     quickStockAdjust: 'স্টক ইন / আউট / অ্যাডজাস্ট',
     stockStatement1Page: '১-পেজ স্টক স্টেটমেন্ট প্রিন্ট',
 
@@ -419,6 +423,10 @@ export const translations = {
     purchaseRate: 'Avg Cost Rate',
     saleRate: 'Sale Rate',
     stockAlert: 'Low Stock Alert',
+    totalPcs: 'Total Pcs',
+    totalKg: 'Total KG',
+    pcsUnit: 'Pcs',
+    kgUnit: 'KG',
     quickStockAdjust: 'Stock In / Out / Adjust',
     stockStatement1Page: '1-Page Stock Statement Print',
 

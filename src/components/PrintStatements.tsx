@@ -41,9 +41,11 @@ import {
   formatCurrency,
   formatNumber,
   formatDate,
+  formatSheetNumber,
+  formatSheetDecimal,
 } from '../lib/translations';
 import { computeStaffPayroll } from '../lib/payrollCalc';
-import { storageService } from '../lib/storage';
+import { storageService, cleanStockQty } from '../lib/storage';
 import { partiesWithBalance } from '../lib/partyPrint';
 import { computePartyLedger, signedToNatural, partyNaturalOpening, balanceBefore } from '../lib/ledger';
 import { executePrint, exportElementToPdf } from '../lib/printUtils';
@@ -203,6 +205,30 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
     computer: t.computerItem,
   };
   const stockView = stockPanel === 'all' ? stock : stock.filter((s) => s.category === stockPanel);
+
+  const isKgItem = (it: { unit?: string; category?: string } | null | undefined): boolean => {
+    return (it?.unit || '').trim().toLowerCase() === 'kg' || (it?.category || '').trim().toLowerCase() === 'kg';
+  };
+
+  const stockViewPcs = useMemo(() => {
+    return stockView
+      .filter((it) => !isKgItem(it))
+      .reduce((s, it) => s + cleanStockQty(it.quantity), 0);
+  }, [stockView]);
+
+  const stockViewKg = useMemo(() => {
+    const sum = stockView
+      .filter((it) => isKgItem(it))
+      .reduce((s, it) => s + cleanStockQty(it.quantity), 0);
+    return cleanStockQty(sum);
+  }, [stockView]);
+
+  const stockValuation = useMemo(() => {
+    return stockView.reduce(
+      (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
+      0
+    );
+  }, [stockView]);
 
   React.useEffect(() => {
     if (initialMonth) {
@@ -391,12 +417,7 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
     let summaryText = `*${company.name}*\n📄 *${getTitle()}* - ${todayStr}\n────────────────────────\n`;
 
     if (type === 'stock') {
-      const totalQty = stockView.reduce((s, it) => s + it.quantity, 0);
-      const totalVal = stockView.reduce(
-        (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
-        0
-      );
-      summaryText += `📦 মোট পণ্য: ${stockView.length} টি\n🔢 মোট স্টক পরিমাণ: ${totalQty}\n💰 মোট মজুদ স্টক মূল্য: ৳${totalVal.toLocaleString()}\n`;
+      summaryText += `📦 মোট পণ্য: ${stockView.length} টি\n🔢 ${t.totalPcs}: ${formatSheetNumber(stockViewPcs, lang)} ${t.pcsUnit}\n⚖️ ${t.totalKg}: ${formatSheetDecimal(stockViewKg, lang)} ${t.kgUnit}\n💰 মোট মজুদ স্টক মূল্য: ৳${stockValuation.toLocaleString()}\n`;
     } else if (type === 'party') {
       if (selectedPartyMember) {
         const partyInvoices = allInvoices.filter(
@@ -728,6 +749,28 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
         {/* 1. STOCK STATEMENT SHEET */}
         {type === 'stock' && (
           <div className="mt-4 space-y-3">
+            {/* Top Key Stock Totals */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="p-2.5 bg-indigo-50/90 rounded-xl border border-indigo-300 text-center shadow-2xs">
+                <span className="block text-[11px] uppercase text-indigo-900 font-extrabold">{t.totalPcs}</span>
+                <span className="font-mono text-base font-black text-indigo-950">
+                  {formatSheetNumber(stockViewPcs, lang)} {t.pcsUnit}
+                </span>
+              </div>
+              <div className="p-2.5 bg-amber-50/90 rounded-xl border border-amber-300 text-center shadow-2xs">
+                <span className="block text-[11px] uppercase text-amber-900 font-extrabold">{t.totalKg}</span>
+                <span className="font-mono text-base font-black text-amber-950">
+                  {formatSheetDecimal(stockViewKg, lang)} {t.kgUnit}
+                </span>
+              </div>
+              <div className="p-2.5 bg-emerald-50/90 rounded-xl border border-emerald-300 text-center shadow-2xs">
+                <span className="block text-[11px] uppercase text-emerald-900 font-extrabold">{lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Stock Valuation'}</span>
+                <span className="font-mono text-base font-black text-emerald-950">
+                  {formatCurrency(stockValuation, lang)}
+                </span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 text-center text-xs">
               <div className="p-2 bg-emerald-50/80 rounded-xl border border-emerald-300">
                 <span className="block text-[10px] uppercase text-emerald-800 font-extrabold">{t.codeItem}</span>
@@ -811,13 +854,13 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                           {it.category}
                         </td>
                         <td className="py-1 px-1.5 border-r border-emerald-100 text-center font-mono font-black text-emerald-800 bg-emerald-50/60">
-                          {todayIn > 0 ? `+${formatNumber(todayIn, lang)} ${it.unit}` : '-'}
+                          {todayIn > 0 ? `+${formatSheetNumber(todayIn, lang)} ${it.unit}` : '-'}
                         </td>
                         <td className="py-1 px-1.5 border-r border-emerald-100 text-center font-mono font-black text-blue-800 bg-blue-50/60">
-                          {todayOut > 0 ? `-${formatNumber(todayOut, lang)} ${it.unit}` : '-'}
+                          {todayOut > 0 ? `-${formatSheetNumber(todayOut, lang)} ${it.unit}` : '-'}
                         </td>
                         <td className="py-1 px-1.5 border-r border-emerald-100 text-center font-mono font-black text-slate-950">
-                          {formatNumber(it.quantity, lang)} {it.unit}
+                          {formatSheetNumber(it.quantity, lang)} {it.unit}
                         </td>
                         <td className="py-1 px-1.5 border-r border-emerald-100 text-right font-mono font-bold text-slate-700">
                           {formatCurrency(effectiveRate, lang)}
@@ -840,18 +883,24 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
                     <td className="py-1.5 px-1.5 text-center font-mono text-blue-900 border-r border-emerald-300 font-bold">
                       {todayTotalOut > 0 ? `-${formatNumber(todayTotalOut, lang)}` : '-'}
                     </td>
-                    <td className="py-1.5 px-1.5 text-center font-mono border-r border-emerald-300 text-emerald-950 font-black">
-                      {formatNumber(stockView.reduce((s, it) => s + it.quantity, 0), lang)}
+                    <td className="py-1.5 px-1.5 text-center font-mono border-r border-emerald-300 text-emerald-950 font-black leading-tight">
+                      {stockViewPcs > 0 && (
+                        <div>
+                          {formatSheetNumber(stockViewPcs, lang)} {t.pcsUnit}
+                        </div>
+                      )}
+                      {stockViewKg > 0 && (
+                        <div className="text-amber-900">
+                          {formatSheetDecimal(stockViewKg, lang)} {t.kgUnit}
+                        </div>
+                      )}
+                      {stockViewPcs === 0 && stockViewKg === 0 && (
+                        <div>0</div>
+                      )}
                     </td>
                     <td className="border-r border-emerald-300"></td>
                     <td className="py-1.5 px-1.5 text-right font-mono text-emerald-950 text-sm font-black">
-                      {formatCurrency(
-                        stockView.reduce(
-                          (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
-                          0
-                        ),
-                        lang
-                      )}
+                      {formatCurrency(stockValuation, lang)}
                     </td>
                   </tr>
                 </tfoot>

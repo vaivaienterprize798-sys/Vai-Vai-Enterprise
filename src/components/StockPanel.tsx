@@ -316,6 +316,10 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     }
   };
 
+  const isKgItem = (it: { unit?: string; category?: string } | null | undefined): boolean => {
+    return (it?.unit || '').trim().toLowerCase() === 'kg' || (it?.category || '').trim().toLowerCase() === 'kg';
+  };
+
   // Overall totals based on Purchase Rate
   const totalValuation = useMemo(() => {
     return stock.reduce(
@@ -323,6 +327,39 @@ export const StockPanel: React.FC<StockPanelProps> = ({
       0
     );
   }, [stock]);
+
+  const totalStockPcs = useMemo(() => {
+    return stock
+      .filter((it) => !isKgItem(it))
+      .reduce((acc, it) => acc + cleanStockQty(it.quantity), 0);
+  }, [stock]);
+
+  const totalStockKg = useMemo(() => {
+    const sum = stock
+      .filter((it) => isKgItem(it))
+      .reduce((acc, it) => acc + cleanStockQty(it.quantity), 0);
+    return cleanStockQty(sum);
+  }, [stock]);
+
+  const filteredStockPcs = useMemo(() => {
+    return filteredStock
+      .filter((it) => !isKgItem(it))
+      .reduce((acc, it) => acc + cleanStockQty(it.quantity), 0);
+  }, [filteredStock]);
+
+  const filteredStockKg = useMemo(() => {
+    const sum = filteredStock
+      .filter((it) => isKgItem(it))
+      .reduce((acc, it) => acc + cleanStockQty(it.quantity), 0);
+    return cleanStockQty(sum);
+  }, [filteredStock]);
+
+  const filteredValuation = useMemo(() => {
+    return filteredStock.reduce(
+      (acc, it) => acc + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
+      0
+    );
+  }, [filteredStock]);
 
   const lowStockCount = useMemo(() => {
     return stock.filter((s) => s.quantity <= s.minAlertQty).length;
@@ -354,12 +391,13 @@ export const StockPanel: React.FC<StockPanelProps> = ({
             lang={lang}
             buttonLabel={t.shareWhatsApp}
             getText={() => {
-              const totalQty = stock.reduce((s, it) => s + it.quantity, 0);
+              const pcsCount = stock.filter((it) => !isKgItem(it)).reduce((s, it) => s + cleanStockQty(it.quantity), 0);
+              const kgCount = cleanStockQty(stock.filter((it) => isKgItem(it)).reduce((s, it) => s + cleanStockQty(it.quantity), 0));
               const totalVal = stock.reduce(
                 (s, it) => s + it.quantity * (it.purchaseAvgRate ?? it.purchaseRate ?? 0),
                 0
               );
-              return `*${companyInfo.name} - স্টক রিপোর্ট*\n📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}\n────────────────────────\n📦 মোট পণ্য: ${stock.length} টি\n🔢 মোট স্টক কোয়ান্টিটি: ${totalQty}\n💰 মোট মজুদ মূল্য: ৳${totalVal.toLocaleString()}\n────────────────────────\n_RSR Enterprise_`;
+              return `*${companyInfo.name} - স্টক রিপোর্ট*\n📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}\n────────────────────────\n📦 মোট পণ্য: ${stock.length} টি\n🔢 মোট পিস: ${formatSheetNumber(pcsCount, lang)} ${t.pcsUnit}\n⚖️ মোট কেজি: ${formatSheetDecimal(kgCount, lang)} ${t.kgUnit}\n💰 মোট মজুদ মূল্য: ৳${totalVal.toLocaleString()}\n────────────────────────\n_RSR Enterprise_`;
             }}
           />
 
@@ -597,6 +635,20 @@ export const StockPanel: React.FC<StockPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap text-xs">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300 font-semibold shadow-2xs">
+            <span>{t.totalPcs}:</span>
+            <strong className="font-mono text-indigo-700 dark:text-indigo-300 font-bold">
+              {formatSheetNumber(activeCategory === 'all' && !searchTerm ? totalStockPcs : filteredStockPcs, lang)} {t.pcsUnit}
+            </strong>
+          </div>
+
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-semibold shadow-2xs">
+            <span>{t.totalKg}:</span>
+            <strong className="font-mono text-amber-700 dark:text-amber-300 font-bold">
+              {formatSheetDecimal(activeCategory === 'all' && !searchTerm ? totalStockKg : filteredStockKg, lang)} {t.kgUnit}
+            </strong>
+          </div>
+
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-semibold">
             <span>{filterPeriodMode === 'today' ? t.todayStockInTotal : (lang === 'bn' ? 'মোট মাল স্টক ইন:' : 'Stock In:')}:</span>
             <strong className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">
@@ -614,7 +666,7 @@ export const StockPanel: React.FC<StockPanelProps> = ({
           <span className="font-semibold text-slate-600 dark:text-slate-400 pl-1">
             {lang === 'bn' ? 'মোট মজুদ মূল্য' : 'Valuation'}:{' '}
             <strong className="text-emerald-600 dark:text-emerald-400 font-mono text-sm font-bold">
-              {formatCurrency(totalValuation, lang)}
+              {formatCurrency(activeCategory === 'all' && !searchTerm ? totalValuation : filteredValuation, lang)}
             </strong>
           </span>
 
@@ -807,6 +859,43 @@ export const StockPanel: React.FC<StockPanelProps> = ({
                 );
               })}
             </tbody>
+            <tfoot className="bg-slate-50 dark:bg-slate-800/80 border-t-2 border-slate-300 dark:border-slate-700 font-bold text-xs">
+              <tr>
+                <td colSpan={4} className="py-3 px-3 text-right uppercase text-slate-700 dark:text-slate-200">
+                  {lang === 'bn' ? 'সর্বমোট (তালিকা অনুযায়ী):' : 'Total (Filtered List):'}
+                </td>
+                <td className="py-3 px-3 text-center font-mono text-emerald-700 dark:text-emerald-400">
+                  {periodTotalIn > 0 ? `+${formatSheetNumber(periodTotalIn, lang)}` : '-'}
+                </td>
+                <td className="py-3 px-3 text-center font-mono text-blue-700 dark:text-blue-400">
+                  {periodTotalOut > 0 ? `-${formatSheetNumber(periodTotalOut, lang)}` : '-'}
+                </td>
+                <td className="py-3 px-3 text-center">
+                  <div className="font-mono text-xs font-bold space-y-0.5">
+                    {filteredStockPcs > 0 && (
+                      <div className="text-indigo-700 dark:text-indigo-300">
+                        {formatSheetNumber(filteredStockPcs, lang)} {t.pcsUnit}
+                      </div>
+                    )}
+                    {filteredStockKg > 0 && (
+                      <div className="text-amber-700 dark:text-amber-300">
+                        {formatSheetDecimal(filteredStockKg, lang)} {t.kgUnit}
+                      </div>
+                    )}
+                    {filteredStockPcs === 0 && filteredStockKg === 0 && (
+                      <div className="text-slate-400">0</div>
+                    )}
+                  </div>
+                </td>
+                <td className="py-3 px-3 text-right text-slate-400 text-[10px]">
+                  {lang === 'bn' ? 'গড় ক্রয় দর' : 'Avg Rate'}
+                </td>
+                <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                  {formatCurrency(filteredValuation, lang)}
+                </td>
+                <td className="py-3 px-3"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
