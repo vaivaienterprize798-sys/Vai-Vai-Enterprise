@@ -14,8 +14,8 @@ export type DeviceRole = 'main' | 'secondary';
 const ROLE_KEY = 'vv_device_role';
 const JOINED_KEY = 'vv_device_joined_at';
 
-/** Collections every device needs regardless of age (logins / settings). */
-const ALWAYS_SYNC = new Set(['staff', 'appSettings', 'company']);
+/** Collections every device needs regardless of age (logins / settings / current stock inventory / price lists). */
+const ALWAYS_SYNC = new Set(['staff', 'appSettings', 'company', 'stock', 'priceLists']);
 
 const DATA_KEYS = ['rsr_invoices_v1', 'rsr_stock_v1', 'rsr_parties_v1', 'rsr_staff_v1'];
 

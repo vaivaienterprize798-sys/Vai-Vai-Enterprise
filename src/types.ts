@@ -207,7 +207,8 @@ export type PettyCashCategory =
   | 'cleaning_maint' // অফিস পরিচ্ছন্নতা ও মেনটেনেন্স
   | 'maintenance'
   | 'entertainment'
-  | 'rent' // দোকান ও অফিস ভাড়া
+  | 'rent' // বাড়ি / গোডাউন ভাড়া
+  | 'godown_rent' // বাড়ি / গোডাউন ভাড়া
   | 'other'; // অন্যান্য খরচ
 
 export interface PettyCashExpense {

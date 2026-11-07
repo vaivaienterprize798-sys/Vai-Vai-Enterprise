@@ -136,7 +136,11 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
   const filteredExpenses = useMemo(() => {
     return expenses.filter((e) => {
       const matchType = selectedType === 'all' || e.type === selectedType;
-      const matchCat = selectedCategory === 'all' || e.category === selectedCategory;
+      const matchCat =
+        selectedCategory === 'all' ||
+        e.category === selectedCategory ||
+        (selectedCategory === 'rent' && (e.category === 'rent' || e.category === 'godown_rent')) ||
+        (selectedCategory === 'coolie_labor' && (e.category === 'coolie_labor' || e.category === 'labor'));
       const matchDate = isDateInPeriod(e.date);
       const titleStr = (e.title || '').toLowerCase();
       const matchSearch =
@@ -548,11 +552,15 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
                   Object.entries(monthExpenseSummary.pettyCatTotals).map(([cat, amt]) => (
                     <div key={cat} className="flex justify-between items-center py-1 border-b border-slate-50 dark:border-slate-800/50">
                       <span className="text-slate-700 dark:text-slate-300 capitalize font-medium">
-                        {cat === 'tea_snacks' ? (lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks') :
+                        {cat === 'tea_snacks' || cat === 'tea_food' ? (lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks') :
+                         cat === 'rent' || cat === 'godown_rent' ? (lang === 'bn' ? 'বাড়ি / গোডাউন ভাড়া' : 'House / Godown Rent') :
                          cat === 'courier_bill' ? (lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill') :
                          cat === 'transport_allowance' ? (lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport') :
-                         cat === 'utility' ? (lang === 'bn' ? 'বিদ্যুৎ/বিল' : 'Utility') :
+                         cat === 'coolie_labor' || cat === 'labor' ? (lang === 'bn' ? 'কুলি ও লেবার মজুরি' : 'Coolie & Labor') :
+                         cat === 'service_charge' ? (lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge') :
+                         cat === 'utility' || cat === 'utility_bills' ? (lang === 'bn' ? 'বিদ্যুৎ/বিল' : 'Utility') :
                          cat === 'stationery' ? (lang === 'bn' ? 'স্টেশনারি' : 'Stationery') :
+                         cat === 'maintenance' || cat === 'cleaning_maint' ? (lang === 'bn' ? 'মেরামত/ক্লিনার' : 'Maintenance') :
                          cat === 'entertainment' ? (lang === 'bn' ? 'আপ্যায়ন' : 'Entertainment') : cat}
                       </span>
                       <span className="font-mono font-bold text-slate-900 dark:text-white">
@@ -724,8 +732,10 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
           >
             <option value="all">{lang === 'bn' ? 'সকল খাত' : 'All Categories'}</option>
             <option value="tea_snacks">{lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks'}</option>
+            <option value="rent">{lang === 'bn' ? 'বাড়ি / গোডাউন ভাড়া' : 'House / Godown Rent'}</option>
             <option value="courier_bill">{lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill'}</option>
             <option value="transport_allowance">{lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport Allowance'}</option>
+            <option value="coolie_labor">{lang === 'bn' ? 'কুলি ও লেবার মজুরি' : 'Coolie & Labor'}</option>
             <option value="service_charge">{lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge'}</option>
             <option value="stationery">{lang === 'bn' ? 'স্টেশনারি ও খাতা' : 'Stationery'}</option>
             <option value="utility">{lang === 'bn' ? 'বিদ্যুৎ/ওয়াইফাই বিল' : 'Utility & Bills'}</option>
@@ -883,8 +893,8 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
                           ? (lang === 'bn' ? 'আপ্যায়ন' : 'Entertainment')
                           : it.category === 'labor' || it.category === 'coolie_labor'
                           ? (lang === 'bn' ? 'কুলি ও লেবার' : 'Labor / Coolie')
-                          : it.category === 'rent'
-                          ? (lang === 'bn' ? 'দোকান ও অফিস ভাড়া' : 'Rent')
+                          : it.category === 'rent' || it.category === 'godown_rent'
+                          ? (lang === 'bn' ? 'বাড়ি / গোডাউন ভাড়া' : 'House / Godown Rent')
                           : (lang === 'bn' ? 'অন্যান্য' : 'Other')}
                       </span>
                     </td>
@@ -995,8 +1005,10 @@ export const PettyCashPanel: React.FC<PettyCashPanelProps> = ({
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                   >
                     <option value="tea_snacks">{lang === 'bn' ? 'চা ও নাস্তা' : 'Tea & Snacks'}</option>
+                    <option value="rent">{lang === 'bn' ? 'বাড়ি / গোডাউন ভাড়া' : 'House / Godown Rent'}</option>
                     <option value="courier_bill">{lang === 'bn' ? 'কুরিয়ার বিল' : 'Courier Bill'}</option>
                     <option value="transport_allowance">{lang === 'bn' ? 'যাতায়াত ও ভাড়া' : 'Transport Allowance'}</option>
+                    <option value="coolie_labor">{lang === 'bn' ? 'কুলি ও লেবার মজুরি' : 'Coolie & Labor'}</option>
                     <option value="service_charge">{lang === 'bn' ? 'সার্ভিস চার্জ ও ফি' : 'Service Charge'}</option>
                     <option value="stationery">{lang === 'bn' ? 'স্টেশনারি ও খাতা' : 'Stationery'}</option>
                     <option value="utility">{lang === 'bn' ? 'বিদ্যুৎ/ওয়াইফাই বিল' : 'Utility & Bills'}</option>

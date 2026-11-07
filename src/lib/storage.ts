@@ -342,31 +342,17 @@ export const storageService = {
       if (!cloudItem || !cloudItem.id) return;
       const localItem = localMap.get(cloudItem.id);
 
-      const localSyncedAt = Number(localItem?._syncedAt || 0);
-      const cloudSyncedAt = Number(cloudItem?._syncedAt || 0);
-      // If local item was edited more recently, protect local edits from stale snapshots
-      const isLocalNewer = localItem && localSyncedAt > cloudSyncedAt;
-
-      const mergedItem: StockItem = isLocalNewer
-        ? {
-            ...cloudItem,
-            ...localItem,
-            quantity: cleanStockQty(localItem.quantity),
-            purchaseAvgRate: cleanStockRate(localItem.purchaseAvgRate ?? localItem.purchaseRate ?? localItem.manualRate ?? 0),
-            purchaseRate: cleanStockRate(localItem.purchaseRate ?? localItem.purchaseAvgRate ?? localItem.manualRate ?? 0),
-            manualRate: localItem.manualRate !== undefined ? cleanStockRate(localItem.manualRate) : (cloudItem.manualRate !== undefined ? cleanStockRate(cloudItem.manualRate) : undefined),
-            rateUpdatedAt: localItem.rateUpdatedAt ?? cloudItem.rateUpdatedAt,
-            sortOrder: localItem.sortOrder ?? cloudItem.sortOrder,
-          }
-        : {
-            ...cloudItem,
-            quantity: cleanStockQty(cloudItem.quantity),
-            purchaseAvgRate: cleanStockRate(cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? cloudItem.manualRate ?? localItem?.purchaseAvgRate ?? 0),
-            purchaseRate: cleanStockRate(cloudItem.purchaseRate ?? cloudItem.purchaseAvgRate ?? cloudItem.manualRate ?? localItem?.purchaseRate ?? 0),
-            manualRate: cloudItem.manualRate !== undefined ? cleanStockRate(cloudItem.manualRate) : (localItem?.manualRate !== undefined ? cleanStockRate(localItem.manualRate) : undefined),
-            rateUpdatedAt: cloudItem.rateUpdatedAt ?? localItem?.rateUpdatedAt,
-            sortOrder: localItem?.sortOrder ?? cloudItem.sortOrder,
-          };
+      const mergedItem: StockItem = {
+        ...localItem,
+        ...cloudItem,
+        quantity: cleanStockQty(cloudItem.quantity),
+        purchaseAvgRate: cleanStockRate(cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? cloudItem.manualRate ?? localItem?.purchaseAvgRate ?? 0),
+        purchaseRate: cleanStockRate(cloudItem.purchaseRate ?? cloudItem.purchaseAvgRate ?? cloudItem.manualRate ?? localItem?.purchaseRate ?? 0),
+        manualRate: cloudItem.manualRate !== undefined && cloudItem.manualRate !== null ? cleanStockRate(cloudItem.manualRate) : (localItem?.manualRate !== undefined ? cleanStockRate(localItem.manualRate) : undefined),
+        rateUpdatedAt: cloudItem.rateUpdatedAt ?? localItem?.rateUpdatedAt,
+        sortOrder: cloudItem.sortOrder ?? localItem?.sortOrder,
+        _syncedAt: cloudItem._syncedAt ?? localItem?._syncedAt ?? Date.now(),
+      };
 
       mergedMap.set(cloudItem.id, mergedItem);
     });
