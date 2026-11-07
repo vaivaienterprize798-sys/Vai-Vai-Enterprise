@@ -318,57 +318,25 @@ export const storageService = {
   },
 
   mergeStockWithCloud: (cloudStock: StockItem[]): StockItem[] => {
-    const list = loadFromStorage<StockItem[]>(STORAGE_KEYS.STOCK, INITIAL_STOCK);
-    const local = (Array.isArray(list) ? list : INITIAL_STOCK).filter(Boolean).map((s, idx) => ({
+    if (!Array.isArray(cloudStock)) {
+      return storageService.getStock();
+    }
+    const cleanList: StockItem[] = cloudStock.filter(Boolean).map((s, idx) => ({
       ...s,
       quantity: cleanStockQty(s?.quantity),
       purchaseAvgRate: cleanStockRate(s?.purchaseAvgRate ?? s?.purchaseRate ?? s?.manualRate ?? 0),
       purchaseRate: cleanStockRate(s?.purchaseRate ?? s?.purchaseAvgRate ?? s?.manualRate ?? 0),
       manualRate: s?.manualRate !== undefined && s?.manualRate !== null ? cleanStockRate(s.manualRate) : undefined,
       rateUpdatedAt: s?.rateUpdatedAt ? Number(s.rateUpdatedAt) : undefined,
+      openingQty: cleanStockQty(s?.openingQty || 0),
+      minAlertQty: cleanStockQty(s?.minAlertQty ?? 10),
       sortOrder: s?.sortOrder ?? idx + 1,
-      _syncedAt: s?._syncedAt ? Number(s._syncedAt) : undefined,
+      _syncedAt: s?._syncedAt ? Number(s._syncedAt) : Date.now(),
     }));
 
-    const localMap = new Map<string, StockItem>();
-    local.forEach((item) => {
-      if (item && item.id) localMap.set(item.id, item);
-    });
-
-    const mergedMap = new Map<string, StockItem>();
-
-    // Process cloud items
-    cloudStock.forEach((cloudItem) => {
-      if (!cloudItem || !cloudItem.id) return;
-      const localItem = localMap.get(cloudItem.id);
-
-      const mergedItem: StockItem = {
-        ...localItem,
-        ...cloudItem,
-        quantity: cleanStockQty(cloudItem.quantity),
-        purchaseAvgRate: cleanStockRate(cloudItem.purchaseAvgRate ?? cloudItem.purchaseRate ?? cloudItem.manualRate ?? localItem?.purchaseAvgRate ?? 0),
-        purchaseRate: cleanStockRate(cloudItem.purchaseRate ?? cloudItem.purchaseAvgRate ?? cloudItem.manualRate ?? localItem?.purchaseRate ?? 0),
-        manualRate: cloudItem.manualRate !== undefined && cloudItem.manualRate !== null ? cleanStockRate(cloudItem.manualRate) : (localItem?.manualRate !== undefined ? cleanStockRate(localItem.manualRate) : undefined),
-        rateUpdatedAt: cloudItem.rateUpdatedAt ?? localItem?.rateUpdatedAt,
-        sortOrder: cloudItem.sortOrder ?? localItem?.sortOrder,
-        _syncedAt: cloudItem._syncedAt ?? localItem?._syncedAt ?? Date.now(),
-      };
-
-      mergedMap.set(cloudItem.id, mergedItem);
-    });
-
-    // Preserve local-only items not yet in cloud
-    local.forEach((localItem) => {
-      if (localItem && localItem.id && !mergedMap.has(localItem.id)) {
-        mergedMap.set(localItem.id, localItem);
-      }
-    });
-
-    const result = Array.from(mergedMap.values());
-    result.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999));
-
-    saveToStorage(STORAGE_KEYS.STOCK, result);
-    return result;
+    cleanList.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999));
+    saveToStorage(STORAGE_KEYS.STOCK, cleanList);
+    return cleanList;
   },
 
   saveStockItem: (item: StockItem): void => {
@@ -1390,9 +1358,14 @@ export const storageService = {
         if (!snap.empty) {
           const all: any[] = [];
           snap.forEach((d) => all.push(d.data()));
-          // Secondary devices only take records written after they joined
           const list = filterForDevice(m.col, all);
-          if (list.length) saveToStorage(m.key, mergeById(loadFromStorage<any[]>(m.key, []), list));
+          if (list.length) {
+            if (m.col === 'stock') {
+              saveToStorage(m.key, list);
+            } else {
+              saveToStorage(m.key, mergeById(loadFromStorage<any[]>(m.key, []), list));
+            }
+          }
           total += list.length;
         }
       }
