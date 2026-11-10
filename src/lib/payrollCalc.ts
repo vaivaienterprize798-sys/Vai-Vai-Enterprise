@@ -18,8 +18,11 @@ export function computeStaffPayroll(stf: Staff, attendance: AttendanceRecord[], 
     (a) => a.status === 'full_day_leave' || a.status === 'half_day_leave' || a.status === 'leave' || a.status === 'holiday'
   ).length;
 
-  // Absent days: strictly count records explicitly marked as 'absent'
-  const absentDays = new Set(records.filter((a) => a.status === 'absent').map((a) => a.date)).size;
+  // Total paid days: worked presence + approved paid leave / weekly holiday
+  const paidDays = presentDays + leaveDays;
+  // If staff has fewer paid/present days than the monthly base (26 for processing, 30 for office),
+  // missing days are automatically deducted as absent days.
+  const absentDays = Math.max(0, daysBase - paidDays);
 
   const lateDays = isOffice ? 0 : records.filter((a) => a.status === 'late').length;
   const totalLateMinutes = isOffice ? 0 : records.reduce((s, a) => s + (Number(a.lateMinutes) || 0), 0);

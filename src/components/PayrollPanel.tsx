@@ -623,7 +623,7 @@ export const PayrollPanel: React.FC<PayrollPanelProps> = ({
       return {
         ...stf,
         dailyRate: pc.dailyRate,
-        daysPresent: records.length === 0 ? (isOffice ? 30 : 26) : pc.presentDays,
+        daysPresent: pc.presentDays,
         leaveDays: pc.leaveDays,
         absentDays: pc.absentDays,
         lateDays: pc.lateDays,

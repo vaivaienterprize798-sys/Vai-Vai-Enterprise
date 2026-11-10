@@ -47,6 +47,7 @@ import {
 } from '../lib/translations';
 import { buildRolledLedger, chinaOfficeMovements, chinaNetProfit, periodBounds, signedBranchOpening } from '../lib/rollover';
 import { storageService } from '../lib/storage';
+import { computeStaffPayroll } from '../lib/payrollCalc';
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 
 export type DateFilterMode = 'today' | 'month' | 'range' | 'all';
@@ -313,16 +314,11 @@ export const FinancialAnalyticsPanel: React.FC<FinancialAnalyticsPanelProps> = (
     let sumPaidSalary = 0;
 
     activeMonths.forEach((m) => {
-      const monthAtt = attendance.filter((a) => a.date && a.date.startsWith(m));
       staff.forEach((stf) => {
         const status = storageService.getStaffPaymentStatus(m, stf.id);
         if (status === 'Paid') {
-          const records = monthAtt.filter((a) => a.staffId === stf.id);
-          const absentDays = records.filter((a) => a.status === 'absent').length;
-          const totalOt = stf.category === 'office' ? 0 : records.reduce((s, a) => s + (a.otHours || 0), 0);
-          const otAmount = totalOt * 60;
-          const absentDeduction = absentDays * stf.dailyRate;
-          const gross = Math.max(0, stf.baseSalary - absentDeduction + otAmount);
+          const pc = computeStaffPayroll(stf, attendance, m);
+          const gross = (Number(pc.earnedBase) || 0) + (Number(pc.totalOtAmount) || 0);
           sumPaidSalary += gross;
         }
       });
