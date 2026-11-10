@@ -207,7 +207,10 @@ export const PrintStatements: React.FC<PrintStatementsProps> = ({
   const stockView = stockPanel === 'all' ? stock : stock.filter((s) => s.category === stockPanel);
 
   const isKgItem = (it: { unit?: string; category?: string } | null | undefined): boolean => {
-    return (it?.unit || '').trim().toLowerCase() === 'kg' || (it?.category || '').trim().toLowerCase() === 'kg';
+    const u = (it?.unit || '').trim().toLowerCase();
+    if (u === 'kg') return true;
+    if (u === 'pcs') return false;
+    return (it?.category || '').trim().toLowerCase() === 'kg';
   };
 
   const stockViewPcs = useMemo(() => {

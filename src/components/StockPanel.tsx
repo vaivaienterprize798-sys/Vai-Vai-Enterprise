@@ -317,7 +317,10 @@ export const StockPanel: React.FC<StockPanelProps> = ({
   };
 
   const isKgItem = (it: { unit?: string; category?: string } | null | undefined): boolean => {
-    return (it?.unit || '').trim().toLowerCase() === 'kg' || (it?.category || '').trim().toLowerCase() === 'kg';
+    const u = (it?.unit || '').trim().toLowerCase();
+    if (u === 'kg') return true;
+    if (u === 'pcs') return false;
+    return (it?.category || '').trim().toLowerCase() === 'kg';
   };
 
   // Overall totals based on Purchase Rate

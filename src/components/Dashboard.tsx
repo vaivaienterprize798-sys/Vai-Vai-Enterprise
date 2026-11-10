@@ -151,7 +151,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [filteredInvoices]);
 
   const isKgItem = (it: { unit?: string; category?: string } | null | undefined): boolean => {
-    return (it?.unit || '').trim().toLowerCase() === 'kg' || (it?.category || '').trim().toLowerCase() === 'kg';
+    const u = (it?.unit || '').trim().toLowerCase();
+    if (u === 'kg') return true;
+    if (u === 'pcs') return false;
+    return (it?.category || '').trim().toLowerCase() === 'kg';
   };
 
   // Total Stock Value using weighted average purchase rate
@@ -212,13 +215,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     return categories.map((cat) => {
       const items = stock.filter((s) => s.category === cat.key);
-      const totalQty = items.reduce((sum, s) => sum + s.quantity, 0);
+      const pcsQty = items.filter((s) => !isKgItem(s)).reduce((sum, s) => sum + cleanStockQty(s.quantity), 0);
+      const kgQty = cleanStockQty(items.filter((s) => isKgItem(s)).reduce((sum, s) => sum + cleanStockQty(s.quantity), 0));
       const val = items.reduce(
         (sum, s) => sum + s.quantity * (s.purchaseAvgRate ?? s.purchaseRate ?? 0),
         0
       );
       const alertItems = items.filter((s) => s.quantity <= s.minAlertQty).length;
-      return { ...cat, totalQty, val, count: items.length, alertItems };
+      return { ...cat, pcsQty, kgQty, val, count: items.length, alertItems };
     });
   }, [stock, t]);
 
@@ -808,12 +812,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
               <div className="mt-3 flex items-baseline justify-between">
                 <div>
-                  <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
-                    {cat.key === 'kg' ? formatSheetDecimal(cat.totalQty, lang) : formatSheetNumber(cat.totalQty, lang)}
+                  <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 dark:text-white leading-tight">
+                    {cat.pcsQty > 0 && (
+                      <div>
+                        {formatSheetNumber(cat.pcsQty, lang)}{' '}
+                        <span className="text-xs font-normal text-slate-500">{t.pcsUnit}</span>
+                      </div>
+                    )}
+                    {cat.kgQty > 0 && (
+                      <div className="text-amber-700 dark:text-amber-400">
+                        {formatSheetDecimal(cat.kgQty, lang)}{' '}
+                        <span className="text-xs font-normal text-slate-500">{t.kgUnit}</span>
+                      </div>
+                    )}
+                    {cat.pcsQty === 0 && cat.kgQty === 0 && <div>0</div>}
                   </div>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                    {cat.key === 'kg' ? (lang === 'bn' ? 'কেজি মজুদ' : 'KG in stock') : (lang === 'bn' ? 'পিস মজুদ' : 'Pcs in stock')}
-                  </span>
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-bold font-mono text-slate-700 dark:text-slate-300">
