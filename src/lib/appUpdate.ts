@@ -54,7 +54,7 @@ export function initAutoUpdateListener(onUpdateAvailable?: () => void) {
     if ('caches' in window) {
       caches.keys().then((names) => {
         names.forEach((name) => {
-          if (name !== 'rsr-vaivai-v4.3') {
+          if (name !== 'rsr-vaivai-v4') {
             caches.delete(name);
           }
         });
@@ -67,12 +67,19 @@ export function initAutoUpdateListener(onUpdateAvailable?: () => void) {
 
   // Service Worker update detection
   if ('serviceWorker' in navigator) {
+    let hadController = Boolean(navigator.serviceWorker.controller);
+    const bootTime = Date.now();
+    let lastSwUpdateCheck = 0;
+
     navigator.serviceWorker.ready.then((registration) => {
       // Check for update on load
+      lastSwUpdateCheck = Date.now();
       registration.update().catch(() => {});
 
-      // Check on window focus (e.g. user switches back to app tab or desktop window)
+      // Check on window focus with 60s cooldown
       window.addEventListener('focus', () => {
+        if (Date.now() - lastSwUpdateCheck < 60_000) return;
+        lastSwUpdateCheck = Date.now();
         registration.update().catch(() => {});
       });
 
@@ -93,9 +100,14 @@ export function initAutoUpdateListener(onUpdateAvailable?: () => void) {
       });
     });
 
-    // Auto reload when controller changes to newly activated worker
+    // Auto reload only when an existing controller upgrades (skip initial boot claim)
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) {
+        hadController = true;
+        return;
+      }
+      if (Date.now() - bootTime < 2000) return;
       if (!refreshing) {
         refreshing = true;
         window.location.reload();
@@ -122,11 +134,20 @@ export function initLiveVersionWatcher(intervalMs: number = 3 * 60 * 1000): void
   if (typeof window === 'undefined' || !import.meta.env.PROD) return;
   let current = '';
   let busy = false;
-  const check = async () => {
+  let lastCheckAt = 0;
+
+  const check = async (force = false) => {
     if (busy || !navigator.onLine) return;
+    if (!force && Date.now() - lastCheckAt < 30_000) return;
     busy = true;
+    lastCheckAt = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch('/index.html?v=' + Date.now(), { cache: 'no-store' });
+      const res = await fetch('/index.html?v=' + Date.now(), {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       if (!res.ok) return;
       const sig = buildSignature(await res.text());
       if (!sig) return;
@@ -142,13 +163,14 @@ export function initLiveVersionWatcher(intervalMs: number = 3 * 60 * 1000): void
         await forceUpdateAndReloadApp();
       }
     } catch {
-      /* offline or network notice: try again later */
+      /* offline or network timeout: try again later */
     } finally {
+      clearTimeout(timer);
       busy = false;
     }
   };
-  setTimeout(check, 15000);
-  setInterval(check, intervalMs);
-  window.addEventListener('focus', () => { check(); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+  setTimeout(() => { check(true); }, 15000);
+  setInterval(() => { check(true); }, intervalMs);
+  window.addEventListener('focus', () => { check(false); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(false); });
 }

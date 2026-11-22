@@ -106,6 +106,15 @@ export interface BranchOpeningBalance {
 export const signedBranchOpening = (o?: BranchOpeningBalance | null) =>
   o ? (o.side === 'cr' ? -1 : 1) * num(o.amount) : 0;
 
+const normIsoDate = (raw?: string): string => {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  return s;
+};
+
 /**
  * China / Branch Office ledger.
  *   Dr = value of goods sent to China Office (consignments)
@@ -121,21 +130,21 @@ export function chinaOfficeMovements(
   return [
     ...consignments.map((c) => ({
       id: `bc-${c.id}`,
-      date: c.date,
+      date: normIsoDate(c.date),
       particulars: `${bn ? 'মাল প্রেরণ চালান' : 'Goods sent'} ${c.consignmentNo || ''}`.trim(),
       dr: num(c.totalBdtValue),
       cr: 0,
     })),
     ...directs.map((d) => ({
       id: `cd-${d.id}`,
-      date: d.date,
+      date: normIsoDate(d.date),
       particulars: `${bn ? 'চীন অফিস থেকে সরাসরি টাকা' : 'Direct cash from China Office'} ${d.referenceNo || ''}`.trim(),
       dr: 0,
       cr: num(d.amountBdt),
     })),
     ...conversions.map((cv) => ({
       id: `cv-${cv.id}`,
-      date: cv.date,
+      date: normIsoDate(cv.date),
       particulars: `${bn ? 'RMB → টাকা কনভার্শন' : 'RMB converted to BDT'} ${cv.voucherNo || ''}${cv.partyName ? ` (${cv.partyName})` : ''}`.trim(),
       dr: 0,
       cr: num(cv.expectedBdtAmount || cv.receivedBdtAmount),

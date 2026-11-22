@@ -293,8 +293,10 @@ export const StockPanel: React.FC<StockPanelProps> = ({
     const currentItem = listToUse[currIdx];
     const targetItem = listToUse[targetIdx];
 
-    // Swap elements in full stock array
-    const fullStock = [...stock];
+    // Swap elements in full stock array (sorted identically by sortOrder + id)
+    const fullStock = [...stock].sort(
+      (a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) || String(a.id).localeCompare(String(b.id))
+    );
     const fullCurrIdx = fullStock.findIndex((it) => it.id === currentItem.id);
     const fullTargetIdx = fullStock.findIndex((it) => it.id === targetItem.id);
 

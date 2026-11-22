@@ -26,6 +26,8 @@ import {
   ChevronRight,
   FileText,
   Check,
+  Download,
+  Users,
 } from 'lucide-react';
 import {
   Language,
@@ -43,7 +45,7 @@ import { formatCurrency, formatNumber, formatDate, formatSheetNumber } from '../
 import { WhatsAppShareDropdown } from './WhatsAppShareDropdown';
 import { WeChatShareDropdown } from './WeChatShareDropdown';
 import { CompanyLogo } from './CompanyLogo';
-import { executePrint } from '../lib/printUtils';
+import { executePrint, exportElementToPdf } from '../lib/printUtils';
 import { storageService } from '../lib/storage';
 import { computeChinaOfficeSummary } from '../lib/rollover';
 import { BranchOfficeLedger } from './BranchOfficeLedger';
@@ -111,9 +113,15 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
 
   // Month & Date Filter States (User Requirement)
   const todayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  const currentMonthStr = todayStr.slice(0, 7);
   const [filterPeriodMode, setFilterPeriodMode] = useState<'all' | 'today' | 'month' | 'date'>('all');
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthStr);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [statementPeriodMode, setStatementPeriodMode] = useState<'month' | 'today' | 'all'>('month');
+  const [statementMonth, setStatementMonth] = useState<string>(currentMonthStr);
+  const [isStatementPdfExporting, setIsStatementPdfExporting] = useState(false);
+  const [conversionPartyFilter, setConversionPartyFilter] = useState<string>('all');
+  const [conversionSearch, setConversionSearch] = useState<string>('');
   const [showChinaBdtHistory, setShowChinaBdtHistory] = useState(false);
 
   // Full Edit States across all modules
@@ -481,6 +489,18 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     setSelectedMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
   };
 
+  const handlePrevStatementMonth = () => {
+    const [y, m] = statementMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    setStatementMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const handleNextStatementMonth = () => {
+    const [y, m] = statementMonth.split('-').map(Number);
+    const next = new Date(y, m, 1);
+    setStatementMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+  };
+
   // Normalise any stored date (ISO, ISO with time, DD/MM/YYYY, DD-MM-YYYY) to YYYY-MM-DD
   const normalizeDate = (raw: any): string => {
     if (!raw) return '';
@@ -494,30 +514,73 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
   };
 
-  const isDateInFilter = (rawDate: any) => {
-    if (filterPeriodMode === 'all') return true;
+  const isDateInWindow = (
+    rawDate: any,
+    mode: 'all' | 'today' | 'month' | 'date',
+    monthStr: string,
+    dateVal: string
+  ) => {
+    if (mode === 'all') return true;
     const dateStr = normalizeDate(rawDate);
     if (!dateStr) return false;
-    if (filterPeriodMode === 'today') return dateStr === todayStr;
-    if (filterPeriodMode === 'date') return dateStr === selectedDate;
-    if (filterPeriodMode === 'month') return dateStr.startsWith(selectedMonth);
+    if (mode === 'today') return dateStr === todayStr;
+    if (mode === 'date') return dateStr === dateVal;
+    if (mode === 'month') return dateStr.startsWith(monthStr);
     return true;
   };
 
+  const formatPeriodTitle = (
+    mode: 'all' | 'today' | 'month' | 'date',
+    monthStr: string,
+    dateVal: string
+  ) => {
+    if (mode === 'all') return lang === 'bn' ? 'সকল সময় (All Time)' : 'All Time';
+    if (mode === 'today') return lang === 'bn' ? `আজকের (${todayStr})` : `Today (${todayStr})`;
+    if (mode === 'date') return lang === 'bn' ? `তারিখ: ${dateVal}` : `Date: ${dateVal}`;
+    const [y, m] = (monthStr || currentMonthStr).split('-').map(Number);
+    if (!isNaN(y) && !isNaN(m)) {
+      const label = new Date(y, m - 1, 1).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+        month: 'long',
+        year: 'numeric',
+      });
+      return `${label} (${monthStr})`;
+    }
+    return monthStr;
+  };
+
+  const sortByDateDesc = <T extends { date?: string; createdAt?: string; id?: string }>(arr: T[]): T[] =>
+    [...arr].sort((a, b) => {
+      const da = normalizeDate(a.date || a.createdAt);
+      const db = normalizeDate(b.date || b.createdAt);
+      if (db !== da) return db.localeCompare(da);
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
+
+  const sortByDateAsc = <T extends { date?: string; createdAt?: string; id?: string }>(arr: T[]): T[] =>
+    [...arr].sort((a, b) => {
+      const da = normalizeDate(a.date || a.createdAt);
+      const db = normalizeDate(b.date || b.createdAt);
+      if (da !== db) return da.localeCompare(db);
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+
+  const isDateInFilter = (rawDate: any) =>
+    isDateInWindow(rawDate, filterPeriodMode, selectedMonth, selectedDate);
+
   const filteredConsignments = useMemo(() => {
-    return consignments.filter((c) => isDateInFilter(c.date || (c as any).createdAt));
+    return sortByDateDesc(consignments.filter((c) => isDateInFilter(c.date || (c as any).createdAt)));
   }, [consignments, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
 
   const filteredRemittances = useMemo(() => {
-    return remittances.filter((r) => isDateInFilter(r.date || (r as any).createdAt));
+    return sortByDateDesc(remittances.filter((r) => isDateInFilter(r.date || (r as any).createdAt)));
   }, [remittances, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
 
   const filteredConversions = useMemo(() => {
-    return conversions.filter((cv) => isDateInFilter(cv.date || (cv as any).createdAt));
+    return sortByDateDesc(conversions.filter((cv) => isDateInFilter(cv.date || (cv as any).createdAt)));
   }, [conversions, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
 
   const filteredChinaDirectPayments = useMemo(() => {
-    return chinaDirectPayments.filter((p) => isDateInFilter(p.date || (p as any).createdAt));
+    return sortByDateDesc(chinaDirectPayments.filter((p) => isDateInFilter(p.date || (p as any).createdAt)));
   }, [chinaDirectPayments, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
 
   // Unique lists for party-wise & branch-wise filtering (Requirement 3)
@@ -540,33 +603,367 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     return Array.from(set);
   }, [consignments, remittances, chinaDirectPayments]);
 
-  // KPI Calculations
-  const metrics = useMemo(() => {
-    const opening = filterPeriodMode === 'all' ? storageService.getBranchOpening() : null;
-    const summary = computeChinaOfficeSummary(
-      filteredConsignments,
-      filteredConversions,
-      filteredChinaDirectPayments,
-      filteredRemittances,
-      opening
+  const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+  const getPeriodStart = (mode: 'all' | 'today' | 'month' | 'date', monthStr: string, dateVal: string): string => {
+    if (mode === 'today') return todayStr;
+    if (mode === 'date') return dateVal || '';
+    if (mode === 'month' && monthStr) return `${monthStr}-01`;
+    return '';
+  };
+
+  const getPeriodEnd = (mode: 'all' | 'today' | 'month' | 'date', monthStr: string, dateVal: string): string => {
+    if (mode === 'today') return todayStr;
+    if (mode === 'date') return dateVal || '';
+    if (mode === 'month' && monthStr) return `${monthStr}-31`;
+    return '';
+  };
+
+  const computeBranchCarryForward = (
+    mode: 'all' | 'today' | 'month' | 'date',
+    monthStr: string,
+    dateVal: string,
+    branchNameFilter: string = 'all'
+  ) => {
+    const start = getPeriodStart(mode, monthStr, dateVal);
+    const end = getPeriodEnd(mode, monthStr, dateVal);
+    const matchBranch = (bName?: string) =>
+      branchNameFilter === 'all' || String(bName || '').toLowerCase() === branchNameFilter.toLowerCase();
+
+    const isBefore = (raw: any) => {
+      if (!start) return false;
+      const d = normalizeDate(raw);
+      return d !== '' && d < start;
+    };
+    const isIn = (raw: any) => {
+      const d = normalizeDate(raw);
+      if (start && (!d || d < start)) return false;
+      if (end && (!d || d > end)) return false;
+      return true;
+    };
+
+    const baseOpening = storageService.getBranchOpening();
+    const priorC = consignments.filter((c) => matchBranch(c.branchName) && isBefore(c.date || (c as any).createdAt));
+    const priorR = remittances.filter((r) => matchBranch(r.branchName) && isBefore(r.date || (r as any).createdAt));
+    const priorCv = branchNameFilter === 'all' ? conversions.filter((cv) => isBefore(cv.date || (cv as any).createdAt)) : [];
+    const priorDp = chinaDirectPayments.filter((p) => matchBranch(p.branchName) && isBefore(p.date || (p as any).createdAt));
+
+    const periodC = consignments.filter((c) => matchBranch(c.branchName) && isIn(c.date || (c as any).createdAt));
+    const periodR = remittances.filter((r) => matchBranch(r.branchName) && isIn(r.date || (r as any).createdAt));
+    const periodCv = branchNameFilter === 'all' ? conversions.filter((cv) => isIn(cv.date || (cv as any).createdAt)) : [];
+    const periodDp = chinaDirectPayments.filter((p) => matchBranch(p.branchName) && isIn(p.date || (p as any).createdAt));
+
+    const priorSummary = computeChinaOfficeSummary(priorC, priorCv, priorDp, priorR, branchNameFilter === 'all' ? baseOpening : null);
+    const periodSummary = computeChinaOfficeSummary(periodC, periodCv, periodDp, periodR, null);
+
+    const hasWindow = Boolean(start);
+    const openingChinaDueBdt = hasWindow
+      ? priorSummary.chinaRemainingDueBdt
+      : (branchNameFilter === 'all' ? round2(baseOpening ? (baseOpening.side === 'cr' ? -1 : 1) * (Number(baseOpening.amount) || 0) : 0) : 0);
+    const closingChinaDueBdt = round2(
+      openingChinaDueBdt + periodSummary.totalSentBdt - periodSummary.rmbConvertedBdt - periodSummary.totalChinaDirectBdt
     );
 
+    const openingRmbInHand = hasWindow ? Math.max(0, round2(priorSummary.totalRmbRemitted - priorSummary.totalConvertedRmb)) : 0;
+    const closingRmbInHand = Math.max(0, round2(openingRmbInHand + periodSummary.totalRmbRemitted - periodSummary.totalConvertedRmb));
+
+    const openingSentBdt = hasWindow ? priorSummary.totalSentBdt : 0;
+    const openingSentRmb = hasWindow ? priorSummary.totalEstRmbSent : 0;
+    const closingSentBdt = round2(openingSentBdt + periodSummary.totalSentBdt);
+    const closingSentRmb = round2(openingSentRmb + periodSummary.totalEstRmbSent);
+
+    const openingRemittedRmb = hasWindow ? priorSummary.totalRmbRemitted : 0;
+    const closingRemittedRmb = round2(openingRemittedRmb + periodSummary.totalRmbRemitted);
+    const closingBranchRmbDue = closingSentRmb > 0 ? Math.max(0, round2(closingSentRmb - closingRemittedRmb)) : 0;
+
     return {
+      hasWindow,
+      periodSummary,
+      openingChinaDueBdt,
+      closingChinaDueBdt,
+      openingRmbInHand,
+      closingRmbInHand,
+      openingSentBdt,
+      openingSentRmb,
+      closingSentBdt,
+      closingSentRmb,
+      openingRemittedRmb,
+      closingRemittedRmb,
+      closingBranchRmbDue,
+      priorConsignmentCount: priorC.length,
+      priorRemittanceCount: priorR.length,
+    };
+  };
+
+  type PartyLedgerTx = {
+    id: string;
+    date: string;
+    voucherNo: string;
+    partyName: string;
+    rmbAmount: number;
+    exchangeRate: number;
+    expectedBdt: number;
+    receivedBdt: number;
+    runningBalance: number;
+    kind: 'conversion' | 'collection';
+    note?: string;
+    sourceConversion?: ThirdPartyRmbConversion;
+  };
+
+  type PartyLedgerSummary = {
+    partyKey: string;
+    partyName: string;
+    phone: string;
+    city: string;
+    openingSetupBalance: number;
+    openingDueBdt: number;
+    periodRmb: number;
+    periodExpectedBdt: number;
+    periodReceivedBdt: number;
+    closingDueBdt: number;
+    allTimeDueBdt: number;
+    conversionCount: number;
+    entries: PartyLedgerTx[];
+  };
+
+  const computeThirdPartyLedgers = (
+    mode: 'all' | 'today' | 'month' | 'date',
+    monthStr: string,
+    dateVal: string
+  ) => {
+    const start = getPeriodStart(mode, monthStr, dateVal);
+    const end = getPeriodEnd(mode, monthStr, dateVal);
+    const hasWindow = Boolean(start);
+
+    const metaMap = new Map<string, { partyName: string; phone: string; city: string; openingSetupBalance: number }>();
+    thirdParties.forEach((tp) => {
+      const displayName = (tp.name || '').trim();
+      if (!displayName) return;
+      const key = displayName.toLowerCase();
+      metaMap.set(key, {
+        partyName: displayName,
+        phone: tp.phone || '',
+        city: tp.city || '',
+        openingSetupBalance: Number(tp.openingBalance) || 0,
+      });
+    });
+
+    conversions.forEach((cv) => {
+      const displayName = String(cv.partyName || (cv as any).thirdPartyName || '').trim() || '3rd Party';
+      const key = displayName.toLowerCase();
+      const existing = metaMap.get(key);
+      if (!existing) {
+        metaMap.set(key, {
+          partyName: displayName,
+          phone: cv.partyPhone || '',
+          city: '',
+          openingSetupBalance: 0,
+        });
+      } else if (!existing.phone && cv.partyPhone) {
+        existing.phone = cv.partyPhone;
+      }
+    });
+
+    type Accum = {
+      priorExpected: number;
+      priorReceived: number;
+      periodRmb: number;
+      periodExpected: number;
+      periodReceived: number;
+      allExpected: number;
+      allReceived: number;
+      conversionCount: number;
+      rawEntries: Omit<PartyLedgerTx, 'runningBalance'>[];
+    };
+
+    const accMap = new Map<string, Accum>();
+    metaMap.forEach((_, key) => {
+      accMap.set(key, {
+        priorExpected: 0,
+        priorReceived: 0,
+        periodRmb: 0,
+        periodExpected: 0,
+        periodReceived: 0,
+        allExpected: 0,
+        allReceived: 0,
+        conversionCount: 0,
+        rawEntries: [],
+      });
+    });
+
+    conversions.forEach((cv) => {
+      const displayName = String(cv.partyName || (cv as any).thirdPartyName || '').trim() || '3rd Party';
+      const key = displayName.toLowerCase();
+      const acc = accMap.get(key);
+      if (!acc) return;
+
+      const cvDate = normalizeDate(cv.date || (cv as any).createdAt);
+      const expected = Number(cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0;
+      const receivedTotal = Number(cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0;
+      const rmb = Number(cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0;
+
+      acc.allExpected += expected;
+      acc.allReceived += receivedTotal;
+
+      const hist = Array.isArray(cv.historyPayments) ? cv.historyPayments : [];
+      const histSum = hist.reduce((s, p) => s + (Number(p.amountBdt) || 0), 0);
+      const useHistory = hist.length > 0 && Math.abs(histSum - receivedTotal) < 2;
+
+      const inWin = (d: string) => (!start || (d !== '' && d >= start)) && (!end || (d !== '' && d <= end));
+      const beforeWin = (d: string) => Boolean(start) && d !== '' && d < start;
+
+      let recBefore = 0;
+      let recInPeriod = 0;
+      let latestPeriodPayDate = cvDate;
+
+      if (useHistory) {
+        hist.forEach((p) => {
+          const pd = normalizeDate(p.date || cvDate);
+          const amt = Number(p.amountBdt) || 0;
+          if (beforeWin(pd)) recBefore += amt;
+          else if (inWin(pd)) {
+            recInPeriod += amt;
+            if (!latestPeriodPayDate || pd > latestPeriodPayDate) latestPeriodPayDate = pd;
+          }
+        });
+      } else {
+        if (beforeWin(cvDate)) recBefore = receivedTotal;
+        else if (inWin(cvDate)) recInPeriod = receivedTotal;
+      }
+
+      if (beforeWin(cvDate)) {
+        acc.priorExpected += expected;
+        acc.priorReceived += recBefore;
+        if (recInPeriod > 0) {
+          acc.periodReceived += recInPeriod;
+          acc.rawEntries.push({
+            id: `col-${cv.id}`,
+            date: latestPeriodPayDate || start,
+            voucherNo: cv.voucherNo || '-',
+            partyName: displayName,
+            rmbAmount: 0,
+            exchangeRate: 0,
+            expectedBdt: 0,
+            receivedBdt: recInPeriod,
+            kind: 'collection',
+            note: `পূর্বের জের আদায় (ভাউচার তারিখ: ${cv.date})`,
+            sourceConversion: cv,
+          });
+        }
+      } else if (inWin(cvDate)) {
+        acc.periodRmb += rmb;
+        acc.periodExpected += expected;
+        acc.periodReceived += recInPeriod;
+        acc.conversionCount += 1;
+        acc.rawEntries.push({
+          id: cv.id,
+          date: cvDate || cv.date,
+          voucherNo: cv.voucherNo || '-',
+          partyName: displayName,
+          rmbAmount: rmb,
+          exchangeRate: Number(cv.exchangeRate) || 0,
+          expectedBdt: expected,
+          receivedBdt: recInPeriod,
+          kind: 'conversion',
+          note: cv.notes || '',
+          sourceConversion: cv,
+        });
+      }
+    });
+
+    const summaries: PartyLedgerSummary[] = [];
+    metaMap.forEach((meta, key) => {
+      const acc = accMap.get(key)!;
+      const openingDueBdt = round2(
+        meta.openingSetupBalance + (hasWindow ? acc.priorExpected - acc.priorReceived : 0)
+      );
+      const periodRmb = round2(acc.periodRmb);
+      const periodExpectedBdt = round2(acc.periodExpected);
+      const periodReceivedBdt = round2(acc.periodReceived);
+      const closingDueBdt = round2(openingDueBdt + periodExpectedBdt - periodReceivedBdt);
+      const allTimeDueBdt = round2(meta.openingSetupBalance + acc.allExpected - acc.allReceived);
+
+      const sortedRaw = [...acc.rawEntries].sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return a.voucherNo.localeCompare(b.voucherNo);
+      });
+
+      let running = openingDueBdt;
+      const entries: PartyLedgerTx[] = sortedRaw.map((row) => {
+        running = round2(running + row.expectedBdt - row.receivedBdt);
+        return { ...row, runningBalance: running };
+      });
+
+      summaries.push({
+        partyKey: key,
+        partyName: meta.partyName,
+        phone: meta.phone,
+        city: meta.city,
+        openingSetupBalance: meta.openingSetupBalance,
+        openingDueBdt,
+        periodRmb,
+        periodExpectedBdt,
+        periodReceivedBdt,
+        closingDueBdt,
+        allTimeDueBdt,
+        conversionCount: acc.conversionCount,
+        entries,
+      });
+    });
+
+    summaries.sort((a, b) => {
+      if (Math.abs(b.closingDueBdt) !== Math.abs(a.closingDueBdt)) {
+        return b.closingDueBdt - a.closingDueBdt;
+      }
+      if (b.periodRmb !== a.periodRmb) return b.periodRmb - a.periodRmb;
+      return a.partyName.localeCompare(b.partyName);
+    });
+
+    return {
+      hasWindow,
+      summaries,
+      totals: {
+        openingDueBdt: round2(summaries.reduce((s, p) => s + p.openingDueBdt, 0)),
+        periodRmb: round2(summaries.reduce((s, p) => s + p.periodRmb, 0)),
+        periodExpectedBdt: round2(summaries.reduce((s, p) => s + p.periodExpectedBdt, 0)),
+        periodReceivedBdt: round2(summaries.reduce((s, p) => s + p.periodReceivedBdt, 0)),
+        closingDueBdt: round2(summaries.reduce((s, p) => s + p.closingDueBdt, 0)),
+        conversionCount: summaries.reduce((s, p) => s + p.conversionCount, 0),
+      },
+    };
+  };
+
+  const mainThirdPartyLedgers = useMemo(
+    () => computeThirdPartyLedgers(filterPeriodMode, selectedMonth, selectedDate),
+    [conversions, thirdParties, filterPeriodMode, selectedMonth, selectedDate, todayStr]
+  );
+
+  // KPI Calculations with automatic carry-forward Opening -> Period -> Closing
+  const metrics = useMemo(() => {
+    const cf = computeBranchCarryForward(filterPeriodMode, selectedMonth, selectedDate, 'all');
+    const summary = cf.periodSummary;
+    const tpTotals = mainThirdPartyLedgers.totals;
+
+    return {
+      hasWindow: cf.hasWindow,
       totalBdtSent: summary.totalSentBdt,
       totalRmbEstSent: summary.totalEstRmbSent,
       totalRmbReceived: summary.totalRmbRemitted,
       totalRmbConverted: summary.totalConvertedRmb,
-      rmbBalanceInHand: summary.rmbBalanceInHand,
-      totalBdtReceived: summary.totalBdtReceived,
-      totalExpectedBdt: summary.totalExpectedBdt,
-      totalThirdPartyDueBdt: summary.totalThirdPartyDueBdt,
+      openingRmbInHand: cf.openingRmbInHand,
+      rmbBalanceInHand: cf.closingRmbInHand,
+      totalBdtReceived: cf.hasWindow ? tpTotals.periodReceivedBdt : summary.totalBdtReceived,
+      totalExpectedBdt: cf.hasWindow ? tpTotals.periodExpectedBdt : summary.totalExpectedBdt,
+      openingThirdPartyDueBdt: tpTotals.openingDueBdt,
+      totalThirdPartyDueBdt: cf.hasWindow ? tpTotals.closingDueBdt : summary.totalThirdPartyDueBdt + thirdParties.reduce((s, tp) => s + (Number(tp.openingBalance) || 0), 0),
       totalChinaDirectBdt: summary.totalChinaDirectBdt,
-      branchNetRmbDue: summary.branchNetRmbDue,
+      branchNetRmbDue: cf.hasWindow ? cf.closingBranchRmbDue : summary.branchNetRmbDue,
       rmbConvertedBdt: summary.rmbConvertedBdt,
-      chinaRemainingStockBdt: summary.chinaRemainingDueBdt,
-      signedOpening: summary.signedOpening,
+      openingChinaDueBdt: cf.openingChinaDueBdt,
+      chinaRemainingStockBdt: cf.closingChinaDueBdt,
+      signedOpening: cf.openingChinaDueBdt,
     };
-  }, [filteredConsignments, filteredRemittances, filteredConversions, filteredChinaDirectPayments, filterPeriodMode]);
+  }, [consignments, remittances, conversions, chinaDirectPayments, thirdParties, mainThirdPartyLedgers, filterPeriodMode, selectedMonth, selectedDate, todayStr]);
 
   // Comprehensive China Stock BDT, RMB Conversion & Direct BDT Payment History Ledger
   const chinaBdtHistoryLedger = useMemo(() => {
@@ -634,40 +1031,159 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
     return result;
   }, [consignments, conversions, chinaDirectPayments, lang]);
 
-  // Filtered lists for statement printing & sharing (party-wise and branch-wise)
+  // Filtered lists for statement printing & sharing (month-wise, party-wise and branch-wise)
+  const statementPeriodLabel = useMemo(
+    () => formatPeriodTitle(statementPeriodMode, statementMonth, todayStr),
+    [statementPeriodMode, statementMonth, todayStr, lang]
+  );
+
+  const mainFilterPeriodLabel = useMemo(
+    () => formatPeriodTitle(filterPeriodMode, selectedMonth, selectedDate),
+    [filterPeriodMode, selectedMonth, selectedDate, todayStr, lang]
+  );
+
+  // Combined A4 sheet uses modal month filter when modal is open, or main panel filter when sharing from header
+  const effectiveCombinedMode = isBranchStatementModalOpen ? statementPeriodMode : filterPeriodMode;
+  const effectiveCombinedMonth = isBranchStatementModalOpen ? statementMonth : selectedMonth;
+  const effectiveCombinedPeriodLabel = isBranchStatementModalOpen ? statementPeriodLabel : mainFilterPeriodLabel;
+
+  const statementThirdPartyLedgers = useMemo(
+    () => computeThirdPartyLedgers(statementPeriodMode, statementMonth, todayStr),
+    [conversions, thirdParties, statementPeriodMode, statementMonth, todayStr]
+  );
+
+  // Active 3rd-party ledgers for statement preview & A4 print
+  const statementPartyGroups = useMemo(() => {
+    if (statementPartyFilter !== 'all') {
+      return statementThirdPartyLedgers.summaries.filter(
+        (p) => p.partyKey === statementPartyFilter.trim().toLowerCase()
+      );
+    }
+    return statementThirdPartyLedgers.summaries.filter(
+      (p) => p.openingDueBdt !== 0 || p.periodRmb > 0 || p.periodExpectedBdt > 0 || p.periodReceivedBdt > 0 || p.closingDueBdt !== 0 || p.entries.length > 0
+    );
+  }, [statementThirdPartyLedgers, statementPartyFilter]);
+
   const statementConversions = useMemo(() => {
-    if (statementPartyFilter === 'all') return conversions;
-    return conversions.filter((c) => (c.partyName || (c as any).thirdPartyName)?.toLowerCase() === statementPartyFilter.toLowerCase());
-  }, [conversions, statementPartyFilter]);
+    return sortByDateAsc(
+      conversions.filter((c) => {
+        if (!isDateInWindow(c.date || (c as any).createdAt, statementPeriodMode, statementMonth, todayStr)) return false;
+        if (statementPartyFilter === 'all') return true;
+        return (c.partyName || (c as any).thirdPartyName)?.trim().toLowerCase() === statementPartyFilter.trim().toLowerCase();
+      })
+    );
+  }, [conversions, statementPartyFilter, statementPeriodMode, statementMonth, todayStr]);
 
   const statementPartyMetrics = useMemo(() => {
-    const totalRmb = statementConversions.reduce((acc, c) => acc + (Number(c.rmbAmountGiven) || 0), 0);
-    const totalReceived = statementConversions.reduce((acc, c) => acc + (Number(c.receivedBdtAmount) || 0), 0);
-    const totalExpected = statementConversions.reduce((acc, c) => acc + (Number(c.expectedBdtAmount) || 0), 0);
-    const totalDue = statementConversions.reduce((acc, c) => acc + (Number(c.remainingDueBdt) || 0), 0);
-    return { totalRmb, totalReceived, totalExpected, totalDue };
-  }, [statementConversions]);
+    const openingDue = round2(statementPartyGroups.reduce((acc, g) => acc + g.openingDueBdt, 0));
+    const totalRmb = round2(statementPartyGroups.reduce((acc, g) => acc + g.periodRmb, 0));
+    const totalExpected = round2(statementPartyGroups.reduce((acc, g) => acc + g.periodExpectedBdt, 0));
+    const totalReceived = round2(statementPartyGroups.reduce((acc, g) => acc + g.periodReceivedBdt, 0));
+    const closingDue = round2(statementPartyGroups.reduce((acc, g) => acc + g.closingDueBdt, 0));
+    const entryCount = statementPartyGroups.reduce((acc, g) => acc + g.entries.length, 0);
+    return {
+      hasWindow: statementThirdPartyLedgers.hasWindow,
+      openingDue,
+      totalRmb,
+      totalExpected,
+      totalReceived,
+      totalDue: closingDue,
+      closingDue,
+      entryCount,
+    };
+  }, [statementPartyGroups, statementThirdPartyLedgers.hasWindow]);
 
   const statementConsignments = useMemo(() => {
-    if (statementBranchFilter === 'all') return consignments;
-    return consignments.filter((c) => c.branchName?.toLowerCase() === statementBranchFilter.toLowerCase());
-  }, [consignments, statementBranchFilter]);
+    return sortByDateAsc(
+      consignments.filter((c) => {
+        if (!isDateInWindow(c.date || (c as any).createdAt, statementPeriodMode, statementMonth, todayStr)) return false;
+        if (statementBranchFilter === 'all') return true;
+        return c.branchName?.toLowerCase() === statementBranchFilter.toLowerCase();
+      })
+    );
+  }, [consignments, statementBranchFilter, statementPeriodMode, statementMonth, todayStr]);
 
   const statementConsignmentMetrics = useMemo(() => {
+    const cf = computeBranchCarryForward(statementPeriodMode, statementMonth, todayStr, statementBranchFilter);
     const totalBdt = statementConsignments.reduce((acc, c) => acc + (Number(c.totalBdtValue) || 0), 0);
     const totalRmb = statementConsignments.reduce((acc, c) => acc + (Number(c.totalRmbEstimated) || 0), 0);
-    return { totalBdt, totalRmb };
-  }, [statementConsignments]);
+    return {
+      hasWindow: cf.hasWindow,
+      openingBdt: cf.openingSentBdt,
+      openingRmb: cf.openingSentRmb,
+      totalBdt,
+      totalRmb,
+      closingBdt: round2(cf.openingSentBdt + totalBdt),
+      closingRmb: round2(cf.openingSentRmb + totalRmb),
+      priorCount: cf.priorConsignmentCount,
+    };
+  }, [statementConsignments, consignments, statementBranchFilter, statementPeriodMode, statementMonth, todayStr]);
 
   const statementRemittances = useMemo(() => {
-    if (statementBranchFilter === 'all') return remittances;
-    return remittances.filter((r) => r.branchName?.toLowerCase() === statementBranchFilter.toLowerCase());
-  }, [remittances, statementBranchFilter]);
+    return sortByDateAsc(
+      remittances.filter((r) => {
+        if (!isDateInWindow(r.date || (r as any).createdAt, statementPeriodMode, statementMonth, todayStr)) return false;
+        if (statementBranchFilter === 'all') return true;
+        return r.branchName?.toLowerCase() === statementBranchFilter.toLowerCase();
+      })
+    );
+  }, [remittances, statementBranchFilter, statementPeriodMode, statementMonth, todayStr]);
 
   const statementRemittanceMetrics = useMemo(() => {
+    const cf = computeBranchCarryForward(statementPeriodMode, statementMonth, todayStr, statementBranchFilter);
     const totalRmb = statementRemittances.reduce((acc, r) => acc + (Number(r.rmbAmount) || 0), 0);
-    return { totalRmb };
-  }, [statementRemittances]);
+    return {
+      hasWindow: cf.hasWindow,
+      openingRmb: cf.openingRemittedRmb,
+      totalRmb,
+      closingRmb: round2(cf.openingRemittedRmb + totalRmb),
+      priorCount: cf.priorRemittanceCount,
+    };
+  }, [statementRemittances, remittances, statementBranchFilter, statementPeriodMode, statementMonth, todayStr]);
+
+  const statementCombinedConsignments = useMemo(
+    () => sortByDateAsc(consignments.filter((c) => isDateInWindow(c.date || (c as any).createdAt, effectiveCombinedMode, effectiveCombinedMonth, selectedDate))),
+    [consignments, effectiveCombinedMode, effectiveCombinedMonth, selectedDate, todayStr]
+  );
+  const statementCombinedRemittances = useMemo(
+    () => sortByDateAsc(remittances.filter((r) => isDateInWindow(r.date || (r as any).createdAt, effectiveCombinedMode, effectiveCombinedMonth, selectedDate))),
+    [remittances, effectiveCombinedMode, effectiveCombinedMonth, selectedDate, todayStr]
+  );
+  const statementCombinedConversions = useMemo(
+    () => sortByDateAsc(conversions.filter((cv) => isDateInWindow(cv.date || (cv as any).createdAt, effectiveCombinedMode, effectiveCombinedMonth, selectedDate))),
+    [conversions, effectiveCombinedMode, effectiveCombinedMonth, selectedDate, todayStr]
+  );
+  const statementCombinedDirectPayments = useMemo(
+    () => sortByDateAsc(chinaDirectPayments.filter((p) => isDateInWindow(p.date || (p as any).createdAt, effectiveCombinedMode, effectiveCombinedMonth, selectedDate))),
+    [chinaDirectPayments, effectiveCombinedMode, effectiveCombinedMonth, selectedDate, todayStr]
+  );
+  const statementCombinedThirdPartyLedgers = useMemo(
+    () => computeThirdPartyLedgers(effectiveCombinedMode, effectiveCombinedMonth, selectedDate),
+    [conversions, thirdParties, effectiveCombinedMode, effectiveCombinedMonth, selectedDate, todayStr]
+  );
+  const statementCombinedMetrics = useMemo(() => {
+    const cf = computeBranchCarryForward(effectiveCombinedMode, effectiveCombinedMonth, selectedDate, 'all');
+    const summary = cf.periodSummary;
+    const tpTotals = statementCombinedThirdPartyLedgers.totals;
+    return {
+      hasWindow: cf.hasWindow,
+      totalBdtSent: summary.totalSentBdt,
+      totalRmbEstSent: summary.totalEstRmbSent,
+      totalRmbReceived: summary.totalRmbRemitted,
+      totalRmbConverted: summary.totalConvertedRmb,
+      openingRmbInHand: cf.openingRmbInHand,
+      rmbBalanceInHand: cf.closingRmbInHand,
+      totalBdtReceived: cf.hasWindow ? tpTotals.periodReceivedBdt : summary.totalBdtReceived,
+      totalExpectedBdt: cf.hasWindow ? tpTotals.periodExpectedBdt : summary.totalExpectedBdt,
+      openingThirdPartyDueBdt: tpTotals.openingDueBdt,
+      totalThirdPartyDueBdt: cf.hasWindow ? tpTotals.closingDueBdt : summary.totalThirdPartyDueBdt + thirdParties.reduce((s, tp) => s + (Number(tp.openingBalance) || 0), 0),
+      totalChinaDirectBdt: summary.totalChinaDirectBdt,
+      branchNetRmbDue: cf.hasWindow ? cf.closingBranchRmbDue : summary.branchNetRmbDue,
+      rmbConvertedBdt: summary.rmbConvertedBdt,
+      openingChinaDueBdt: cf.openingChinaDueBdt,
+      chinaRemainingStockBdt: cf.closingChinaDueBdt,
+    };
+  }, [consignments, remittances, conversions, chinaDirectPayments, thirdParties, statementCombinedThirdPartyLedgers, effectiveCombinedMode, effectiveCombinedMonth, selectedDate, todayStr]);
 
   // Consignment Item Handlers
   const handleAddItemRow = () => {
@@ -927,7 +1443,18 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
             <span>{lang === 'bn' ? 'লেজার / প্রারম্ভিক জের' : 'Ledger / Opening Balance'}</span>
           </button>
           <button
-            onClick={() => setIsBranchStatementModalOpen(true)}
+            onClick={() => {
+              if (filterPeriodMode === 'month') {
+                setStatementPeriodMode('month');
+                setStatementMonth(selectedMonth);
+              } else if (filterPeriodMode === 'today') {
+                setStatementPeriodMode('today');
+              } else {
+                setStatementPeriodMode('month');
+                setStatementMonth(selectedMonth);
+              }
+              setIsBranchStatementModalOpen(true);
+            }}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs cursor-pointer shadow-lg transition-transform active:scale-95"
             title="শাখা অফিস ও আরএমবি স্টেটমেন্ট প্রিন্ট"
           >
@@ -940,17 +1467,22 @@ export const BranchOfficePanel: React.FC<BranchOfficePanelProps> = ({
             lang={lang}
             buttonLabel={lang === 'bn' ? 'হোয়াটসঅ্যাপ' : 'WhatsApp'}
             targetElementId="rsr-branch-office-statement"
-            fileName="rsr-branch-office-statement.png"
+            fileName={`rsr-branch-office-statement-${filterPeriodMode === 'month' ? selectedMonth : filterPeriodMode}.png`}
             getText={() => {
+              const openingLine = metrics.hasWindow
+                ? `\n📌 গত মাসের জের (চীন Opening): ৳${(metrics.openingChinaDueBdt ?? 0).toLocaleString()} | হাতে RMB জের: ¥${(metrics.openingRmbInHand ?? 0).toLocaleString()} | ৩য়-পক্ষ জের: ৳${(metrics.openingThirdPartyDueBdt ?? 0).toLocaleString()}`
+                : '';
               return `*${companyInfo.name} - শাখা অফিস ও ৩য়-পক্ষ RMB হিসাব*
-📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+📅 সময়কাল: ${mainFilterPeriodLabel}${openingLine}
 ━━━━━━━━━━━━━━━━━━━━
-📦 শাখা অফিসে প্রেরিত মোট মাল: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} (≈ ¥${(metrics.totalRmbEstSent ?? 0).toLocaleString()})
-💰 শাখা অফিস থেকে প্রাপ্ত মোট RMB: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}
-🪙 হাতে বর্তমান RMB ব্যালেন্স: ¥${(metrics.rmbBalanceInHand ?? 0).toLocaleString()}
-🔄 ৩য়-পক্ষে মোট RMB কনভার্ট: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}
-💵 প্রাপ্ত মোট টাকা (BDT): ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}
-⚠️ ৩য়-পক্ষের কাছে মোট বকেয়া বাকি: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}
+📦 শাখা অফিসে প্রেরিত মাল: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} (≈ ¥${(metrics.totalRmbEstSent ?? 0).toLocaleString()})
+💰 শাখা অফিস থেকে প্রাপ্ত RMB: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}
+🪙 হাতে সমাপনী RMB ব্যালেন্স: ¥${(metrics.rmbBalanceInHand ?? 0).toLocaleString()}
+🔄 ৩য়-পক্ষে RMB কনভার্ট: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}
+💵 প্রাপ্ত টাকা (BDT): ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}
+🏦 চীন সরাসরি BDT পেমেন্ট: ৳${(metrics.totalChinaDirectBdt ?? 0).toLocaleString()}
+⚠️ ৩য়-পক্ষ সমাপনী বাকি: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}
+🇨🇳 চীন অফিস সমাপনী পাওনা: ৳${(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
             }}
@@ -961,9 +1493,12 @@ _${companyInfo.name}_`;
             lang={lang}
             buttonLabel={lang === 'bn' ? 'উইচ্যাট' : 'WeChat'}
             targetElementId="rsr-branch-office-statement"
-            fileName="rsr-wechat-branch-statement.png"
+            fileName={`rsr-wechat-branch-statement-${filterPeriodMode === 'month' ? selectedMonth : filterPeriodMode}.png`}
             getText={() => {
-              return `${companyInfo.name} - Branch Office & RMB Statement\nDate: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}\nSent to Branch: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} (¥${(metrics.totalRmbEstSent ?? 0).toLocaleString()})\nRMB Remitted: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}\nRMB Balance: ¥${(metrics.rmbBalanceInHand ?? 0).toLocaleString()}\nRMB Converted to BDT: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}\nBDT Received: ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}\nDue from 3rd Parties: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}`;
+              const openingLine = metrics.hasWindow
+                ? `\nOpening China Due: ৳${(metrics.openingChinaDueBdt ?? 0).toLocaleString()} | Opening RMB: ¥${(metrics.openingRmbInHand ?? 0).toLocaleString()} | Opening 3rd Party Due: ৳${(metrics.openingThirdPartyDueBdt ?? 0).toLocaleString()}`
+                : '';
+              return `${companyInfo.name} - Branch Office & RMB Statement\nPeriod: ${mainFilterPeriodLabel}${openingLine}\nSent to Branch: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} (¥${(metrics.totalRmbEstSent ?? 0).toLocaleString()})\nRMB Remitted: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}\nClosing RMB Balance: ¥${(metrics.rmbBalanceInHand ?? 0).toLocaleString()}\nRMB Converted to BDT: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}\nBDT Received: ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}\nChina Direct BDT: ৳${(metrics.totalChinaDirectBdt ?? 0).toLocaleString()}\nClosing 3rd Party Due: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}\nClosing China Net Due: ৳${(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}`;
             }}
           />
         </div>
@@ -1104,8 +1639,17 @@ _${companyInfo.name}_`;
           <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
             ¥ {(metrics.rmbBalanceInHand ?? 0).toLocaleString()}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            {lang === 'bn' ? 'কনভার্ট হয়েছে:' : 'Converted:'} <span className="font-mono font-bold text-slate-700 dark:text-slate-300">¥ {(metrics.totalRmbConverted ?? 0).toLocaleString()}</span>
+          <div className="text-[11px] text-slate-500 mt-1 space-y-0.5">
+            {metrics.hasWindow && (
+              <div>
+                {lang === 'bn' ? 'গত মাসের জের:' : 'Prev Opening:'}{' '}
+                <span className="font-mono font-bold text-cyan-600">¥ {(metrics.openingRmbInHand ?? 0).toLocaleString()}</span>
+              </div>
+            )}
+            <div>
+              {lang === 'bn' ? 'কনভার্ট হয়েছে:' : 'Converted:'}{' '}
+              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">¥ {(metrics.totalRmbConverted ?? 0).toLocaleString()}</span>
+            </div>
           </div>
         </div>
 
@@ -1120,8 +1664,17 @@ _${companyInfo.name}_`;
           <div className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">
             {formatCurrency(metrics.totalThirdPartyDueBdt, lang)}
           </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            {lang === 'bn' ? 'প্রাপ্ত BDT:' : 'Received BDT:'} <span className="font-mono font-bold text-emerald-600">{formatCurrency(metrics.totalBdtReceived, lang)}</span>
+          <div className="text-[11px] text-slate-500 mt-1 space-y-0.5">
+            {metrics.hasWindow && (
+              <div>
+                {lang === 'bn' ? 'গত মাসের জের:' : 'Prev Opening:'}{' '}
+                <span className="font-mono font-bold text-amber-600">{formatCurrency(metrics.openingThirdPartyDueBdt, lang)}</span>
+              </div>
+            )}
+            <div>
+              {lang === 'bn' ? 'প্রাপ্ত BDT:' : 'Received BDT:'}{' '}
+              <span className="font-mono font-bold text-emerald-600">{formatCurrency(metrics.totalBdtReceived, lang)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1208,7 +1761,9 @@ _${companyInfo.name}_`;
               {formatCurrency(metrics.chinaRemainingStockBdt, lang)}
             </div>
             <p className="text-[10px] text-cyan-200/90 font-mono">
-              = ৳{(metrics.totalBdtSent ?? 0).toLocaleString()} - ৳{(metrics.rmbConvertedBdt ?? 0).toLocaleString()} - ৳{(metrics.totalChinaDirectBdt ?? 0).toLocaleString()}
+              {metrics.hasWindow
+                ? `জের: ৳${(metrics.openingChinaDueBdt ?? 0).toLocaleString()} + ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} - ৳${(metrics.rmbConvertedBdt ?? 0).toLocaleString()} - ৳${(metrics.totalChinaDirectBdt ?? 0).toLocaleString()}`
+                : `= ৳${(metrics.totalBdtSent ?? 0).toLocaleString()} - ৳${(metrics.rmbConvertedBdt ?? 0).toLocaleString()} - ৳${(metrics.totalChinaDirectBdt ?? 0).toLocaleString()}`}
             </p>
           </div>
         </div>
@@ -1398,40 +1953,59 @@ _${companyInfo.name}_`;
               </div>
             </div>
 
-            {/* Right: 3rd Party RMB to BDT Conversions Ledger Top Balances */}
+            {/* Right: 3rd Party RMB to BDT Conversions Party-Wise Balances */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b pb-3">
                 <h3 className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
-                  <ArrowRightLeft className="w-4 h-4 text-amber-600" />
-                  <span>{lang === 'bn' ? '৩য়-পক্ষ মানি এক্সচেঞ্জ বাকি ও লেজার' : '3rd Party Agent Due Balances'}</span>
+                  <Users className="w-4 h-4 text-amber-600" />
+                  <span>{lang === 'bn' ? '৩য়-পক্ষ পার্টি-ভিত্তিক আলাদা হিসাব ও বাকি' : '3rd Party-Wise Balances'}</span>
                 </h3>
                 <span className="text-xs font-mono font-bold text-rose-600">
-                  {formatCurrency(metrics.totalThirdPartyDueBdt, lang)} {lang === 'bn' ? 'বাকি' : 'Due'}
+                  {formatCurrency(metrics.totalThirdPartyDueBdt, lang)} {lang === 'bn' ? 'মোট বাকি' : 'Total Due'}
                 </span>
               </div>
 
-              <div className="space-y-3">
-                {filteredConversions.length === 0 ? (
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {mainThirdPartyLedgers.summaries.length === 0 ? (
                   <div className="p-8 text-center text-slate-400 text-xs">
-                    {lang === 'bn' ? 'কোনো কনভার্শন এন্ট্রি পাওয়া যায়নি।' : 'No conversions recorded yet.'}
+                    {lang === 'bn' ? 'কোনো ৩য়-পক্ষ কনভার্শন এন্ট্রি পাওয়া যায়নি।' : 'No 3rd party conversions recorded yet.'}
                   </div>
                 ) : (
-                  filteredConversions.slice(0, 5).map((cv) => (
-                    <div key={cv.id} className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900 dark:text-white">{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          ¥ {((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()} @ {cv.exchangeRate || 0} ৳/¥
+                  mainThirdPartyLedgers.summaries
+                    .filter((p) => p.openingDueBdt !== 0 || p.periodRmb > 0 || p.periodExpectedBdt > 0 || p.periodReceivedBdt > 0 || p.closingDueBdt !== 0)
+                    .map((p) => (
+                      <div
+                        key={p.partyKey}
+                        onClick={() => {
+                          setConversionPartyFilter(p.partyName);
+                          setActiveTab('conversions');
+                        }}
+                        className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50/70 dark:hover:bg-slate-800 rounded-xl flex items-center justify-between text-xs cursor-pointer border border-transparent hover:border-amber-300 transition-all"
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>{p.partyName}</span>
+                            {p.conversionCount > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 font-mono">
+                                ¥{p.periodRmb.toLocaleString()} ({p.conversionCount})
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                            {mainThirdPartyLedgers.hasWindow ? `জের: ৳${p.openingDueBdt.toLocaleString()} • ` : ''}
+                            প্রাপ্য: ৳{p.periodExpectedBdt.toLocaleString()} • জমা: ৳{p.periodReceivedBdt.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="text-right font-mono shrink-0 ml-2">
+                          <div className={`font-bold ${p.closingDueBdt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            {p.closingDueBdt > 0 ? `বাকি: ${formatCurrency(p.closingDueBdt, lang)}` : 'পরিশোধিত'}
+                          </div>
+                          <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-sans font-semibold">
+                            লেজার দেখুন →
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right font-mono">
-                        <div className={`font-bold ${(cv.remainingDueBdt || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                          {(cv.remainingDueBdt || 0) > 0 ? `বাকি: ${formatCurrency(cv.remainingDueBdt, lang)}` : 'পরিশোধিত (Settled)'}
-                        </div>
-                        <div className="text-[10px] text-slate-400">প্রাপ্ত: {formatCurrency(cv.receivedBdtAmount || (cv as any).bdtReceived || 0, lang)}</div>
-                      </div>
-                    </div>
-                  ))
+                    ))
                 )}
               </div>
             </div>
@@ -1649,133 +2223,364 @@ _${companyInfo.name}_`;
         </div>
       )}
 
-      {/* TAB 4: CONVERSIONS */}
-      {activeTab === 'conversions' && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden p-4 space-y-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-3">
-            <div>
-              <h2 className="font-bold text-slate-900 dark:text-white text-base">
-                {lang === 'bn' ? '৩য়-পক্ষ আরএমবি টু টাকা (RMB ➔ BDT) কনভার্শন ও লেজার' : '3rd Party RMB to BDT Currency Conversions'}
-              </h2>
-              <p className="text-xs text-slate-500">
-                {lang === 'bn'
-                  ? 'কাকে কত RMB দেওয়া হলো, কোন রেটে কত টাকা আসার কথা, কত টাকা পাওয়া গেল এবং কত বাকি—তার সম্পূর্ণ হিসাব'
-                  : 'Track RMB given to 3rd party brokers, exchange rates, expected BDT, collected BDT, and remaining due'}
-              </p>
-            </div>
-            <button
-              onClick={openNewConversionModal}
-              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>{lang === 'bn' ? '+ নতুন কনভার্শন' : '+ New Conversion'}</span>
-            </button>
-          </div>
+      {/* TAB 4: CONVERSIONS (WITH 3RD PARTY-WISE BREAKDOWN + CARRY-FORWARD) */}
+      {activeTab === 'conversions' && (() => {
+        const selectedPartyKey = conversionPartyFilter.trim().toLowerCase();
+        const activePartySummary = conversionPartyFilter === 'all'
+          ? null
+          : mainThirdPartyLedgers.summaries.find((p) => p.partyKey === selectedPartyKey) || null;
+        const tabFilteredConversions = filteredConversions.filter((cv) => {
+          const pName = (cv.partyName || (cv as any).thirdPartyName || '3rd Party').trim();
+          if (conversionPartyFilter !== 'all' && pName.toLowerCase() !== selectedPartyKey) return false;
+          if (conversionSearch.trim()) {
+            const q = conversionSearch.trim().toLowerCase();
+            return (
+              pName.toLowerCase().includes(q) ||
+              (cv.voucherNo || '').toLowerCase().includes(q) ||
+              (cv.partyPhone || '').toLowerCase().includes(q)
+            );
+          }
+          return true;
+        });
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="p-3">ভাউচার & তারিখ</th>
-                  <th className="p-3">৩য়-পক্ষ এজেন্ট / পার্টি</th>
-                  <th className="p-3 text-right">প্রদত্ত RMB (¥)</th>
-                  <th className="p-3 text-center">রেট (৳/¥)</th>
-                  <th className="p-3 text-right">প্রত্যাশিত BDT (৳)</th>
-                  <th className="p-3 text-right">প্রাপ্ত BDT (৳)</th>
-                  <th className="p-3 text-right text-rose-600">বাকি BDT (Due)</th>
-                  <th className="p-3 text-center">স্ট্যাটাস</th>
-                  <th className="p-3 text-center">অ্যাকশন</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredConversions.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-400">
-                      {lang === 'bn' ? 'কোনো কনভার্শন লেনদেন পাওয়া যায়নি।' : 'No conversions found.'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredConversions.map((cv) => (
-                    <tr key={cv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
-                        <div>{cv.voucherNo}</div>
-                        <div className="text-[10px] text-slate-400 font-normal">{cv.date}</div>
-                      </td>
-                      <td className="p-3 font-semibold text-slate-800 dark:text-slate-200">
-                        <div>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</div>
-                        {cv.partyPhone && <div className="text-[10px] text-slate-400">{cv.partyPhone}</div>}
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-cyan-600 dark:text-cyan-400 text-sm">
-                        ¥ {((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
-                      </td>
-                      <td className="p-3 text-center font-mono font-bold">
-                        {cv.exchangeRate || 0}
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                        {formatCurrency(cv.expectedBdtAmount || (cv as any).totalBdtExpected || 0, lang)}
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(cv.receivedBdtAmount || (cv as any).bdtReceived || 0, lang)}
-                      </td>
-                      <td className={`p-3 text-right font-mono font-black text-sm ${(cv.remainingDueBdt || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        {(cv.remainingDueBdt || 0) > 0 ? formatCurrency(cv.remainingDueBdt, lang) : '০ (Settled)'}
-                      </td>
-                      <td className="p-3 text-center">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            cv.settlementStatus === 'settled'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                              : cv.settlementStatus === 'partial'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                              : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                          }`}
-                        >
-                          {cv.settlementStatus === 'settled' ? 'পরিশোধিত' : cv.settlementStatus === 'partial' ? 'আংশিক বাকি' : 'সম্পূর্ণ বাকি'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {cv.remainingDueBdt > 0 && (
-                            <button
-                              onClick={() => {
-                                setSelectedConversion(cv);
-                                setPayAmountBdt(cv.remainingDueBdt);
-                                setIsPaymentModalOpen(true);
-                              }}
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-[10px] cursor-pointer"
-                            >
-                              + টাকা জমা
-                            </button>
-                          )}
-                          <button
-                            onClick={() => openEditConversionModal(cv)}
-                            title={lang === 'bn' ? 'কনভার্শন এডিট করুন' : 'Edit Conversion'}
-                            className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 dark:hover:bg-slate-800 cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          {isSuperAdmin && (
-                            <button
-                              onClick={() => {
-                                if (confirm(lang === 'bn' ? 'রেকর্ডটি ডিলিট করতে চান?' : 'Delete this conversion?')) {
-                                  onDeleteConversion(cv.id);
-                                }
-                              }}
-                              className="p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-600 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+        const openPartyStatementPrint = (partyName: string) => {
+          setStatementType('third_party');
+          setStatementPartyFilter(partyName);
+          if (filterPeriodMode === 'month') {
+            setStatementPeriodMode('month');
+            setStatementMonth(selectedMonth);
+          } else if (filterPeriodMode === 'today') {
+            setStatementPeriodMode('today');
+          } else if (filterPeriodMode === 'all') {
+            setStatementPeriodMode('all');
+          } else {
+            setStatementPeriodMode('month');
+            setStatementMonth(selectedMonth);
+          }
+          setIsBranchStatementModalOpen(true);
+        };
+
+        return (
+          <div className="space-y-4">
+            {/* 3rd Party-Wise Separate Summary Card */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div>
+                  <h2 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
+                    <Users className="w-4 h-4 text-amber-600" />
+                    <span>{lang === 'bn' ? '৩য়-পক্ষ পার্টি-ভিত্তিক আলাদা হিসাব ও লেজার' : '3rd Party-Wise Separate RMB Conversion Summary'}</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {mainFilterPeriodLabel} • {lang === 'bn' ? 'প্রতিটি পার্টির গত মাসের জের (Opening), চলতি কনভার্সন, জমা এবং সমাপনী বাকি আলাদা আলাদা দেখুন' : 'Separate carry-forward balances & conversions per 3rd party'}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => openPartyStatementPrint(conversionPartyFilter)}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>
+                      {conversionPartyFilter === 'all'
+                        ? (lang === 'bn' ? 'পার্টি-ভিত্তিক প্রিন্ট (A4)' : 'Print 3rd Party A4')
+                        : `${conversionPartyFilter} প্রিন্ট (A4)`}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      openNewConversionModal();
+                      if (conversionPartyFilter !== 'all') {
+                        const tp = thirdParties.find((p) => p.name.toLowerCase() === selectedPartyKey);
+                        setConvPartyName(conversionPartyFilter);
+                        if (tp?.phone) setConvPartyPhone(tp.phone);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>{lang === 'bn' ? '+ নতুন কনভার্শন' : '+ New Conversion'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Party Filter + Search Controls */}
+              <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                <select
+                  value={conversionPartyFilter}
+                  onChange={(e) => setConversionPartyFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-100 cursor-pointer"
+                >
+                  <option value="all">{lang === 'bn' ? '👥 সকল ৩য়-পক্ষ পার্টি (একসাথে আলাদা সারি)' : '👥 All 3rd Parties'}</option>
+                  {uniqueThirdPartiesList.map((name) => (
+                    <option key={name} value={name}>👤 {name}</option>
+                  ))}
+                </select>
+
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={conversionSearch}
+                    onChange={(e) => setConversionSearch(e.target.value)}
+                    placeholder={lang === 'bn' ? 'ভাউচার নং, পার্টি নাম বা ফোন দিয়ে খুঁজুন...' : 'Search voucher, party, phone...'}
+                    className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+
+                {conversionPartyFilter !== 'all' && (
+                  <button
+                    onClick={() => setConversionPartyFilter('all')}
+                    className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold cursor-pointer"
+                  >
+                    ← সকল পার্টি দেখুন
+                  </button>
                 )}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Selected Party Opening -> Closing Strip OR All Parties Breakdown Table */}
+              {activePartySummary ? (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 text-xs font-mono">
+                  <div>
+                    <span className="text-[10px] font-sans text-slate-500 block">গত মাসের জের (Opening Due)</span>
+                    <strong className="text-sm text-amber-700 dark:text-amber-300">{formatCurrency(activePartySummary.openingDueBdt, lang)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-sans text-slate-500 block">চলতি RMB প্রদত্ত ({activePartySummary.conversionCount} টি)</span>
+                    <strong className="text-sm text-cyan-700 dark:text-cyan-400">¥ {activePartySummary.periodRmb.toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-sans text-slate-500 block">চলতি প্রাপ্য BDT</span>
+                    <strong className="text-sm text-slate-900 dark:text-white">{formatCurrency(activePartySummary.periodExpectedBdt, lang)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-sans text-slate-500 block">এই সময়ে জমা প্রাপ্ত BDT</span>
+                    <strong className="text-sm text-emerald-600">{formatCurrency(activePartySummary.periodReceivedBdt, lang)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-sans text-slate-500 block">সমাপনী বাকি (Closing Due)</span>
+                    <strong className={`text-sm font-black ${activePartySummary.closingDueBdt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {formatCurrency(activePartySummary.closingDueBdt, lang)}
+                    </strong>
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-900 text-white font-bold uppercase tracking-wider text-[10px]">
+                      <tr>
+                        <th className="p-2.5 text-white">#</th>
+                        <th className="p-2.5 text-white">৩য়-পক্ষ পার্টি</th>
+                        <th className="p-2.5 text-right text-amber-300">গত মাসের জের (Opening)</th>
+                        <th className="p-2.5 text-right text-cyan-300">RMB প্রদত্ত (¥)</th>
+                        <th className="p-2.5 text-right text-white">প্রাপ্য BDT</th>
+                        <th className="p-2.5 text-right text-emerald-300">জমা BDT</th>
+                        <th className="p-2.5 text-right text-rose-300">সমাপনী বাকি (Closing)</th>
+                        <th className="p-2.5 text-center text-white">পার্টি হিসাব / প্রিন্ট</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {mainThirdPartyLedgers.summaries.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-6 text-center text-slate-400">কোনো ৩য়-পক্ষ লেনদেন পাওয়া যায়নি।</td>
+                        </tr>
+                      ) : (
+                        mainThirdPartyLedgers.summaries.map((p, idx) => (
+                          <tr key={p.partyKey} className="hover:bg-amber-50/40 dark:hover:bg-slate-800/40">
+                            <td className="p-2.5 font-mono text-slate-400">{idx + 1}</td>
+                            <td className="p-2.5 font-bold text-slate-900 dark:text-white">
+                              <button
+                                type="button"
+                                onClick={() => setConversionPartyFilter(p.partyName)}
+                                className="hover:text-amber-600 cursor-pointer text-left"
+                              >
+                                {p.partyName}
+                                {p.phone && <span className="block text-[10px] font-mono font-normal text-slate-400">{p.phone}</span>}
+                              </button>
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-amber-600 dark:text-amber-400">
+                              {formatCurrency(p.openingDueBdt, lang)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-cyan-600 dark:text-cyan-400">
+                              ¥ {p.periodRmb.toLocaleString()}
+                              <span className="block text-[10px] text-slate-400 font-normal">{p.conversionCount} টি</span>
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                              {formatCurrency(p.periodExpectedBdt, lang)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              {formatCurrency(p.periodReceivedBdt, lang)}
+                            </td>
+                            <td className={`p-2.5 text-right font-mono font-black ${p.closingDueBdt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                              {p.closingDueBdt > 0 ? formatCurrency(p.closingDueBdt, lang) : '৳০ (পরিশোধিত)'}
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setConversionPartyFilter(p.partyName)}
+                                  className="px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[10px] cursor-pointer"
+                                >
+                                  দেখুন
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openPartyStatementPrint(p.partyName)}
+                                  className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                  title="এই পার্টির আলাদা বিবরণী প্রিন্ট/শেয়ার"
+                                >
+                                  <Printer className="w-3 h-3" />
+                                  <span>বিবরণী</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    {mainThirdPartyLedgers.summaries.length > 0 && (
+                      <tfoot className="bg-slate-100 dark:bg-slate-800 font-bold font-mono">
+                        <tr>
+                          <td colSpan={2} className="p-2.5 text-right font-sans text-slate-700 dark:text-slate-200">
+                            সর্বমোট ({mainThirdPartyLedgers.summaries.length} পার্টি):
+                          </td>
+                          <td className="p-2.5 text-right text-amber-700 dark:text-amber-300">{formatCurrency(mainThirdPartyLedgers.totals.openingDueBdt, lang)}</td>
+                          <td className="p-2.5 text-right text-cyan-700 dark:text-cyan-300">¥ {mainThirdPartyLedgers.totals.periodRmb.toLocaleString()}</td>
+                          <td className="p-2.5 text-right text-slate-900 dark:text-white">{formatCurrency(mainThirdPartyLedgers.totals.periodExpectedBdt, lang)}</td>
+                          <td className="p-2.5 text-right text-emerald-600">{formatCurrency(mainThirdPartyLedgers.totals.periodReceivedBdt, lang)}</td>
+                          <td className="p-2.5 text-right text-rose-600 font-black">{formatCurrency(mainThirdPartyLedgers.totals.closingDueBdt, lang)}</td>
+                          <td className="p-2.5"></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Detailed Conversions Ledger Table */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden p-4 space-y-3">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                  {conversionPartyFilter === 'all'
+                    ? (lang === 'bn' ? 'বিস্তারিত কনভার্শন ভাউচার তালিকা (সকল পার্টি)' : 'Detailed Conversion Vouchers')
+                    : `${conversionPartyFilter} — বিস্তারিত কনভার্শন ও পেমেন্ট তালিকা`}
+                </h3>
+                <span className="text-xs font-mono text-slate-500">{tabFilteredConversions.length} টি ভাউচার</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="p-3">ভাউচার & তারিখ</th>
+                      <th className="p-3">৩য়-পক্ষ এজেন্ট / পার্টি</th>
+                      <th className="p-3 text-right">প্রদত্ত RMB (¥)</th>
+                      <th className="p-3 text-center">রেট (৳/¥)</th>
+                      <th className="p-3 text-right">প্রত্যাশিত BDT (৳)</th>
+                      <th className="p-3 text-right">প্রাপ্ত BDT (৳)</th>
+                      <th className="p-3 text-right text-rose-600">বাকি BDT (Due)</th>
+                      <th className="p-3 text-center">স্ট্যাটাস</th>
+                      <th className="p-3 text-center">অ্যাকশন</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {tabFilteredConversions.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-8 text-center text-slate-400">
+                          {lang === 'bn' ? 'নির্বাচিত সময়ে/পার্টিতে কোনো কনভার্শন লেনদেন পাওয়া যায়নি।' : 'No conversions found.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      tabFilteredConversions.map((cv) => (
+                        <tr key={cv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                          <td className="p-3 font-mono font-bold text-slate-900 dark:text-white">
+                            <div>{cv.voucherNo}</div>
+                            <div className="text-[10px] text-slate-400 font-normal">{cv.date}</div>
+                          </td>
+                          <td className="p-3 font-semibold text-slate-800 dark:text-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setConversionPartyFilter(cv.partyName || (cv as any).thirdPartyName || '3rd Party')}
+                              className="hover:text-amber-600 cursor-pointer text-left"
+                            >
+                              <div>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</div>
+                              {cv.partyPhone && <div className="text-[10px] text-slate-400">{cv.partyPhone}</div>}
+                            </button>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-cyan-600 dark:text-cyan-400 text-sm">
+                            ¥ {((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
+                          </td>
+                          <td className="p-3 text-center font-mono font-bold">
+                            {cv.exchangeRate || 0}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                            {formatCurrency(cv.expectedBdtAmount || (cv as any).totalBdtExpected || 0, lang)}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {formatCurrency(cv.receivedBdtAmount || (cv as any).bdtReceived || 0, lang)}
+                          </td>
+                          <td className={`p-3 text-right font-mono font-black text-sm ${(cv.remainingDueBdt || 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                            {(cv.remainingDueBdt || 0) > 0 ? formatCurrency(cv.remainingDueBdt, lang) : '০ (Settled)'}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                cv.settlementStatus === 'settled'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                  : cv.settlementStatus === 'partial'
+                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                              }`}
+                            >
+                              {cv.settlementStatus === 'settled' ? 'পরিশোধিত' : cv.settlementStatus === 'partial' ? 'আংশিক বাকি' : 'সম্পূর্ণ বাকি'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {cv.remainingDueBdt > 0 && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedConversion(cv);
+                                    setPayAmountBdt(cv.remainingDueBdt);
+                                    setIsPaymentModalOpen(true);
+                                  }}
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-[10px] cursor-pointer"
+                                >
+                                  + টাকা জমা
+                                </button>
+                              )}
+                              <button
+                                onClick={() => openEditConversionModal(cv)}
+                                title={lang === 'bn' ? 'কনভার্শন এডিট করুন' : 'Edit Conversion'}
+                                className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 dark:hover:bg-slate-800 cursor-pointer"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              {isSuperAdmin && (
+                                <button
+                                  onClick={() => {
+                                    if (confirm(lang === 'bn' ? 'রেকর্ডটি ডিলিট করতে চান?' : 'Delete this conversion?')) {
+                                      onDeleteConversion(cv.id);
+                                    }
+                                  }}
+                                  className="p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB 5: 3RD PARTY EXCHANGERS MANAGEMENT (Requirement 1) */}
       {activeTab === 'third_parties' && (
@@ -3098,8 +3903,81 @@ _${companyInfo.name}_`;
               </div>
             </div>
 
-            {/* Dynamic Filter Controls for Individual Party or Branch Statement (Requirement 3) */}
-            <div className="bg-slate-50 dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
+            {/* Dynamic Filter Controls: Month-Wise Period + Party/Branch Selector */}
+            <div className="bg-slate-50 dark:bg-slate-800/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5 text-xs">
+              {/* Month-Wise Period Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-700">
+                <span className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{lang === 'bn' ? 'মাস / সময়কাল নির্বাচন:' : 'Statement Period:'}</span>
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-xl bg-white dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-700 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setStatementPeriodMode('month')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        statementPeriodMode === 'month'
+                          ? 'bg-indigo-600 text-white font-bold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      {lang === 'bn' ? 'মাস অনুযায়ী' : 'Month'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatementPeriodMode('today')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        statementPeriodMode === 'today'
+                          ? 'bg-indigo-600 text-white font-bold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      {lang === 'bn' ? 'আজকের' : 'Today'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatementPeriodMode('all')}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        statementPeriodMode === 'all'
+                          ? 'bg-indigo-600 text-white font-bold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      {lang === 'bn' ? 'সকল সময়' : 'All Time'}
+                    </button>
+                  </div>
+
+                  {statementPeriodMode === 'month' && (
+                    <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 px-2 py-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={handlePrevStatementMonth}
+                        className="p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                        title={lang === 'bn' ? 'আগের মাস' : 'Previous Month'}
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <input
+                        type="month"
+                        value={statementMonth}
+                        onChange={(e) => setStatementMonth(e.target.value)}
+                        className="bg-transparent font-mono text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-hidden cursor-pointer"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleNextStatementMonth}
+                        className="p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                        title={lang === 'bn' ? 'পরের মাস' : 'Next Month'}
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
               {statementType === 'third_party' && (
                 <div className="flex items-center gap-2 flex-1 min-w-[280px]">
                   <label className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5 shrink-0">
@@ -3152,6 +4030,7 @@ _${companyInfo.name}_`;
               )}
 
               <div className="text-[11px] font-mono text-slate-600 dark:text-slate-400 font-semibold ml-auto">
+                <span className="text-indigo-700 font-bold mr-2">[{statementPeriodLabel}]</span>
                 {statementType === 'third_party' && (
                   statementPartyFilter === 'all'
                     ? `${statementConversions.length} টি কনভার্শন রেকর্ড (সকল পার্টি)`
@@ -3167,68 +4046,170 @@ _${companyInfo.name}_`;
                     ? `${statementRemittances.length} টি রেমিট্যান্স রেকর্ড (সকল শাখা)`
                     : `"${statementBranchFilter}" এর জন্য একক RMB হিস্ট্রি (${statementRemittances.length} টি)`
                 )}
-                {statementType === 'combined' && 'অভ্যন্তরীণ সার্বিক সমন্বিত শাখা ও কনভার্শন খাতা'}
+                {statementType === 'combined' && `${statementCombinedConsignments.length} চালান • ${statementCombinedRemittances.length} RMB • ${statementCombinedConversions.length} কনভার্শন`}
+              </div>
               </div>
             </div>
 
             {/* PREVIEW: 1. Third Party RMB Statement */}
             {statementType === 'third_party' && (
               <div className="border border-amber-200 rounded-2xl p-4 bg-amber-50/30 space-y-3">
-                <div className="flex items-center justify-between border-b border-amber-200 pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 pb-2">
                   <div>
                     <h3 className="font-bold text-sm text-slate-900">
                       {lang === 'bn' ? '৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া স্টেটমেন্ট প্রিভিউ' : '3rd Party RMB to BDT Statement Preview'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      {statementPartyFilter === 'all'
-                        ? (lang === 'bn' ? 'সকল ৩য়-পক্ষ এক্সচেঞ্জারের সার্বিক খাতা' : 'All 3rd party brokers combined')
+                      {statementPeriodLabel} • {statementPartyFilter === 'all'
+                        ? (lang === 'bn' ? `পার্টি-ভিত্তিক আলাদা হিসাব (${statementPartyGroups.length} টি পার্টি)` : 'All 3rd parties grouped separately')
                         : `পার্টি: ${statementPartyFilter}`}
                     </p>
                   </div>
-                  <div className="text-right font-mono">
-                    <span className="text-xs font-bold text-rose-600">
-                      বাকি পাওনা: ৳{statementPartyMetrics.totalDue.toLocaleString()}
-                    </span>
+                  <div className="text-right font-mono text-xs space-y-0.5">
+                    {statementPartyMetrics.hasWindow && (
+                      <div className="text-[11px] text-amber-700 font-bold">
+                        গত মাসের জের (Opening): ৳{statementPartyMetrics.openingDue.toLocaleString()}
+                      </div>
+                    )}
+                    <div className="font-bold text-rose-600">
+                      সমাপনী বাকি (Closing): ৳{statementPartyMetrics.closingDue.toLocaleString()}
+                    </div>
                   </div>
                 </div>
 
-                <div className="overflow-x-auto max-h-60 border rounded-xl bg-white">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600">
-                      <tr>
-                        <th className="p-2">ভাউচার & তারিখ</th>
-                        <th className="p-2">পার্টি নাম</th>
-                        <th className="p-2 text-right">RMB (¥)</th>
-                        <th className="p-2 text-center">রেট</th>
-                        <th className="p-2 text-right">প্রাপ্য BDT</th>
-                        <th className="p-2 text-right">জমা BDT</th>
-                        <th className="p-2 text-right text-rose-600">বাকি BDT</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y text-[11px]">
-                      {statementConversions.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="p-6 text-center text-slate-400">
-                            কোনো লেনদেন পাওয়া যায়নি।
-                          </td>
-                        </tr>
-                      ) : (
-                        statementConversions.slice(0, 15).map((cv) => (
-                          <tr key={cv.id}>
-                            <td className="p-2 font-mono font-bold">{cv.voucherNo}<div className="text-[10px] text-slate-400 font-normal">{cv.date}</div></td>
-                            <td className="p-2 font-semibold">{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
-                            <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}</td>
-                            <td className="p-2 text-center font-mono">{cv.exchangeRate || 0}</td>
-                            <td className="p-2 text-right font-mono font-bold">৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}</td>
-                            <td className="p-2 text-right font-mono text-emerald-600">৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}</td>
-                            <td className="p-2 text-right font-mono font-bold text-rose-600">
-                              {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
-                            </td>
+                {/* 4-Box Summary Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-white p-2.5 rounded-xl border border-amber-200/70">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">গত মাসের জের (Opening):</span>
+                    <strong className="text-amber-700">৳{statementPartyMetrics.openingDue.toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">চলতি RMB কনভার্ট:</span>
+                    <strong className="text-cyan-700">¥{statementPartyMetrics.totalRmb.toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-400 block">প্রাপ্য: ৳{statementPartyMetrics.totalExpected.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">মোট জমা প্রাপ্তি (BDT):</span>
+                    <strong className="text-emerald-600">৳{statementPartyMetrics.totalReceived.toLocaleString()}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-sans">সমাপনী বাকি (Closing):</span>
+                    <strong className="text-rose-600">৳{statementPartyMetrics.closingDue.toLocaleString()}</strong>
+                  </div>
+                </div>
+
+                {/* 3rd Party-Wise Summary Table when Viewing All */}
+                {statementPartyFilter === 'all' && (
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-amber-900">
+                      পার্টি-ভিত্তিক আলাদা আলাদা সারসংক্ষেপ (যেকোনো পার্টিতে ক্লিক করলে তার একক বিবরণী আসবে):
+                    </div>
+                    <div className="overflow-x-auto max-h-48 border rounded-xl bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-900 text-white font-bold text-[10px] uppercase sticky top-0">
+                          <tr>
+                            <th className="p-2 text-white">৩য়-পক্ষ পার্টি</th>
+                            <th className="p-2 text-right text-amber-300">গত মাসের জের</th>
+                            <th className="p-2 text-right text-cyan-300">RMB (¥)</th>
+                            <th className="p-2 text-right text-white">প্রাপ্য BDT</th>
+                            <th className="p-2 text-right text-emerald-300">জমা BDT</th>
+                            <th className="p-2 text-right text-rose-300">সমাপনী বাকি</th>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody className="divide-y text-[11px]">
+                          {statementPartyGroups.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="p-4 text-center text-slate-400">
+                                নির্বাচিত সময়ে কোনো পার্টি লেনদেন বা জের নেই।
+                              </td>
+                            </tr>
+                          ) : (
+                            statementPartyGroups.map((g) => (
+                              <tr
+                                key={g.partyKey}
+                                onClick={() => setStatementPartyFilter(g.partyName)}
+                                className="hover:bg-amber-50 cursor-pointer"
+                              >
+                                <td className="p-2 font-bold text-indigo-700 underline decoration-dotted">{g.partyName}</td>
+                                <td className="p-2 text-right font-mono text-amber-700">৳{g.openingDueBdt.toLocaleString()}</td>
+                                <td className="p-2 text-right font-mono font-bold text-cyan-700">¥{g.periodRmb.toLocaleString()}</td>
+                                <td className="p-2 text-right font-mono">৳{g.periodExpectedBdt.toLocaleString()}</td>
+                                <td className="p-2 text-right font-mono text-emerald-600">৳{g.periodReceivedBdt.toLocaleString()}</td>
+                                <td className={`p-2 text-right font-mono font-bold ${g.closingDueBdt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  ৳{g.closingDueBdt.toLocaleString()}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Per-Party Ledger Details Preview */}
+                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  {statementPartyGroups.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 bg-white rounded-xl border text-xs">
+                      নির্বাচিত সময়ে কোনো লেনদেন পাওয়া যায়নি।
+                    </div>
+                  ) : (
+                    statementPartyGroups.map((g) => (
+                      <div key={g.partyKey} className="border rounded-xl bg-white overflow-hidden">
+                        <div className="px-3 py-2 bg-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold">
+                          <span className="text-slate-900">👤 {g.partyName} {g.phone ? `(${g.phone})` : ''}</span>
+                          <span className="font-mono text-slate-600">
+                            জের: <strong className="text-amber-700">৳{g.openingDueBdt.toLocaleString()}</strong> • বাকি: <strong className="text-rose-600">৳{g.closingDueBdt.toLocaleString()}</strong>
+                          </span>
+                        </div>
+                        <table className="w-full text-left text-[11px]">
+                          <thead className="bg-slate-50 font-bold text-[10px] text-slate-600 border-b">
+                            <tr>
+                              <th className="p-1.5">ভাউচার & তারিখ</th>
+                              <th className="p-1.5 text-right">RMB (¥)</th>
+                              <th className="p-1.5 text-center">রেট</th>
+                              <th className="p-1.5 text-right">প্রাপ্য BDT</th>
+                              <th className="p-1.5 text-right">জমা BDT</th>
+                              <th className="p-1.5 text-right text-rose-600">জের/ব্যালেন্স</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            <tr className="bg-amber-50/70 font-semibold">
+                              <td colSpan={5} className="p-1.5 text-amber-900">প্রারম্ভিক জের (গত মাসের সমাপনী)</td>
+                              <td className="p-1.5 text-right font-mono text-amber-800">৳{g.openingDueBdt.toLocaleString()}</td>
+                            </tr>
+                            {g.entries.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="p-2 text-center text-slate-400">এই সময়ে নতুন লেনদেন নেই (জের বহনকৃত)</td>
+                              </tr>
+                            ) : (
+                              g.entries.map((tx) => (
+                                <tr key={tx.id}>
+                                  <td className="p-1.5 font-mono font-bold">
+                                    {tx.voucherNo}
+                                    <div className="text-[10px] text-slate-400 font-normal">
+                                      {tx.date}{tx.kind === 'collection' ? ' • পূর্বের জের আদায়' : ''}
+                                    </div>
+                                  </td>
+                                  <td className="p-1.5 text-right font-mono font-bold text-cyan-700">
+                                    {tx.rmbAmount > 0 ? `¥${tx.rmbAmount.toLocaleString()}` : '-'}
+                                  </td>
+                                  <td className="p-1.5 text-center font-mono">{tx.exchangeRate > 0 ? tx.exchangeRate : '-'}</td>
+                                  <td className="p-1.5 text-right font-mono font-bold">
+                                    {tx.expectedBdt > 0 ? `৳${tx.expectedBdt.toLocaleString()}` : '-'}
+                                  </td>
+                                  <td className="p-1.5 text-right font-mono text-emerald-600 font-bold">৳{tx.receivedBdt.toLocaleString()}</td>
+                                  <td className={`p-1.5 text-right font-mono font-bold ${tx.runningBalance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                    ৳{tx.runningBalance.toLocaleString()}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -3236,20 +4217,26 @@ _${companyInfo.name}_`;
             {/* PREVIEW: 2. Consignments Sent Statement */}
             {statementType === 'consignments' && (
               <div className="border border-blue-200 rounded-2xl p-4 bg-blue-50/30 space-y-3">
-                <div className="flex items-center justify-between border-b border-blue-200 pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200 pb-2">
                   <div>
                     <h3 className="font-bold text-sm text-slate-900">
                       {lang === 'bn' ? 'চীন শাখা অফিসে প্রেরিত মালামাল চালান বিবরণী প্রিভিউ' : 'Consignments Sent to China Branch Preview'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      {statementBranchFilter === 'all' ? 'সকল শাখা অফিস' : `শাখা: ${statementBranchFilter}`} • মোট প্রেরিত স্টক: ৳{statementConsignmentMetrics.totalBdt.toLocaleString()}
+                      {statementPeriodLabel} • {statementBranchFilter === 'all' ? 'সকল শাখা অফিস' : `শাখা: ${statementBranchFilter}`} • চলতি প্রেরণ: ৳{statementConsignmentMetrics.totalBdt.toLocaleString()}
                     </p>
                   </div>
+                  {statementConsignmentMetrics.hasWindow && (
+                    <div className="text-right font-mono text-[11px]">
+                      <div className="text-amber-700 font-bold">গত মাসের জের: ৳{statementConsignmentMetrics.openingBdt.toLocaleString()}</div>
+                      <div className="text-blue-700 font-bold">সমাপনী মোট: ৳{statementConsignmentMetrics.closingBdt.toLocaleString()}</div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="overflow-x-auto max-h-60 border rounded-xl bg-white">
+                <div className="overflow-x-auto max-h-64 border rounded-xl bg-white">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600">
+                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600 sticky top-0">
                       <tr>
                         <th className="p-2">চালান নং & তারিখ</th>
                         <th className="p-2">শাখা ও গন্তব্য</th>
@@ -3259,14 +4246,21 @@ _${companyInfo.name}_`;
                       </tr>
                     </thead>
                     <tbody className="divide-y text-[11px]">
+                      {statementConsignmentMetrics.hasWindow && (
+                        <tr className="bg-amber-50/70 font-bold">
+                          <td colSpan={3} className="p-2 text-amber-900">গত মাসের প্রারম্ভিক জের ({statementConsignmentMetrics.priorCount} টি পূর্বের চালান)</td>
+                          <td className="p-2 text-right font-mono text-amber-800">৳{statementConsignmentMetrics.openingBdt.toLocaleString()}</td>
+                          <td className="p-2 text-right font-mono text-amber-800">¥{statementConsignmentMetrics.openingRmb.toLocaleString()}</td>
+                        </tr>
+                      )}
                       {statementConsignments.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="p-6 text-center text-slate-400">
-                            কোনো চালান পাওয়া যায়নি।
+                            নির্বাচিত সময়ে কোনো চালান পাওয়া যায়নি।
                           </td>
                         </tr>
                       ) : (
-                        statementConsignments.slice(0, 15).map((c) => (
+                        statementConsignments.map((c) => (
                           <tr key={c.id}>
                             <td className="p-2 font-mono font-bold">{c.consignmentNo}<div className="text-[10px] text-slate-400 font-normal">{c.date}</div></td>
                             <td className="p-2">{c.branchName}</td>
@@ -3285,20 +4279,26 @@ _${companyInfo.name}_`;
             {/* PREVIEW: 3. Remittances Statement */}
             {statementType === 'remittances' && (
               <div className="border border-cyan-200 rounded-2xl p-4 bg-cyan-50/30 space-y-3">
-                <div className="flex items-center justify-between border-b border-cyan-200 pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-200 pb-2">
                   <div>
                     <h3 className="font-bold text-sm text-slate-900">
                       {lang === 'bn' ? 'চীন শাখা হতে প্রাপ্ত RMB রেমিট্যান্স হিস্ট্রি প্রিভিউ' : 'China Branch RMB Remittances Preview'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      {statementBranchFilter === 'all' ? 'সকল শাখা অফিস' : `শাখা: ${statementBranchFilter}`} • মোট প্রাপ্ত RMB: ¥{statementRemittanceMetrics.totalRmb.toLocaleString()}
+                      {statementPeriodLabel} • {statementBranchFilter === 'all' ? 'সকল শাখা অফিস' : `শাখা: ${statementBranchFilter}`} • চলতি প্রাপ্ত RMB: ¥{statementRemittanceMetrics.totalRmb.toLocaleString()}
                     </p>
                   </div>
+                  {statementRemittanceMetrics.hasWindow && (
+                    <div className="text-right font-mono text-[11px]">
+                      <div className="text-amber-700 font-bold">গত মাসের জের: ¥{statementRemittanceMetrics.openingRmb.toLocaleString()}</div>
+                      <div className="text-cyan-700 font-bold">সমাপনী মোট: ¥{statementRemittanceMetrics.closingRmb.toLocaleString()}</div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="overflow-x-auto max-h-60 border rounded-xl bg-white">
+                <div className="overflow-x-auto max-h-64 border rounded-xl bg-white">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600">
+                    <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600 sticky top-0">
                       <tr>
                         <th className="p-2">রেফারেন্স নং & তারিখ</th>
                         <th className="p-2">শাখা অফিস</th>
@@ -3307,14 +4307,20 @@ _${companyInfo.name}_`;
                       </tr>
                     </thead>
                     <tbody className="divide-y text-[11px]">
+                      {statementRemittanceMetrics.hasWindow && (
+                        <tr className="bg-amber-50/70 font-bold">
+                          <td colSpan={3} className="p-2 text-amber-900">গত মাসের প্রারম্ভিক জের ({statementRemittanceMetrics.priorCount} টি পূর্বের এন্ট্রি)</td>
+                          <td className="p-2 text-right font-mono text-amber-800">¥{statementRemittanceMetrics.openingRmb.toLocaleString()}</td>
+                        </tr>
+                      )}
                       {statementRemittances.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="p-6 text-center text-slate-400">
-                            কোনো RMB রেকর্ড পাওয়া যায়নি।
+                            নির্বাচিত সময়ে কোনো RMB রেকর্ড পাওয়া যায়নি।
                           </td>
                         </tr>
                       ) : (
-                        statementRemittances.slice(0, 15).map((r) => (
+                        statementRemittances.map((r) => (
                           <tr key={r.id}>
                             <td className="p-2 font-mono font-bold">{r.referenceNo}<div className="text-[10px] text-slate-400 font-normal">{r.date}</div></td>
                             <td className="p-2">{r.branchName}</td>
@@ -3338,27 +4344,31 @@ _${companyInfo.name}_`;
                       {lang === 'bn' ? 'সার্বিক কমপ্লিট শাখা ও আরএমবি বিবরণী প্রিভিউ' : 'Combined Full Branch Statement Preview'}
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      {lang === 'bn' ? 'চালান, আরএমবি এবং ৩য়-পক্ষ সব হিসাব সমন্বিত' : 'Consignments, Remittances, and Conversions'}
+                      {statementPeriodLabel} • {lang === 'bn' ? 'গত মাসের জেরসহ চালান, আরএমবি এবং ৩য়-পক্ষ পার্টি-ভিত্তিক হিসাব সমন্বিত' : 'Carry-forward balances, Consignments, Remittances & Conversions'}
                     </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-white p-3 rounded-xl border">
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-sans">মোট প্রেরিত স্টক:</span>
-                    <strong>৳{(metrics.totalBdtSent ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-400 block font-sans">গত মাসের জের (চীন পাওনা):</span>
+                    <strong className="text-amber-700">৳{(statementCombinedMetrics.openingChinaDueBdt ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-400 block">হাতে RMB জের: ¥{(statementCombinedMetrics.openingRmbInHand ?? 0).toLocaleString()}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-sans">শাখা RMB প্রাপ্তি:</span>
-                    <strong className="text-cyan-700">¥{(metrics.totalRmbReceived ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-400 block font-sans">মোট প্রেরিত স্টক (+):</span>
+                    <strong>৳{(statementCombinedMetrics.totalBdtSent ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-cyan-600 block">শাখা RMB: ¥{(statementCombinedMetrics.totalRmbReceived ?? 0).toLocaleString()}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-sans">RMB ব্যালেন্স:</span>
-                    <strong className="text-emerald-600">¥{(metrics.rmbBalanceInHand ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-400 block font-sans">RMB কনভার্ট / সরাসরি:</span>
+                    <strong className="text-emerald-600">¥{(statementCombinedMetrics.totalRmbConverted ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-500 block">৳{((statementCombinedMetrics.rmbConvertedBdt ?? 0) + (statementCombinedMetrics.totalChinaDirectBdt ?? 0)).toLocaleString()}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-sans">চীন অবশিষ্ট পাওনা:</span>
-                    <strong className="text-cyan-600">৳{(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-400 block font-sans">চীন সমাপনী পাওনা (=):</span>
+                    <strong className="text-cyan-600">৳{(statementCombinedMetrics.chinaRemainingStockBdt ?? 0).toLocaleString()}</strong>
+                    <span className="text-[10px] text-rose-600 block">৩য়-পক্ষ বাকি: ৳{(statementCombinedMetrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -3367,7 +4377,7 @@ _${companyInfo.name}_`;
             {/* Modal Footer Controls */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t">
               <div className="text-xs text-slate-500">
-                মুদ্রণ তারিখ: {new Date().toLocaleDateString('bn-BD')}
+                সময়কাল: <strong className="text-slate-700">{statementPeriodLabel}</strong> • মুদ্রণ: {new Date().toLocaleDateString('bn-BD')}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -3391,18 +4401,42 @@ _${companyInfo.name}_`;
                         : 'rsr-branch-office-statement';
                     const docTitle =
                       statementType === 'third_party'
-                        ? 'RSR - 3rd Party RMB Statement'
+                        ? `RSR - 3rd Party RMB Statement (${statementPeriodLabel})`
                         : statementType === 'consignments'
-                        ? 'RSR - China Consignments Statement'
+                        ? `RSR - China Consignments Statement (${statementPeriodLabel})`
                         : statementType === 'remittances'
-                        ? 'RSR - China Remittances Statement'
-                        : 'RSR - Branch Office Full Statement';
+                        ? `RSR - China Remittances Statement (${statementPeriodLabel})`
+                        : `RSR - Branch Office Full Statement (${statementPeriodLabel})`;
                     executePrint(targetId, docTitle);
                   }}
                   className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-md"
                 >
                   <Printer className="w-4 h-4" />
                   <span>{lang === 'bn' ? 'প্রিন্ট করুন (A4)' : 'Print A4'}</span>
+                </button>
+
+                {/* PDF Download for active statement */}
+                <button
+                  type="button"
+                  disabled={isStatementPdfExporting}
+                  onClick={async () => {
+                    const targetId =
+                      statementType === 'third_party'
+                        ? 'rsr-3rd-party-rmb-statement'
+                        : statementType === 'consignments'
+                        ? 'rsr-china-consignments-statement'
+                        : statementType === 'remittances'
+                        ? 'rsr-china-remittances-statement'
+                        : 'rsr-branch-office-statement';
+                    const periodTag = statementPeriodMode === 'month' ? statementMonth : statementPeriodMode;
+                    setIsStatementPdfExporting(true);
+                    await exportElementToPdf(targetId, `rsr-${statementType}-${periodTag}.pdf`);
+                    setIsStatementPdfExporting(false);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-md"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>PDF</span>
                 </button>
 
                 {/* WhatsApp Share for active statement */}
@@ -3418,50 +4452,66 @@ _${companyInfo.name}_`;
                       ? 'rsr-china-remittances-statement'
                       : 'rsr-branch-office-statement'
                   }
-                  fileName={`rsr-${statementType}-${statementType === 'third_party' ? (statementPartyFilter !== 'all' ? statementPartyFilter.replace(/[\s/]/g, '_') : 'all_parties') : (statementBranchFilter !== 'all' ? statementBranchFilter.replace(/[\s/]/g, '_') : 'all_branches')}.png`}
+                  fileName={`rsr-${statementType}-${statementPeriodMode === 'month' ? statementMonth : statementPeriodMode}-${statementType === 'third_party' ? (statementPartyFilter !== 'all' ? statementPartyFilter.replace(/[\s/]/g, '_') : 'all_parties') : (statementBranchFilter !== 'all' ? statementBranchFilter.replace(/[\s/]/g, '_') : 'all_branches')}.png`}
                   getText={() => {
                     if (statementType === 'third_party') {
                       const partyLabel = statementPartyFilter !== 'all' ? statementPartyFilter : 'সকল ৩য়-পক্ষ এক্সচেঞ্জার';
+                      const partyLines = statementPartyFilter === 'all' && statementPartyGroups.length > 0
+                        ? '\n' + statementPartyGroups.map((g) => `• ${g.partyName}: জের ৳${g.openingDueBdt.toLocaleString()} | ¥${g.periodRmb.toLocaleString()} | জমা ৳${g.periodReceivedBdt.toLocaleString()} | বাকি ৳${g.closingDueBdt.toLocaleString()}`).join('\n')
+                        : '';
                       return `*${companyInfo.name} - ৩য়-পক্ষ RMB হিসাব*
 👤 এক্সচেঞ্জার: *${partyLabel}*
-📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+📅 সময়কাল: *${statementPeriodLabel}*
 ━━━━━━━━━━━━━━━━━━━━
-🔄 কনভার্ট কৃত RMB: ¥${statementPartyMetrics.totalRmb.toLocaleString()}
-💵 প্রাপ্ত মোট টাকা: ৳${statementPartyMetrics.totalReceived.toLocaleString()}
-⚠️ বকেয়া বাকি (Due): ৳${statementPartyMetrics.totalDue.toLocaleString()}
+📌 গত মাসের জের (Opening): ৳${statementPartyMetrics.openingDue.toLocaleString()}
+🔄 চলতি RMB কনভার্ট: ¥${statementPartyMetrics.totalRmb.toLocaleString()} (প্রাপ্য ৳${statementPartyMetrics.totalExpected.toLocaleString()})
+💵 মোট জমা প্রাপ্তি (BDT): ৳${statementPartyMetrics.totalReceived.toLocaleString()}
+⚠️ সমাপনী বাকি (Closing Due): ৳${statementPartyMetrics.closingDue.toLocaleString()}${partyLines}
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
                     }
                     if (statementType === 'consignments') {
                       const branchLabel = statementBranchFilter !== 'all' ? statementBranchFilter : 'সকল শাখা অফিস';
+                      const openLine = statementConsignmentMetrics.hasWindow
+                        ? `📌 গত মাসের জের: ৳${statementConsignmentMetrics.openingBdt.toLocaleString()} (¥${statementConsignmentMetrics.openingRmb.toLocaleString()})\n`
+                        : '';
                       return `*${companyInfo.name} - চীন শাখা চালান বিবরণী*
 🏢 শাখা অফিস: *${branchLabel}*
-📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+📅 সময়কাল: *${statementPeriodLabel}*
 ━━━━━━━━━━━━━━━━━━━━
-📦 চালান সংখ্যা: ${statementConsignments.length} টি
-💰 মোট প্রেরিত স্টক: ৳${statementConsignmentMetrics.totalBdt.toLocaleString()} (≈ ¥${statementConsignmentMetrics.totalRmb.toLocaleString()})
+${openLine}📦 চলতি চালান: ${statementConsignments.length} টি — ৳${statementConsignmentMetrics.totalBdt.toLocaleString()} (≈ ¥${statementConsignmentMetrics.totalRmb.toLocaleString()})
+💰 সমাপনী মোট: ৳${statementConsignmentMetrics.closingBdt.toLocaleString()} (≈ ¥${statementConsignmentMetrics.closingRmb.toLocaleString()})
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
                     }
                     if (statementType === 'remittances') {
                       const branchLabel = statementBranchFilter !== 'all' ? statementBranchFilter : 'সকল শাখা অফিস';
+                      const openLine = statementRemittanceMetrics.hasWindow
+                        ? `📌 গত মাসের জের RMB: ¥${statementRemittanceMetrics.openingRmb.toLocaleString()}\n`
+                        : '';
                       return `*${companyInfo.name} - চীন শাখা RMB প্রাপ্তি*
 🏢 শাখা অফিস: *${branchLabel}*
-📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+📅 সময়কাল: *${statementPeriodLabel}*
 ━━━━━━━━━━━━━━━━━━━━
-🪙 প্রাপ্ত মোট RMB: ¥${statementRemittanceMetrics.totalRmb.toLocaleString()} (${statementRemittances.length} টি রেকর্ড)
+${openLine}🪙 চলতি প্রাপ্ত RMB: ¥${statementRemittanceMetrics.totalRmb.toLocaleString()} (${statementRemittances.length} টি রেকর্ড)
+🏦 সমাপনী মোট প্রাপ্ত RMB: ¥${statementRemittanceMetrics.closingRmb.toLocaleString()}
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
                     }
+                    const combinedOpenLine = statementCombinedMetrics.hasWindow
+                      ? `📌 গত মাসের জের (চীন পাওনা): ৳${(statementCombinedMetrics.openingChinaDueBdt ?? 0).toLocaleString()} | হাতে RMB জের: ¥${(statementCombinedMetrics.openingRmbInHand ?? 0).toLocaleString()}\n`
+                      : '';
                     return `*${companyInfo.name} - সার্বিক শাখা অফিস ও আরএমবি স্টেটমেন্ট*
-📅 তারিখ: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+📅 সময়কাল: *${statementPeriodLabel}*
 ━━━━━━━━━━━━━━━━━━━━
-📦 প্রেরিত মাল: ৳${(metrics.totalBdtSent ?? 0).toLocaleString()}
-💰 শাখা RMB প্রাপ্তি: ¥${(metrics.totalRmbReceived ?? 0).toLocaleString()}
-🔄 ৩য়-পক্ষ কনভার্ট: ¥${(metrics.totalRmbConverted ?? 0).toLocaleString()}
-💵 প্রাপ্ত টাকা: ৳${(metrics.totalBdtReceived ?? 0).toLocaleString()}
-⚠️ ৩য়-পক্ষ বাকি: ৳${(metrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}
-🇨🇳 চীন অবশিষ্ট পাওনা: ৳${(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}
+${combinedOpenLine}📦 প্রেরিত মাল: ৳${(statementCombinedMetrics.totalBdtSent ?? 0).toLocaleString()}
+💰 শাখা RMB প্রাপ্তি: ¥${(statementCombinedMetrics.totalRmbReceived ?? 0).toLocaleString()}
+🪙 হাতে সমাপনী RMB: ¥${(statementCombinedMetrics.rmbBalanceInHand ?? 0).toLocaleString()}
+🔄 ৩য়-পক্ষ কনভার্ট: ¥${(statementCombinedMetrics.totalRmbConverted ?? 0).toLocaleString()}
+💵 প্রাপ্ত টাকা: ৳${(statementCombinedMetrics.totalBdtReceived ?? 0).toLocaleString()}
+🏦 চীন সরাসরি BDT: ৳${(statementCombinedMetrics.totalChinaDirectBdt ?? 0).toLocaleString()}
+⚠️ ৩য়-পক্ষ সমাপনী বাকি: ৳${(statementCombinedMetrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}
+🇨🇳 চীন সমাপনী পাওনা: ৳${(statementCombinedMetrics.chinaRemainingStockBdt ?? 0).toLocaleString()}
 ━━━━━━━━━━━━━━━━━━━━
 _${companyInfo.name}_`;
                   }}
@@ -3480,15 +4530,33 @@ _${companyInfo.name}_`;
                       ? 'rsr-china-remittances-statement'
                       : 'rsr-branch-office-statement'
                   }
-                  fileName={`rsr-wechat-${statementType}-${statementType === 'third_party' ? (statementPartyFilter !== 'all' ? statementPartyFilter.replace(/[\s/]/g, '_') : 'all_parties') : (statementBranchFilter !== 'all' ? statementBranchFilter.replace(/[\s/]/g, '_') : 'all_branches')}.png`}
+                  fileName={`rsr-wechat-${statementType}-${statementPeriodMode === 'month' ? statementMonth : statementPeriodMode}-${statementType === 'third_party' ? (statementPartyFilter !== 'all' ? statementPartyFilter.replace(/[\s/]/g, '_') : 'all_parties') : (statementBranchFilter !== 'all' ? statementBranchFilter.replace(/[\s/]/g, '_') : 'all_branches')}.png`}
                   getText={() => {
-                    const extra =
-                      statementType === 'third_party'
-                        ? `Party: ${statementPartyFilter}`
-                        : statementType === 'consignments' || statementType === 'remittances'
-                        ? `Branch: ${statementBranchFilter}`
-                        : 'Combined';
-                    return `${companyInfo.name} - Branch Statement\nType: ${statementType} (${extra})\nDate: ${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}`;
+                    if (statementType === 'third_party') {
+                      const partyLabel = statementPartyFilter !== 'all' ? statementPartyFilter : 'All 3rd Parties';
+                      const partyLines = statementPartyFilter === 'all' && statementPartyGroups.length > 0
+                        ? '\n' + statementPartyGroups.map((g) => `- ${g.partyName}: Opening ৳${g.openingDueBdt.toLocaleString()} | ¥${g.periodRmb.toLocaleString()} | Paid ৳${g.periodReceivedBdt.toLocaleString()} | Closing Due ৳${g.closingDueBdt.toLocaleString()}`).join('\n')
+                        : '';
+                      return `${companyInfo.name} - 3rd Party RMB Statement\nParty: ${partyLabel}\nPeriod: ${statementPeriodLabel}\nOpening Due: ৳${statementPartyMetrics.openingDue.toLocaleString()}\nRMB Converted: ¥${statementPartyMetrics.totalRmb.toLocaleString()}\nBDT Received: ৳${statementPartyMetrics.totalReceived.toLocaleString()}\nClosing Due BDT: ৳${statementPartyMetrics.closingDue.toLocaleString()}${partyLines}`;
+                    }
+                    if (statementType === 'consignments') {
+                      const branchLabel = statementBranchFilter !== 'all' ? statementBranchFilter : 'All Branches';
+                      const openLine = statementConsignmentMetrics.hasWindow
+                        ? `\nOpening Carried Forward: ৳${statementConsignmentMetrics.openingBdt.toLocaleString()} (¥${statementConsignmentMetrics.openingRmb.toLocaleString()})`
+                        : '';
+                      return `${companyInfo.name} - China Consignments Statement\nBranch: ${branchLabel}\nPeriod: ${statementPeriodLabel}${openLine}\nPeriod Consignments: ${statementConsignments.length} — ৳${statementConsignmentMetrics.totalBdt.toLocaleString()} (¥${statementConsignmentMetrics.totalRmb.toLocaleString()})\nClosing Total: ৳${statementConsignmentMetrics.closingBdt.toLocaleString()} (¥${statementConsignmentMetrics.closingRmb.toLocaleString()})`;
+                    }
+                    if (statementType === 'remittances') {
+                      const branchLabel = statementBranchFilter !== 'all' ? statementBranchFilter : 'All Branches';
+                      const openLine = statementRemittanceMetrics.hasWindow
+                        ? `\nOpening RMB: ¥${statementRemittanceMetrics.openingRmb.toLocaleString()}`
+                        : '';
+                      return `${companyInfo.name} - China RMB Remittances\nBranch: ${branchLabel}\nPeriod: ${statementPeriodLabel}${openLine}\nPeriod RMB Received: ¥${statementRemittanceMetrics.totalRmb.toLocaleString()} (${statementRemittances.length} entries)\nClosing Total RMB: ¥${statementRemittanceMetrics.closingRmb.toLocaleString()}`;
+                    }
+                    const combinedOpenLine = statementCombinedMetrics.hasWindow
+                      ? `\nOpening China Due: ৳${(statementCombinedMetrics.openingChinaDueBdt ?? 0).toLocaleString()} | Opening RMB: ¥${(statementCombinedMetrics.openingRmbInHand ?? 0).toLocaleString()}`
+                      : '';
+                    return `${companyInfo.name} - Combined Branch & RMB Statement\nPeriod: ${statementPeriodLabel}${combinedOpenLine}\nSent: ৳${(statementCombinedMetrics.totalBdtSent ?? 0).toLocaleString()}\nRMB Remitted: ¥${(statementCombinedMetrics.totalRmbReceived ?? 0).toLocaleString()}\nClosing RMB Balance: ¥${(statementCombinedMetrics.rmbBalanceInHand ?? 0).toLocaleString()}\nRMB Converted: ¥${(statementCombinedMetrics.totalRmbConverted ?? 0).toLocaleString()}\nBDT Received: ৳${(statementCombinedMetrics.totalBdtReceived ?? 0).toLocaleString()}\nClosing 3rd Party Due: ৳${(statementCombinedMetrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}\nClosing China Net Due: ৳${(statementCombinedMetrics.chinaRemainingStockBdt ?? 0).toLocaleString()}`;
                   }}
                 />
               </div>
@@ -3538,80 +4606,191 @@ _${companyInfo.name}_`;
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
                 {statementPartyFilter !== 'all' ? `${statementPartyFilter} - RMB কনভার্সন খাতা` : '৩য়-পক্ষ RMB কনভার্সন ও জমা-বকেয়া খাতা'}
               </h2>
-              <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>
-                তারিখ: <strong>{new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}</strong>
+              <div style={{ fontSize: '10px', color: '#1e293b', marginTop: '2px' }}>
+                সময়কাল: <strong>{statementPeriodLabel}</strong> • মুদ্রণ: {todayStr}
               </div>
             </div>
           </div>
 
           {/* Key Metrics Banner */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ borderLeft: '3px solid #d97706', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#b45309', textTransform: 'uppercase' }}>গত মাসের জের (Opening)</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#92400e' }}>৳{statementPartyMetrics.openingDue.toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>পূর্ববর্তী সমাপনী বাকি</div>
+            </div>
             <div style={{ borderLeft: '3px solid #0891b2', paddingLeft: '8px' }}>
-              <div style={{ fontSize: '9px', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>মোট কনভার্টকৃত RMB</div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>চলতি RMB কনভার্ট</div>
               <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>¥{statementPartyMetrics.totalRmb.toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>{statementConversions.length} টি লেনদেন {statementPartyFilter !== 'all' ? `(${statementPartyFilter})` : ''}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>প্রাপ্য: ৳{statementPartyMetrics.totalExpected.toLocaleString()}</div>
             </div>
             <div style={{ borderLeft: '3px solid #059669', paddingLeft: '8px' }}>
               <div style={{ fontSize: '9px', fontWeight: 700, color: '#059669', textTransform: 'uppercase' }}>মোট জমা প্রাপ্ত টাকা (BDT)</div>
               <div style={{ fontSize: '14px', fontWeight: 800, color: '#059669' }}>৳{statementPartyMetrics.totalReceived.toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>পরিশোধিত অংশ</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>{statementPartyMetrics.entryCount} টি লেনদেন</div>
             </div>
             <div style={{ borderLeft: '3px solid #e11d48', paddingLeft: '8px' }}>
-              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>বকেয়া বাকি (Due BDT)</div>
-              <div style={{ fontSize: '14px', fontWeight: 800, color: '#e11d48' }}>৳{statementPartyMetrics.totalDue.toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#e11d48' }}>বর্তমান পাওনা বাকি</div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>সমাপনী বাকি (Closing Due)</div>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#e11d48' }}>৳{statementPartyMetrics.closingDue.toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#e11d48' }}>জের + প্রাপ্য - জমা</div>
             </div>
           </div>
 
-          {/* 3rd Party RMB Conversions Table */}
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '6px', textTransform: 'uppercase' }}>
-              ৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া হিসাব {statementPartyFilter !== 'all' ? `(${statementPartyFilter})` : ''}
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                  <th style={{ padding: '6px', textAlign: 'center', width: '28px', border: '1px solid #334155' }}>#</th>
-                  <th style={{ padding: '6px', textAlign: 'left', width: '90px', border: '1px solid #334155' }}>ভাউচার নং</th>
-                  <th style={{ padding: '6px', textAlign: 'left', border: '1px solid #334155' }}>৩য়-পক্ষ পার্টি</th>
-                  <th style={{ padding: '6px', textAlign: 'right', width: '75px', border: '1px solid #334155' }}>RMB (¥)</th>
-                  <th style={{ padding: '6px', textAlign: 'right', width: '50px', border: '1px solid #334155' }}>রেট</th>
-                  <th style={{ padding: '6px', textAlign: 'right', width: '85px', border: '1px solid #334155' }}>প্রাপ্য BDT</th>
-                  <th style={{ padding: '6px', textAlign: 'right', width: '80px', border: '1px solid #334155' }}>জমা BDT</th>
-                  <th style={{ padding: '6px', textAlign: 'right', width: '80px', border: '1px solid #334155' }}>বাকি BDT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {statementConversions.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>
-                      কোনো কনভার্শন রেকর্ড নেই।
-                    </td>
+          {/* When All 3rd Parties selected: Section A = Party-Wise Summary Table */}
+          {statementPartyFilter === 'all' && statementPartyGroups.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '6px', textTransform: 'uppercase' }}>
+                ১. ৩য়-পক্ষ পার্টি-ভিত্তিক আলাদা হিসাব সারসংক্ষেপ ({statementPeriodLabel})
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                    <th style={{ padding: '5px', textAlign: 'center', width: '26px', border: '1px solid #334155' }}>#</th>
+                    <th style={{ padding: '5px', textAlign: 'left', border: '1px solid #334155' }}>৩য়-পক্ষ পার্টি</th>
+                    <th style={{ padding: '5px', textAlign: 'right', width: '88px', border: '1px solid #334155' }}>গত মাসের জের</th>
+                    <th style={{ padding: '5px', textAlign: 'right', width: '74px', border: '1px solid #334155' }}>RMB (¥)</th>
+                    <th style={{ padding: '5px', textAlign: 'right', width: '86px', border: '1px solid #334155' }}>প্রাপ্য BDT</th>
+                    <th style={{ padding: '5px', textAlign: 'right', width: '86px', border: '1px solid #334155' }}>জমা BDT</th>
+                    <th style={{ padding: '5px', textAlign: 'right', width: '92px', border: '1px solid #334155' }}>সমাপনী বাকি</th>
                   </tr>
-                ) : (
-                  statementConversions.slice(0, 18).map((cv, idx) => (
-                    <tr key={cv.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                      <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
-                      <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{cv.voucherNo}</td>
-                      <td style={{ padding: '5px', fontWeight: 600, border: '1px solid #cbd5e1' }}>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
-                      <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                        ¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
+                </thead>
+                <tbody>
+                  {statementPartyGroups.map((g, idx) => (
+                    <tr key={g.partyKey} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                      <td style={{ padding: '4px 5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                      <td style={{ padding: '4px 5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        {g.partyName} {g.phone ? `(${g.phone})` : ''}
                       </td>
-                      <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{cv.exchangeRate || 0}</td>
-                      <td style={{ padding: '5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                        ৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}
+                      <td style={{ padding: '4px 5px', textAlign: 'right', color: '#b45309', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{g.openingDueBdt.toLocaleString()}
                       </td>
-                      <td style={{ padding: '5px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                        ৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}
+                      <td style={{ padding: '4px 5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ¥{g.periodRmb.toLocaleString()}
                       </td>
-                      <td style={{ padding: '5px', textAlign: 'right', color: (cv.remainingDueBdt || 0) > 0 ? '#e11d48' : '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                        {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                      <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{g.periodExpectedBdt.toLocaleString()}
+                      </td>
+                      <td style={{ padding: '4px 5px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{g.periodReceivedBdt.toLocaleString()}
+                      </td>
+                      <td style={{ padding: '4px 5px', textAlign: 'right', color: g.closingDueBdt > 0 ? '#e11d48' : '#059669', fontWeight: 800, border: '1px solid #cbd5e1' }}>
+                        ৳{g.closingDueBdt.toLocaleString()}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 800 }}>
+                    <td colSpan={2} style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>সর্বমোট ({statementPartyGroups.length} পার্টি):</td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: '#b45309', border: '1px solid #cbd5e1' }}>৳{statementPartyMetrics.openingDue.toLocaleString()}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', border: '1px solid #cbd5e1' }}>¥{statementPartyMetrics.totalRmb.toLocaleString()}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>৳{statementPartyMetrics.totalExpected.toLocaleString()}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: '#059669', border: '1px solid #cbd5e1' }}>৳{statementPartyMetrics.totalReceived.toLocaleString()}</td>
+                    <td style={{ padding: '5px', textAlign: 'right', color: '#e11d48', border: '1px solid #cbd5e1' }}>৳{statementPartyMetrics.closingDue.toLocaleString()}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Section B: Separate Per-Party Detailed Conversion Ledgers */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '6px', textTransform: 'uppercase' }}>
+              {statementPartyFilter === 'all'
+                ? `২. পার্টি-ভিত্তিক আলাদা আলাদা বিস্তারিত লেনদেন খাতা (${statementPeriodLabel})`
+                : `${statementPartyFilter} — বিস্তারিত কনভার্সন ও জের খাতা (${statementPeriodLabel})`}
+            </div>
+            {statementPartyGroups.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
+                নির্বাচিত সময়ে কোনো কনভার্শন রেকর্ড বা জের নেই।
+              </div>
+            ) : (
+              statementPartyGroups.map((g, gIdx) => (
+                <div key={g.partyKey} style={{ marginBottom: '12px', breakInside: 'avoid' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderBottom: 'none', padding: '5px 8px', fontSize: '10px', fontWeight: 800, color: '#78350f' }}>
+                    <span>
+                      {statementPartyFilter === 'all' ? `${gIdx + 1}. ` : ''}{g.partyName} {g.phone ? `• ${g.phone}` : ''}
+                    </span>
+                    <span>
+                      প্রারম্ভিক জের: ৳{g.openingDueBdt.toLocaleString()} | সমাপনী বাকি: ৳{g.closingDueBdt.toLocaleString()}
+                    </span>
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
+                        <th style={{ padding: '5px', textAlign: 'center', width: '24px', border: '1px solid #334155' }}>#</th>
+                        <th style={{ padding: '5px', textAlign: 'left', width: '70px', border: '1px solid #334155' }}>তারিখ</th>
+                        <th style={{ padding: '5px', textAlign: 'left', width: '82px', border: '1px solid #334155' }}>ভাউচার / বিবরণ</th>
+                        <th style={{ padding: '5px', textAlign: 'right', width: '68px', border: '1px solid #334155' }}>RMB (¥)</th>
+                        <th style={{ padding: '5px', textAlign: 'right', width: '44px', border: '1px solid #334155' }}>রেট</th>
+                        <th style={{ padding: '5px', textAlign: 'right', width: '78px', border: '1px solid #334155' }}>প্রাপ্য BDT</th>
+                        <th style={{ padding: '5px', textAlign: 'right', width: '78px', border: '1px solid #334155' }}>জমা BDT</th>
+                        <th style={{ padding: '5px', textAlign: 'right', width: '82px', border: '1px solid #334155' }}>জের/ব্যালেন্স</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ backgroundColor: '#fffbeb', fontWeight: 700 }}>
+                        <td style={{ padding: '4px 5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>-</td>
+                        <td style={{ padding: '4px 5px', border: '1px solid #cbd5e1' }}>Opening</td>
+                        <td colSpan={5} style={{ padding: '4px 5px', border: '1px solid #cbd5e1', color: '#92400e' }}>
+                          প্রারম্ভিক জের (গত মাসের সমাপনী বাকি)
+                        </td>
+                        <td style={{ padding: '4px 5px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#b45309' }}>
+                          ৳{g.openingDueBdt.toLocaleString()}
+                        </td>
+                      </tr>
+                      {g.entries.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} style={{ padding: '8px', textAlign: 'center', color: '#94a3b8', border: '1px solid #cbd5e1' }}>
+                            এই সময়ে নতুন কোনো লেনদেন নেই।
+                          </td>
+                        </tr>
+                      ) : (
+                        g.entries.map((tx, idx) => (
+                          <tr key={tx.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                            <td style={{ padding: '4px 5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                            <td style={{ padding: '4px 5px', border: '1px solid #cbd5e1' }}>{tx.date}</td>
+                            <td style={{ padding: '4px 5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                              {tx.voucherNo}
+                              {tx.kind === 'collection' && (
+                                <span style={{ display: 'block', fontSize: '9px', fontWeight: 500, color: '#059669' }}>পূর্বের জের আদায়</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '4px 5px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                              {tx.rmbAmount > 0 ? `¥${tx.rmbAmount.toLocaleString()}` : '-'}
+                            </td>
+                            <td style={{ padding: '4px 5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
+                              {tx.exchangeRate > 0 ? tx.exchangeRate : '-'}
+                            </td>
+                            <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                              {tx.expectedBdt > 0 ? `৳${tx.expectedBdt.toLocaleString()}` : '-'}
+                            </td>
+                            <td style={{ padding: '4px 5px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                              ৳{tx.receivedBdt.toLocaleString()}
+                            </td>
+                            <td style={{ padding: '4px 5px', textAlign: 'right', color: tx.runningBalance > 0 ? '#e11d48' : '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                              ৳{tx.runningBalance.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 800 }}>
+                        <td colSpan={3} style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
+                          {g.partyName} মোট / সমাপনী জের:
+                        </td>
+                        <td style={{ padding: '5px', textAlign: 'right', color: '#0891b2', border: '1px solid #cbd5e1' }}>¥{g.periodRmb.toLocaleString()}</td>
+                        <td style={{ padding: '5px', border: '1px solid #cbd5e1' }}></td>
+                        <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1' }}>৳{g.periodExpectedBdt.toLocaleString()}</td>
+                        <td style={{ padding: '5px', textAlign: 'right', color: '#059669', border: '1px solid #cbd5e1' }}>৳{g.periodReceivedBdt.toLocaleString()}</td>
+                        <td style={{ padding: '5px', textAlign: 'right', color: g.closingDueBdt > 0 ? '#e11d48' : '#059669', border: '1px solid #cbd5e1' }}>৳{g.closingDueBdt.toLocaleString()}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ))
+            )}
           </div>
 
           {/* Signatures */}
@@ -3653,7 +4832,7 @@ _${companyInfo.name}_`;
               <div>
                 <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{companyInfo.name}</h1>
                 <p style={{ margin: '1px 0', fontSize: '11px', color: '#475569' }}>{companyInfo.businessTypeBn}</p>
-                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}><CompanyAddresses info={companyInfo} /></p>
+                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}><CompanyAddresses info={companyInfo} /> • মোবা: {(companyInfo.phones || []).join(', ')}</p>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -3663,31 +4842,62 @@ _${companyInfo.name}_`;
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
                 {statementBranchFilter !== 'all' ? `${statementBranchFilter} - প্রেরিত চালান বিবরণী` : 'চীন শাখা অফিসে প্রেরিত মালামাল চালান বিবরণী'}
               </h2>
-              <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>তারিখ: <strong>{new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}</strong></div>
+              <div style={{ fontSize: '10px', color: '#1e293b', marginTop: '2px' }}>সময়কাল: <strong>{statementPeriodLabel}</strong> • মুদ্রণ: {todayStr}</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ borderLeft: '3px solid #d97706', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#b45309', textTransform: 'uppercase' }}>গত মাসের জের (Opening)</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#92400e' }}>৳{statementConsignmentMetrics.openingBdt.toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>≈ ¥{statementConsignmentMetrics.openingRmb.toLocaleString()}</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #2563eb', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>চলতি চালান ({statementConsignments.length} টি)</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>৳{statementConsignmentMetrics.totalBdt.toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#0891b2' }}>≈ ¥{statementConsignmentMetrics.totalRmb.toLocaleString()}</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #0f172a', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase' }}>সমাপনী মোট (BDT)</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>৳{statementConsignmentMetrics.closingBdt.toLocaleString()}</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #0891b2', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>সমাপনী মোট RMB (¥)</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0891b2' }}>¥{statementConsignmentMetrics.closingRmb.toLocaleString()}</div>
             </div>
           </div>
 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: '16px' }}>
             <thead>
               <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                <th style={{ padding: '6px', textAlign: 'center', width: '30px' }}>#</th>
-                <th style={{ padding: '6px', textAlign: 'left', width: '90px' }}>চালান নং</th>
-                <th style={{ padding: '6px', textAlign: 'left', width: '70px' }}>তারিখ</th>
-                <th style={{ padding: '6px', textAlign: 'left' }}>গন্তব্য ও শিপিং</th>
-                <th style={{ padding: '6px', textAlign: 'right', width: '60px' }}>আইটেম</th>
-                <th style={{ padding: '6px', textAlign: 'right', width: '100px' }}>মূল্য (BDT)</th>
-                <th style={{ padding: '6px', textAlign: 'right', width: '90px' }}>RMB (¥)</th>
+                <th style={{ padding: '6px', textAlign: 'center', width: '28px', border: '1px solid #334155' }}>#</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '88px', border: '1px solid #334155' }}>চালান নং</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '70px', border: '1px solid #334155' }}>তারিখ</th>
+                <th style={{ padding: '6px', textAlign: 'left', border: '1px solid #334155' }}>গন্তব্য ও শিপিং</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '58px', border: '1px solid #334155' }}>আইটেম</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '98px', border: '1px solid #334155' }}>মূল্য (BDT)</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '88px', border: '1px solid #334155' }}>RMB (¥)</th>
               </tr>
             </thead>
             <tbody>
+              {statementConsignmentMetrics.hasWindow && (
+                <tr style={{ backgroundColor: '#fffbeb', fontWeight: 700 }}>
+                  <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>-</td>
+                  <td colSpan={4} style={{ padding: '5px', border: '1px solid #cbd5e1', color: '#92400e' }}>
+                    গত মাসের প্রারম্ভিক জের ({statementConsignmentMetrics.priorCount} টি পূর্ববর্তী চালান)
+                  </td>
+                  <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#b45309' }}>৳{statementConsignmentMetrics.openingBdt.toLocaleString()}</td>
+                  <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#b45309' }}>¥{statementConsignmentMetrics.openingRmb.toLocaleString()}</td>
+                </tr>
+              )}
               {statementConsignments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>
-                    কোনো চালান রেকর্ড নেই।
+                  <td colSpan={7} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', border: '1px solid #cbd5e1' }}>
+                    নির্বাচিত সময়ে কোনো নতুন চালান রেকর্ড নেই।
                   </td>
                 </tr>
               ) : (
-                statementConsignments.slice(0, 18).map((c, idx) => (
+                statementConsignments.map((c, idx) => (
                   <tr key={c.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                     <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
                     <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{c.consignmentNo}</td>
@@ -3700,7 +4910,32 @@ _${companyInfo.name}_`;
                 ))
               )}
             </tbody>
+            <tfoot>
+              <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 800 }}>
+                <td colSpan={5} style={{ padding: '6px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
+                  {statementConsignmentMetrics.hasWindow
+                    ? `সমাপনী সর্বমোট (জের + চলতি ${statementConsignments.length} টি চালান):`
+                    : `মোট (${statementConsignments.length} টি চালান):`}
+                </td>
+                <td style={{ padding: '6px', textAlign: 'right', border: '1px solid #cbd5e1' }}>৳{statementConsignmentMetrics.closingBdt.toLocaleString()}</td>
+                <td style={{ padding: '6px', textAlign: 'right', color: '#0891b2', border: '1px solid #cbd5e1' }}>¥{statementConsignmentMetrics.closingRmb.toLocaleString()}</td>
+              </tr>
+            </tfoot>
           </table>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '50px', paddingTop: '16px' }}>
+            <div style={{ textAlign: 'center', width: '160px' }}>
+              <div style={{ borderTop: '1px dashed #64748b', paddingTop: '4px', fontSize: '10px', color: '#334155', fontWeight: 600 }}>
+                শাখা অফিস প্রাপক
+              </div>
+            </div>
+            <div style={{ textAlign: 'center', width: '200px' }}>
+              <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontSize: '11px', color: '#0f172a', fontWeight: 700 }}>
+                কর্তৃপক্ষের স্বাক্ষর ও সিলমোহর
+              </div>
+              <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>{companyInfo.name}</div>
+            </div>
+          </div>
         </div>
 
         {/* TARGET 3: CHINA RMB REMITTANCES STATEMENT */}
@@ -3724,6 +4959,7 @@ _${companyInfo.name}_`;
               <div>
                 <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{companyInfo.name}</h1>
                 <p style={{ margin: '1px 0', fontSize: '11px', color: '#475569' }}>{companyInfo.businessTypeBn}</p>
+                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}><CompanyAddresses info={companyInfo} /> • মোবা: {(companyInfo.phones || []).join(', ')}</p>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -3733,30 +4969,54 @@ _${companyInfo.name}_`;
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
                 {statementBranchFilter !== 'all' ? `${statementBranchFilter} - RMB প্রাপ্তি বিবরণী` : 'চীন শাখা অফিস হতে RMB প্রাপ্তি হিস্ট্রি বিবরণী'}
               </h2>
-              <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>তারিখ: <strong>{new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}</strong></div>
+              <div style={{ fontSize: '10px', color: '#1e293b', marginTop: '2px' }}>সময়কাল: <strong>{statementPeriodLabel}</strong> • মুদ্রণ: {todayStr}</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ borderLeft: '3px solid #d97706', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#b45309', textTransform: 'uppercase' }}>গত মাসের জের RMB</div>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#92400e' }}>¥{statementRemittanceMetrics.openingRmb.toLocaleString()}</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #0891b2', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>চলতি RMB প্রাপ্তি ({statementRemittances.length} টি)</div>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0891b2' }}>¥{statementRemittanceMetrics.totalRmb.toLocaleString()}</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #0f172a', paddingLeft: '8px' }}>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase' }}>সমাপনী মোট RMB</div>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>¥{statementRemittanceMetrics.closingRmb.toLocaleString()}</div>
             </div>
           </div>
 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: '16px' }}>
             <thead>
               <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                <th style={{ padding: '6px', textAlign: 'center', width: '30px' }}>#</th>
-                <th style={{ padding: '6px', textAlign: 'left', width: '100px' }}>রেফারেন্স নং</th>
-                <th style={{ padding: '6px', textAlign: 'left', width: '80px' }}>তারিখ</th>
-                <th style={{ padding: '6px', textAlign: 'left' }}>শাখা অফিস</th>
-                <th style={{ padding: '6px', textAlign: 'left', width: '100px' }}>মাধ্যম</th>
-                <th style={{ padding: '6px', textAlign: 'right', width: '110px' }}>প্রাপ্ত RMB (¥)</th>
+                <th style={{ padding: '6px', textAlign: 'center', width: '30px', border: '1px solid #334155' }}>#</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '100px', border: '1px solid #334155' }}>রেফারেন্স নং</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '80px', border: '1px solid #334155' }}>তারিখ</th>
+                <th style={{ padding: '6px', textAlign: 'left', border: '1px solid #334155' }}>শাখা অফিস</th>
+                <th style={{ padding: '6px', textAlign: 'left', width: '100px', border: '1px solid #334155' }}>মাধ্যম</th>
+                <th style={{ padding: '6px', textAlign: 'right', width: '110px', border: '1px solid #334155' }}>প্রাপ্ত RMB (¥)</th>
               </tr>
             </thead>
             <tbody>
+              {statementRemittanceMetrics.hasWindow && (
+                <tr style={{ backgroundColor: '#fffbeb', fontWeight: 700 }}>
+                  <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>-</td>
+                  <td colSpan={4} style={{ padding: '5px', border: '1px solid #cbd5e1', color: '#92400e' }}>
+                    গত মাসের প্রারম্ভিক জের ({statementRemittanceMetrics.priorCount} টি পূর্ববর্তী এন্ট্রি)
+                  </td>
+                  <td style={{ padding: '5px', textAlign: 'right', border: '1px solid #cbd5e1', color: '#b45309' }}>¥{statementRemittanceMetrics.openingRmb.toLocaleString()}</td>
+                </tr>
+              )}
               {statementRemittances.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>
-                    কোনো RMB রেকর্ড নেই।
+                  <td colSpan={6} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', border: '1px solid #cbd5e1' }}>
+                    নির্বাচিত সময়ে কোনো নতুন RMB রেকর্ড নেই।
                   </td>
                 </tr>
               ) : (
-                statementRemittances.slice(0, 18).map((r, idx) => (
+                statementRemittances.map((r, idx) => (
                   <tr key={r.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                     <td style={{ padding: '5px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
                     <td style={{ padding: '5px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{r.referenceNo}</td>
@@ -3768,7 +5028,31 @@ _${companyInfo.name}_`;
                 ))
               )}
             </tbody>
+            <tfoot>
+              <tr style={{ backgroundColor: '#f1f5f9', fontWeight: 800 }}>
+                <td colSpan={5} style={{ padding: '6px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
+                  {statementRemittanceMetrics.hasWindow
+                    ? `সমাপনী মোট প্রাপ্ত RMB (জের + চলতি ${statementRemittances.length} টি):`
+                    : `সর্বমোট প্রাপ্ত RMB (${statementRemittances.length} টি):`}
+                </td>
+                <td style={{ padding: '6px', textAlign: 'right', color: '#0891b2', border: '1px solid #cbd5e1' }}>¥{statementRemittanceMetrics.closingRmb.toLocaleString()}</td>
+              </tr>
+            </tfoot>
           </table>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '50px', paddingTop: '16px' }}>
+            <div style={{ textAlign: 'center', width: '160px' }}>
+              <div style={{ borderTop: '1px dashed #64748b', paddingTop: '4px', fontSize: '10px', color: '#334155', fontWeight: 600 }}>
+                শাখা হিসাবরক্ষক
+              </div>
+            </div>
+            <div style={{ textAlign: 'center', width: '200px' }}>
+              <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontSize: '11px', color: '#0f172a', fontWeight: 700 }}>
+                কর্তৃপক্ষের স্বাক্ষর ও সিলমোহর
+              </div>
+              <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>{companyInfo.name}</div>
+            </div>
+          </div>
         </div>
 
         {/* TARGET 4: COMBINED FULL STATEMENT */}
@@ -3810,40 +5094,58 @@ _${companyInfo.name}_`;
               <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
                 শাখা অফিস ও ৩য়-পক্ষ সার্বিক পূর্ণ বিবরণী
               </h2>
-              <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>
-                তারিখ: <strong>{new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}</strong>
+              <div style={{ fontSize: '10px', color: '#1e293b', marginTop: '2px' }}>
+                সময়কাল: <strong>{effectiveCombinedPeriodLabel}</strong> • মুদ্রণ: {todayStr}
               </div>
             </div>
           </div>
 
-          {/* Key Metrics Banner */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '14px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          {/* Key Metrics Banner (with Opening -> Closing Carry-Forward) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <div style={{ borderLeft: '3px solid #2563eb', paddingLeft: '6px' }}>
               <div style={{ fontSize: '9px', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>মোট চালান পাঠানো</div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>৳{(metrics.totalBdtSent ?? 0).toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#0891b2' }}>≈ ¥{(metrics.totalRmbEstSent ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>৳{(statementCombinedMetrics.totalBdtSent ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#0891b2' }}>≈ ¥{(statementCombinedMetrics.totalRmbEstSent ?? 0).toLocaleString()} ({statementCombinedConsignments.length} টি)</div>
             </div>
             <div style={{ borderLeft: '3px solid #0891b2', paddingLeft: '6px' }}>
               <div style={{ fontSize: '9px', fontWeight: 700, color: '#0891b2', textTransform: 'uppercase' }}>শাখা হতে প্রাপ্ত RMB</div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0891b2' }}>¥{(metrics.totalRmbReceived ?? 0).toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>{filteredRemittances.length} টি প্রাপ্তি</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0891b2' }}>¥{(statementCombinedMetrics.totalRmbReceived ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>{statementCombinedRemittances.length} টি প্রাপ্তি</div>
             </div>
             <div style={{ borderLeft: '3px solid #059669', paddingLeft: '6px' }}>
-              <div style={{ fontSize: '9px', fontWeight: 700, color: '#059669', textTransform: 'uppercase' }}>হাতে RMB ব্যালেন্স</div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#059669' }}>¥{(metrics.rmbBalanceInHand ?? 0).toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#64748b' }}>কনভার্ট: ¥{(metrics.totalRmbConverted ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#059669', textTransform: 'uppercase' }}>হাতে সমাপনী RMB</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#059669' }}>¥{(statementCombinedMetrics.rmbBalanceInHand ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#64748b' }}>
+                {statementCombinedMetrics.hasWindow
+                  ? `জের: ¥${(statementCombinedMetrics.openingRmbInHand ?? 0).toLocaleString()} | কনভার্ট: ¥${(statementCombinedMetrics.totalRmbConverted ?? 0).toLocaleString()}`
+                  : `কনভার্ট: ¥${(statementCombinedMetrics.totalRmbConverted ?? 0).toLocaleString()}`}
+              </div>
             </div>
             <div style={{ borderLeft: '3px solid #e11d48', paddingLeft: '6px' }}>
-              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>চীন অবশিষ্ট পাওনা</div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#e11d48' }}>৳{(metrics.chinaRemainingStockBdt ?? 0).toLocaleString()}</div>
-              <div style={{ fontSize: '9px', color: '#059669' }}>জমা: ৳{(metrics.totalBdtReceived ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', fontWeight: 700, color: '#e11d48', textTransform: 'uppercase' }}>চীন সমাপনী পাওনা</div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#e11d48' }}>৳{(statementCombinedMetrics.chinaRemainingStockBdt ?? 0).toLocaleString()}</div>
+              <div style={{ fontSize: '9px', color: '#059669' }}>
+                {statementCombinedMetrics.hasWindow
+                  ? `জের: ৳${(statementCombinedMetrics.openingChinaDueBdt ?? 0).toLocaleString()} | সরাসরি: ৳${(statementCombinedMetrics.totalChinaDirectBdt ?? 0).toLocaleString()}`
+                  : `জমা: ৳${(statementCombinedMetrics.totalBdtReceived ?? 0).toLocaleString()} | সরাসরি: ৳${(statementCombinedMetrics.totalChinaDirectBdt ?? 0).toLocaleString()}`}
+              </div>
             </div>
           </div>
 
+          {/* Carry-Forward Rollover Strip */}
+          {statementCombinedMetrics.hasWindow && (
+            <div style={{ marginBottom: '12px', padding: '7px 10px', backgroundColor: '#fffbeb', border: '1px solid #f59e0b', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 700, color: '#78350f' }}>
+              <span>গত মাসের জের (চীন): ৳{(statementCombinedMetrics.openingChinaDueBdt ?? 0).toLocaleString()}</span>
+              <span>গত মাসের RMB জের: ¥{(statementCombinedMetrics.openingRmbInHand ?? 0).toLocaleString()}</span>
+              <span>৩য়-পক্ষ জের: ৳{(statementCombinedMetrics.openingThirdPartyDueBdt ?? 0).toLocaleString()}</span>
+              <span>৩য়-পক্ষ সমাপনী বাকি: ৳{(statementCombinedMetrics.totalThirdPartyDueBdt ?? 0).toLocaleString()}</span>
+            </div>
+          )}
+
           {/* Table 1: Consignments */}
-          <div style={{ marginBottom: '14px' }}>
+          <div style={{ marginBottom: '12px' }}>
             <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase' }}>
-              ১. শাখা অফিসে প্রেরিত মালামালের বিবরণ (Consignments Sent)
+              ১. শাখা অফিসে প্রেরিত মালামালের বিবরণ ({effectiveCombinedPeriodLabel})
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
               <thead>
@@ -3858,69 +5160,170 @@ _${companyInfo.name}_`;
                 </tr>
               </thead>
               <tbody>
-                {filteredConsignments.slice(0, 7).map((c, idx) => (
-                  <tr key={c.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                    <td style={{ padding: '4px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
-                    <td style={{ padding: '4px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{c.consignmentNo}</td>
-                    <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{c.date}</td>
-                    <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{c.branchName} ({c.shippingMethod})</td>
-                    <td style={{ padding: '4px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
-                      {c.items?.reduce((s, i) => s + (Number(i.quantity) || 0), 0) || 0}
-                    </td>
-                    <td style={{ padding: '4px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ৳{(c.totalBdtValue || 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '4px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ¥{(c.totalRmbEstimated ?? 0).toLocaleString()}
+                {statementCombinedConsignments.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '10px', textAlign: 'center', color: '#94a3b8', border: '1px solid #cbd5e1' }}>
+                      নির্বাচিত সময়ে কোনো চালান নেই।
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  statementCombinedConsignments.map((c, idx) => (
+                    <tr key={c.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                      <td style={{ padding: '4px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                      <td style={{ padding: '4px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{c.consignmentNo}</td>
+                      <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{c.date}</td>
+                      <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{c.branchName} ({c.shippingMethod})</td>
+                      <td style={{ padding: '4px', textAlign: 'right', border: '1px solid #cbd5e1' }}>
+                        {c.items?.reduce((s, i) => s + (Number(i.quantity) || 0), 0) || 0}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{(c.totalBdtValue || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ¥{(c.totalRmbEstimated ?? 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
 
-          {/* Table 2: 3rd Party RMB Conversions */}
-          <div style={{ marginBottom: '16px' }}>
+          {/* Table 2: 3rd Party-Wise Separate Summary */}
+          <div style={{ marginBottom: '12px' }}>
             <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase' }}>
-              ২. ৩য়-পক্ষ RMB ➔ BDT কনভার্সন ও জমা-বকেয়া হিসাব
+              ২. ৩য়-পক্ষ পার্টি-ভিত্তিক আলাদা হিসাব ({effectiveCombinedPeriodLabel})
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#1e293b', color: '#ffffff' }}>
+                  <th style={{ padding: '5px', textAlign: 'center', width: '24px', border: '1px solid #334155' }}>#</th>
+                  <th style={{ padding: '5px', textAlign: 'left', border: '1px solid #334155' }}>৩য়-পক্ষ পার্টি</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '82px', border: '1px solid #334155' }}>গত মাসের জের</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '70px', border: '1px solid #334155' }}>RMB (¥)</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '82px', border: '1px solid #334155' }}>প্রাপ্য BDT</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '82px', border: '1px solid #334155' }}>জমা BDT</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '86px', border: '1px solid #334155' }}>সমাপনী বাকি</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statementCombinedThirdPartyLedgers.summaries.filter((g) => g.openingDueBdt !== 0 || g.periodRmb > 0 || g.periodExpectedBdt > 0 || g.periodReceivedBdt > 0 || g.closingDueBdt !== 0).length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '8px', textAlign: 'center', color: '#94a3b8', border: '1px solid #cbd5e1' }}>
+                      নির্বাচিত সময়ে কোনো ৩য়-পক্ষ হিসাব নেই।
+                    </td>
+                  </tr>
+                ) : (
+                  statementCombinedThirdPartyLedgers.summaries
+                    .filter((g) => g.openingDueBdt !== 0 || g.periodRmb > 0 || g.periodExpectedBdt > 0 || g.periodReceivedBdt > 0 || g.closingDueBdt !== 0)
+                    .map((g, idx) => (
+                      <tr key={g.partyKey} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                        <td style={{ padding: '4px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                        <td style={{ padding: '4px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{g.partyName}</td>
+                        <td style={{ padding: '4px', textAlign: 'right', color: '#b45309', fontWeight: 700, border: '1px solid #cbd5e1' }}>৳{g.openingDueBdt.toLocaleString()}</td>
+                        <td style={{ padding: '4px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>¥{g.periodRmb.toLocaleString()}</td>
+                        <td style={{ padding: '4px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>৳{g.periodExpectedBdt.toLocaleString()}</td>
+                        <td style={{ padding: '4px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>৳{g.periodReceivedBdt.toLocaleString()}</td>
+                        <td style={{ padding: '4px', textAlign: 'right', color: g.closingDueBdt > 0 ? '#e11d48' : '#059669', fontWeight: 800, border: '1px solid #cbd5e1' }}>৳{g.closingDueBdt.toLocaleString()}</td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Table 3: Detailed 3rd Party RMB Conversions */}
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase' }}>
+              ৩. বিস্তারিত RMB ➔ BDT কনভার্সন ভাউচার ({effectiveCombinedPeriodLabel})
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
-                  <th style={{ padding: '5px', textAlign: 'center', width: '28px', border: '1px solid #334155' }}>#</th>
-                  <th style={{ padding: '5px', textAlign: 'left', width: '90px', border: '1px solid #334155' }}>ভাউচার নং</th>
+                  <th style={{ padding: '5px', textAlign: 'center', width: '26px', border: '1px solid #334155' }}>#</th>
+                  <th style={{ padding: '5px', textAlign: 'left', width: '68px', border: '1px solid #334155' }}>তারিখ</th>
+                  <th style={{ padding: '5px', textAlign: 'left', width: '76px', border: '1px solid #334155' }}>ভাউচার নং</th>
                   <th style={{ padding: '5px', textAlign: 'left', border: '1px solid #334155' }}>৩য়-পক্ষ পার্টি</th>
-                  <th style={{ padding: '5px', textAlign: 'right', width: '75px', border: '1px solid #334155' }}>RMB (¥)</th>
-                  <th style={{ padding: '5px', textAlign: 'right', width: '50px', border: '1px solid #334155' }}>রেট</th>
-                  <th style={{ padding: '5px', textAlign: 'right', width: '85px', border: '1px solid #334155' }}>প্রাপ্য BDT</th>
-                  <th style={{ padding: '5px', textAlign: 'right', width: '80px', border: '1px solid #334155' }}>জমা BDT</th>
-                  <th style={{ padding: '5px', textAlign: 'right', width: '80px', border: '1px solid #334155' }}>বাকি BDT</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '70px', border: '1px solid #334155' }}>RMB (¥)</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '46px', border: '1px solid #334155' }}>রেট</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '80px', border: '1px solid #334155' }}>প্রাপ্য BDT</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '78px', border: '1px solid #334155' }}>জমা BDT</th>
+                  <th style={{ padding: '5px', textAlign: 'right', width: '76px', border: '1px solid #334155' }}>বাকি BDT</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredConversions.slice(0, 7).map((cv, idx) => (
-                  <tr key={cv.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                    <td style={{ padding: '4px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
-                    <td style={{ padding: '4px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{cv.voucherNo}</td>
-                    <td style={{ padding: '4px', fontWeight: 600, border: '1px solid #cbd5e1' }}>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
-                    <td style={{ padding: '4px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '4px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{cv.exchangeRate || 0}</td>
-                    <td style={{ padding: '4px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '4px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      ৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '4px', textAlign: 'right', color: (cv.remainingDueBdt || 0) > 0 ? '#e11d48' : '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
-                      {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                {statementCombinedConversions.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} style={{ padding: '10px', textAlign: 'center', color: '#94a3b8', border: '1px solid #cbd5e1' }}>
+                      নির্বাচিত সময়ে কোনো কনভার্শন নেই।
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  statementCombinedConversions.map((cv, idx) => (
+                    <tr key={cv.id} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                      <td style={{ padding: '4px', textAlign: 'center', border: '1px solid #cbd5e1' }}>{idx + 1}</td>
+                      <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{cv.date}</td>
+                      <td style={{ padding: '4px', fontWeight: 700, border: '1px solid #cbd5e1' }}>{cv.voucherNo}</td>
+                      <td style={{ padding: '4px', fontWeight: 600, border: '1px solid #cbd5e1' }}>{cv.partyName || (cv as any).thirdPartyName || '3rd Party'}</td>
+                      <td style={{ padding: '4px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ¥{((cv.rmbAmountGiven ?? (cv as any).rmbAmount) || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'right', border: '1px solid #cbd5e1' }}>{cv.exchangeRate || 0}</td>
+                      <td style={{ padding: '4px', textAlign: 'right', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{((cv.expectedBdtAmount ?? (cv as any).totalBdtExpected) || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        ৳{((cv.receivedBdtAmount ?? (cv as any).bdtReceived) || 0).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '4px', textAlign: 'right', color: (cv.remainingDueBdt || 0) > 0 ? '#e11d48' : '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>
+                        {(cv.remainingDueBdt || 0) > 0 ? `৳${(cv.remainingDueBdt || 0).toLocaleString()}` : 'পরিশোধিত'}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Table 4: Branch RMB Remittances & China Direct BDT Payments Summary */}
+          {(statementCombinedRemittances.length > 0 || statementCombinedDirectPayments.length > 0) && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase' }}>
+                ৪. শাখা RMB প্রাপ্তি ({statementCombinedRemittances.length} টি) ও চীন সরাসরি BDT পেমেন্ট ({statementCombinedDirectPayments.length} টি)
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#1e293b', color: '#ffffff' }}>
+                    <th style={{ padding: '5px', textAlign: 'left', width: '75px', border: '1px solid #334155' }}>তারিখ</th>
+                    <th style={{ padding: '5px', textAlign: 'left', width: '95px', border: '1px solid #334155' }}>ধরন / রেফারেন্স</th>
+                    <th style={{ padding: '5px', textAlign: 'left', border: '1px solid #334155' }}>শাখা ও মাধ্যম</th>
+                    <th style={{ padding: '5px', textAlign: 'right', width: '95px', border: '1px solid #334155' }}>RMB (¥)</th>
+                    <th style={{ padding: '5px', textAlign: 'right', width: '95px', border: '1px solid #334155' }}>সরাসরি BDT (৳)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statementCombinedRemittances.map((r) => (
+                    <tr key={`cr-${r.id}`}>
+                      <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{r.date}</td>
+                      <td style={{ padding: '4px', fontWeight: 700, border: '1px solid #cbd5e1' }}>RMB • {r.referenceNo}</td>
+                      <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{r.branchName} ({r.receivedVia})</td>
+                      <td style={{ padding: '4px', textAlign: 'right', color: '#0891b2', fontWeight: 700, border: '1px solid #cbd5e1' }}>¥{(r.rmbAmount || 0).toLocaleString()}</td>
+                      <td style={{ padding: '4px', textAlign: 'right', border: '1px solid #cbd5e1' }}>-</td>
+                    </tr>
+                  ))}
+                  {statementCombinedDirectPayments.map((p) => (
+                    <tr key={`cd-${p.id}`}>
+                      <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{p.date}</td>
+                      <td style={{ padding: '4px', fontWeight: 700, border: '1px solid #cbd5e1' }}>BDT • {p.referenceNo}</td>
+                      <td style={{ padding: '4px', border: '1px solid #cbd5e1' }}>{p.branchName} ({p.paymentMethod})</td>
+                      <td style={{ padding: '4px', textAlign: 'right', border: '1px solid #cbd5e1' }}>-</td>
+                      <td style={{ padding: '4px', textAlign: 'right', color: '#059669', fontWeight: 700, border: '1px solid #cbd5e1' }}>৳{(p.amountBdt || 0).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Signatures */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '40px', paddingTop: '16px' }}>

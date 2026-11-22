@@ -24,6 +24,11 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error caught by ErrorBoundary:', error, errorInfo);
+    try {
+      document.getElementById('__rsr_splash__')?.remove();
+    } catch {
+      /* ignore */
+    }
     this.setState({ errorInfo });
   }
 

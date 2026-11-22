@@ -312,7 +312,7 @@ export const storageService = {
       _syncedAt: s?._syncedAt ? Number(s._syncedAt) : undefined,
     }));
 
-    stockItems.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999));
+    stockItems.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) || String(a.id).localeCompare(String(b.id)));
 
     return stockItems;
   },
@@ -334,7 +334,7 @@ export const storageService = {
       _syncedAt: s?._syncedAt ? Number(s._syncedAt) : Date.now(),
     }));
 
-    cleanList.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999));
+    cleanList.sort((a, b) => (a.sortOrder ?? 999999) - (b.sortOrder ?? 999999) || String(a.id).localeCompare(String(b.id)));
     saveToStorage(STORAGE_KEYS.STOCK, cleanList);
     return cleanList;
   },
@@ -373,15 +373,20 @@ export const storageService = {
   },
 
   reorderStockItems: (items: StockItem[]): void => {
+    const prevById = new Map(storageService.getStock().map((s) => [s.id, s.sortOrder]));
     const reordered = items.map((item, index) => ({
       ...item,
       sortOrder: index + 1,
     }));
     saveToStorage(STORAGE_KEYS.STOCK, reordered);
-    reordered.forEach((item) => {
-      cloudDbService.saveDocument('stock', item).catch((err) => {
-        console.warn('[Cloud Sync] Stock reorder push note:', err);
-      });
+    // Only send changed sortOrders (or all if normalizing duplicates) in a single atomic batch
+    const changed = reordered.filter((item) => prevById.get(item.id) !== item.sortOrder);
+    const updates = (changed.length > 0 ? changed : reordered).map((item) => ({
+      id: item.id,
+      sortOrder: item.sortOrder,
+    }));
+    cloudDbService.reorderStockSortOrders(updates).catch((err) => {
+      console.warn('[Cloud Sync] Stock reorder push note:', err);
     });
   },
 

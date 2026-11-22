@@ -25,6 +25,7 @@ import {
   Unsubscribe,
   enableIndexedDbPersistence,
   increment,
+  writeBatch,
 } from 'firebase/firestore';
 import fileConfig from '../../firebase-applet-config.json';
 import { initDeviceRole, stampForCloud, filterForDevice } from './deviceRole';
@@ -348,6 +349,52 @@ export const cloudDbService = {
     }
   },
 
+  /**
+   * Atomically update only sortOrder for reordered stock items in a single batch.
+   * Never pushes quantity or avgRate so concurrent stock movements cannot be overwritten,
+   * and queues pending sortOrder updates until committed so live snapshots never snap back.
+   */
+  reorderStockSortOrders: async (updates: { id: string; sortOrder: number }[]): Promise<void> => {
+    if (!Array.isArray(updates) || updates.length === 0) return;
+    const now = Date.now();
+    const pendingItems = updates.map((u) => ({
+      col: 'stock',
+      id: String(u.id),
+      data: { id: String(u.id), sortOrder: Number(u.sortOrder), _syncedAt: now },
+    }));
+    // Protect against intermediate onSnapshot reverting sortOrder while write is in flight
+    queuePendingWrites(pendingItems);
+
+    try {
+      for (let i = 0; i < updates.length; i += 400) {
+        const chunk = updates.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach((u) => {
+          batch.set(
+            doc(db, 'stock', String(u.id)),
+            sanitizeForFirestore({ id: String(u.id), sortOrder: Number(u.sortOrder), _syncedAt: now }),
+            { merge: true }
+          );
+        });
+        await withTimeout(batch.commit(), 20000, 'Stock reorder');
+        // Clear pending entries ONLY if no newer click overwrote their sortOrder
+        const cur = _readPending();
+        let changed = false;
+        chunk.forEach((u) => {
+          const k = `stock/${String(u.id)}`;
+          if (cur[k]?.data?.sortOrder === Number(u.sortOrder) && cur[k]?.data?._syncedAt === now) {
+            delete cur[k];
+            changed = true;
+          }
+        });
+        if (changed) _savePending(cur);
+      }
+    } catch (error) {
+      // Pending entries remain in vv_pending_writes so overlayPending keeps order & flushPendingWrites retries
+      console.warn('[Cloud Sync] Stock reorder queued for retry:', error);
+    }
+  },
+
   // Generic document deleter with spec-compliant error handler
   deleteDocument: async (collectionName: string, id: string): Promise<void> => {
     const docPath = `${collectionName}/${id}`;
@@ -540,8 +587,9 @@ export function overlayPending(col: string, items: any[]): any[] {
   for (const k of Object.keys(pend)) {
     const p = pend[k];
     if (p.col !== col) continue;
+    const isPartialStockPatch = col === 'stock' && p.data && p.data.nameBn === undefined && p.data.code === undefined;
     if (byId.has(p.id)) byId.set(p.id, { ...byId.get(p.id), ...p.data });
-    else extra.push(p.data);
+    else if (!isPartialStockPatch) extra.push(p.data);
   }
   for (const k of Object.keys(incs)) {
     const p = incs[k];
